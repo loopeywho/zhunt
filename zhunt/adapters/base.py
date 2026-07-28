@@ -93,13 +93,20 @@ def contains_tool_content(content: Any) -> bool:
     if isinstance(content, list):
         return any(contains_tool_content(item) for item in content)
     if isinstance(content, Mapping):
-        return content.get("type") in {
+        content_type = content.get("type")
+        return content_type in {
             "function_call",
             "function_call_output",
             "tool_call",
             "tool_result",
             "tool_use",
-        }
+        } or (
+            isinstance(content_type, str)
+            and (
+                content_type.endswith("_call")
+                or content_type.endswith("_call_output")
+            )
+        )
     return False
 
 
