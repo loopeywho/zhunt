@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from hashlib import sha256
+from threading import RLock
 
 
 class Tier(str, Enum):
@@ -91,3 +94,69 @@ class HeuristicClassifier:
             return Classification(Tier.CODING, tuple(reasons))
 
         return Classification(Tier.CHAT, ("conversational/default",))
+
+
+@dataclass(frozen=True)
+class SessionRoute:
+    tier: Tier
+    model: str
+
+
+@dataclass(frozen=True)
+class StickinessDecision:
+    route: SessionRoute
+    changed: bool
+
+
+class SessionStickiness:
+    """Keeps a session on one model unless its required tier rises."""
+
+    def __init__(self) -> None:
+        self._routes: dict[str, SessionRoute] = {}
+        self._lock = RLock()
+
+    def choose(
+        self,
+        *,
+        session_key: str,
+        classified_tier: Tier,
+        select_model: Callable[[Tier], str],
+    ) -> StickinessDecision:
+        if not session_key:
+            raise ValueError("session_key cannot be empty")
+
+        with self._lock:
+            current = self._routes.get(session_key)
+            if current is not None and not classified_tier.is_higher_than(current.tier):
+                return StickinessDecision(route=current, changed=False)
+
+            route = SessionRoute(
+                tier=classified_tier,
+                model=select_model(classified_tier),
+            )
+            self._routes[session_key] = route
+            return StickinessDecision(route=route, changed=True)
+
+    def get(self, session_key: str) -> SessionRoute | None:
+        with self._lock:
+            return self._routes.get(session_key)
+
+    def clear(self, session_key: str) -> None:
+        with self._lock:
+            self._routes.pop(session_key, None)
+
+
+def session_key(
+    *,
+    session_id: str | None,
+    system_prompt: str,
+    first_user_message: str,
+) -> str:
+    """Use an app session id, falling back to stable request-derived identity."""
+
+    if session_id:
+        return f"id:{session_id}"
+    digest = sha256(
+        f"{system_prompt}\0{first_user_message}".encode("utf-8")
+    ).hexdigest()
+    return f"fallback:{digest}"
