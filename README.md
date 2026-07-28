@@ -27,4 +27,6 @@ python -m pip install -e '.[dev]'
 pytest
 ```
 
-The LiteLLM-backed daemon and installer recipes are not implemented yet.
+An initial localhost-only LiteLLM daemon and routing hook are implemented. Run
+`zhunt serve --help` for its options. Real-provider validation, current-request
+retry on escalation, and installer recipes remain.

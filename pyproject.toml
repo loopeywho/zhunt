@@ -10,8 +10,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 dependencies = [
+    "litellm[proxy]>=1.93,<2",
     "PyYAML>=6.0,<7",
+    "typer>=0.16,<1",
 ]
+
+[project.scripts]
+zhunt = "zhunt.cli:app"
 
 [project.optional-dependencies]
 dev = [
