@@ -25,6 +25,13 @@ class Tier(str, Enum):
     def is_higher_than(self, other: Tier) -> bool:
         return self.rank > other.rank
 
+    def next_higher(self) -> Tier:
+        return _TIER_ORDER[min(self.rank + 1, len(_TIER_ORDER) - 1)]
+
+    @classmethod
+    def highest(cls) -> Tier:
+        return _TIER_ORDER[-1]
+
 
 _TIER_ORDER = (
     Tier.CHAT,
