@@ -24,3 +24,6 @@ testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["zhunt"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"models.yaml" = "zhunt/models.yaml"

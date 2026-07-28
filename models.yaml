@@ -1,0 +1,27 @@
+aliases:
+  zhunt-auto: {tier: auto}
+  zhunt-chat: {tier: chat}
+  zhunt-coding: {tier: coding}
+  zhunt-long-context: {tier: long-context}
+  zhunt-reasoning: {tier: reasoning}
+
+tiers:
+  chat:
+    - model: openrouter/deepseek/deepseek-chat
+      in: 0.14
+      out: 0.28
+    - model: custom/kimi/moonshot-v1-auto
+      in: 0.20
+      out: 0.60
+  coding:
+    - model: custom/dashscope/qwen3.7-max
+      in: 1.60
+      out: 6.40
+  long-context:
+    - model: custom/dashscope/qwen3.7-max
+      in: 1.60
+      out: 6.40
+  reasoning:
+    - model: openrouter/anthropic/claude-sonnet-5
+      in: 3.00
+      out: 15.00
