@@ -56,15 +56,20 @@ class HeuristicClassifierTests(unittest.TestCase):
 
         self.assertEqual(result.tier, Tier.REASONING)
 
-    def test_system_prompt_can_request_reasoning(self) -> None:
-        result = self.classifier.classify(
-            ClassificationInput(
-                user_text="Go ahead.",
-                system_prompt="You are a formal theorem-proving reasoner.",
-            )
-        )
+    def test_agent_system_prompt_does_not_supply_reasoning_intent(self) -> None:
+        classifier = HeuristicClassifier()
 
-        self.assertEqual(result.tier, Tier.REASONING)
+        for user_text in ("Thanks.", "Continue.", "What changed?"):
+            with self.subTest(user_text=user_text):
+                result = classifier.classify(
+                    ClassificationInput(
+                        user_text=user_text,
+                        system_prompt=AGENT_SYSTEM_PROMPT,
+                        estimated_tokens=2_000,
+                    )
+                )
+
+                self.assertEqual(result.tier, Tier.CHAT)
 
     def test_agent_boilerplate_does_not_force_reasoning_tier(self) -> None:
         self.assertGreater(len(AGENT_SYSTEM_PROMPT.split()), 1_000)
@@ -80,20 +85,6 @@ class HeuristicClassifierTests(unittest.TestCase):
         )
 
         self.assertEqual(result.tier, Tier.CODING)
-
-    def test_generic_system_reasoning_language_is_not_user_intent(self) -> None:
-        result = self.classifier.classify(
-            ClassificationInput(
-                user_text="Thanks.",
-                system_prompt=(
-                    "Think about edge cases, analyze the existing style, "
-                    "and plan changes before editing."
-                ),
-                estimated_tokens=50,
-            )
-        )
-
-        self.assertEqual(result.tier, Tier.CHAT)
 
     def test_invalid_long_context_threshold_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
