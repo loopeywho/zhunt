@@ -3,10 +3,11 @@
 Zhunt (pronounced “shunt” with a z) routes each LLM request to the cheapest
 capable model without requiring the calling app to change protocols.
 
-The project is in early development. The first implementation slice is the shared
-routing core: request classification, a YAML-backed model registry, and
-session-level model stickiness. Anthropic Messages, OpenAI Responses, and OpenAI
-Chat Completions adapters will be added after those contracts are stable.
+The project is in early development. The shared routing core currently includes
+request classification, a YAML-backed model registry, session-level model
+stickiness, and failure escalation. Thin inbound adapters normalize Anthropic
+Messages, OpenAI Responses, and OpenAI Chat Completions requests into that shared
+contract.
 
 ## Billing warning
 
@@ -26,4 +27,4 @@ python -m pip install -e '.[dev]'
 pytest
 ```
 
-The daemon and wire-dialect adapters are not implemented yet.
+The LiteLLM-backed daemon and installer recipes are not implemented yet.
