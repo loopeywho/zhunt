@@ -40,8 +40,13 @@ _TIER_ORDER = (
     Tier.REASONING,
 )
 
-_REASONING_MARKERS = re.compile(
+_USER_REASONING_MARKERS = re.compile(
     r"\b(?:analy[sz]e|architect|plan|prove|reason|think)\b",
+    re.IGNORECASE,
+)
+_SYSTEM_REASONING_HINTS = re.compile(
+    r"\b(?:deductive reasoning|deep reasoning|formal proof|"
+    r"formal theorem[- ]prov(?:er|ing)|mathematical proof|reasoning mode)\b",
     re.IGNORECASE,
 )
 _DIFF_MARKERS = re.compile(
@@ -83,8 +88,12 @@ class HeuristicClassifier:
             estimated_tokens = max(1, len(combined_text) // 4)
 
         reasons: list[str] = []
-        if _REASONING_MARKERS.search(combined_text):
-            reasons.append("reasoning marker")
+        if _USER_REASONING_MARKERS.search(request.user_text):
+            reasons.append("user reasoning marker")
+            return Classification(Tier.REASONING, tuple(reasons))
+
+        if _SYSTEM_REASONING_HINTS.search(request.system_prompt):
+            reasons.append("explicit system reasoning hint")
             return Classification(Tier.REASONING, tuple(reasons))
 
         if estimated_tokens >= self.long_context_tokens:

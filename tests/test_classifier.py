@@ -1,5 +1,6 @@
 import unittest
 
+from tests.representative_prompts import AGENT_SYSTEM_PROMPT
 from zhunt.brain import ClassificationInput, HeuristicClassifier, Tier
 
 
@@ -59,11 +60,40 @@ class HeuristicClassifierTests(unittest.TestCase):
         result = self.classifier.classify(
             ClassificationInput(
                 user_text="Go ahead.",
-                system_prompt="Reason carefully before answering.",
+                system_prompt="You are a formal theorem-proving reasoner.",
             )
         )
 
         self.assertEqual(result.tier, Tier.REASONING)
+
+    def test_agent_boilerplate_does_not_force_reasoning_tier(self) -> None:
+        self.assertGreater(len(AGENT_SYSTEM_PROMPT.split()), 1_000)
+        classifier = HeuristicClassifier()
+
+        result = classifier.classify(
+            ClassificationInput(
+                user_text="Fix the failing parser test.",
+                system_prompt=AGENT_SYSTEM_PROMPT,
+                estimated_tokens=2_000,
+                has_tool_calls=True,
+            )
+        )
+
+        self.assertEqual(result.tier, Tier.CODING)
+
+    def test_generic_system_reasoning_language_is_not_user_intent(self) -> None:
+        result = self.classifier.classify(
+            ClassificationInput(
+                user_text="Thanks.",
+                system_prompt=(
+                    "Think about edge cases, analyze the existing style, "
+                    "and plan changes before editing."
+                ),
+                estimated_tokens=50,
+            )
+        )
+
+        self.assertEqual(result.tier, Tier.CHAT)
 
     def test_invalid_long_context_threshold_is_rejected(self) -> None:
         with self.assertRaises(ValueError):

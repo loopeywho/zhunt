@@ -1,5 +1,6 @@
 import unittest
 
+from tests.representative_prompts import AGENT_SYSTEM_PROMPT
 from zhunt.brain import HeuristicClassifier, Tier
 from zhunt.registry import ModelRegistry
 from zhunt.router import (
@@ -87,6 +88,39 @@ class RoutingCoordinatorTests(unittest.TestCase):
         self.assertEqual(promoted.tier, Tier.REASONING)
         self.assertEqual(promoted.model, "reasoning-model")
         self.assertFalse(promoted.reused_session_route)
+
+    def test_agent_boilerplate_does_not_pin_session_to_reasoning(self) -> None:
+        coordinator = RoutingCoordinator(
+            registry=ModelRegistry.from_data(REGISTRY),
+            classifier=HeuristicClassifier(),
+        )
+        initial = coordinator.route(
+            RoutingRequest(
+                model_alias="zhunt-auto",
+                user_text="Fix the failing parser test.",
+                first_user_message="Fix the failing parser test.",
+                system_prompt=AGENT_SYSTEM_PROMPT,
+                session_id="agent-session",
+                estimated_input_tokens=2_000,
+                estimated_output_tokens=200,
+                has_tool_calls=True,
+            )
+        )
+        follow_up = coordinator.route(
+            RoutingRequest(
+                model_alias="zhunt-auto",
+                user_text="The test passes now.",
+                first_user_message="Fix the failing parser test.",
+                system_prompt=AGENT_SYSTEM_PROMPT,
+                session_id="agent-session",
+                estimated_input_tokens=2_000,
+                estimated_output_tokens=100,
+            )
+        )
+
+        self.assertEqual(initial.tier, Tier.CODING)
+        self.assertEqual(follow_up.tier, Tier.CODING)
+        self.assertTrue(follow_up.reused_session_route)
 
     def test_first_failure_escalates_one_tier(self) -> None:
         initial = self.coordinator.route(request(text="Hello"))
