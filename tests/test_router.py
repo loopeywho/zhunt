@@ -150,6 +150,24 @@ class RoutingCoordinatorTests(unittest.TestCase):
         self.assertEqual(second_retry.escalation_count, 2)
         self.assertEqual(later.tier, Tier.REASONING)
 
+    def test_success_resets_session_failure_count(self) -> None:
+        initial = self.coordinator.route(request(text="Hello"))
+        first_retry = self.coordinator.escalate(
+            initial,
+            FailureKind.PROVIDER_ERROR,
+        )
+
+        self.coordinator.record_success(first_retry)
+        later = self.coordinator.route(request(text="Continue"))
+        next_retry = self.coordinator.escalate(
+            later,
+            FailureKind.PROVIDER_ERROR,
+        )
+
+        self.assertEqual(later.escalation_count, 0)
+        self.assertEqual(next_retry.escalation_count, 1)
+        self.assertEqual(next_retry.tier, Tier.LONG_CONTEXT)
+
     def test_escalation_at_top_tier_stays_at_top(self) -> None:
         initial = self.coordinator.route(
             request(alias="zhunt-reasoning", text="Prove it")

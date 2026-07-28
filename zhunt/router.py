@@ -167,6 +167,12 @@ class RoutingCoordinator:
             failure=failure,
         )
 
+    def record_success(self, decision: RoutingDecision) -> None:
+        """Reset failure telemetry after an upstream request completes cleanly."""
+
+        with self._lock:
+            self._failure_counts.pop(decision.session_key, None)
+
     def _select_model(
         self,
         tier: Tier,
