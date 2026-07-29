@@ -1,0 +1,51 @@
+version: 1
+app: vscode
+name: Visual Studio Code
+format: json
+root: list
+target:
+  darwin: Library/Application Support/Code/User/chatLanguageModels.json
+  linux: .config/Code/User/chatLanguageModels.json
+  windows: AppData/Roaming/Code/User/chatLanguageModels.json
+source: https://code.visualstudio.com/docs/agent-customization/language-models
+modes:
+  api:
+    operations:
+      - action: upsert_list
+        path: []
+        match:
+          name: Zhunt
+          vendor: customendpoint
+        value:
+          name: Zhunt
+          vendor: customendpoint
+          apiKey: zhunt-local
+          apiType: chat-completions
+          models:
+            - id: zhunt-auto
+              name: Zhunt Auto
+              url: "{{ chat_endpoint }}"
+              toolCalling: true
+              vision: true
+              maxInputTokens: 128000
+              maxOutputTokens: 16384
+  passthrough:
+    operations:
+      - action: upsert_list
+        path: []
+        match:
+          name: Zhunt
+          vendor: customendpoint
+        value:
+          name: Zhunt
+          vendor: customendpoint
+          apiKey: zhunt-local
+          apiType: chat-completions
+          models:
+            - id: zhunt-auto
+              name: Zhunt Auto
+              url: "{{ chat_endpoint }}"
+              toolCalling: true
+              vision: true
+              maxInputTokens: 128000
+              maxOutputTokens: 16384

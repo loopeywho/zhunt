@@ -1,0 +1,34 @@
+version: 1
+app: hermes
+name: Hermes
+format: yaml
+root: mapping
+target:
+  default: .hermes/config.yaml
+source: https://github.com/NousResearch/hermes-agent/blob/main/website/docs/integrations/providers.md
+modes:
+  api:
+    operations:
+      - action: upsert_list
+        path: [custom_providers]
+        match:
+          name: zhunt
+        value:
+          name: zhunt
+          base_url: "{{ openai_base_url }}"
+          api_mode: chat_completions
+      - action: merge
+        path: [model]
+        value:
+          default: zhunt-auto
+          provider: custom:zhunt
+  passthrough:
+    operations:
+      - action: upsert_list
+        path: [custom_providers]
+        match:
+          name: zhunt
+        value:
+          name: zhunt
+          base_url: "{{ openai_base_url }}"
+          api_mode: chat_completions

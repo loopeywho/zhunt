@@ -1,0 +1,31 @@
+version: 1
+app: codex
+name: Codex
+format: toml
+root: mapping
+target:
+  default: .codex/config.toml
+source: https://developers.openai.com/codex/config-advanced
+modes:
+  api:
+    operations:
+      - action: set
+        path: [model_provider]
+        value: zhunt
+      - action: set
+        path: [model]
+        value: zhunt-auto
+      - action: merge
+        path: [model_providers, zhunt]
+        value:
+          name: Zhunt
+          base_url: "{{ openai_base_url }}"
+          wire_api: responses
+  passthrough:
+    operations:
+      - action: merge
+        path: [model_providers, zhunt]
+        value:
+          name: Zhunt
+          base_url: "{{ openai_base_url }}"
+          wire_api: responses
