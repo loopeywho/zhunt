@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from pathlib import Path
 from threading import RLock
@@ -96,6 +97,37 @@ class ZhuntProxyHook(CustomLogger):
         if decision is not None:
             self.coordinator.escalate(decision, FailureKind.PROVIDER_ERROR)
 
+    async def async_post_call_streaming_iterator_hook(
+        self,
+        user_api_key_dict: Any,
+        response: Any,
+        request_data: dict[str, Any],
+    ) -> Any:
+        failure: FailureKind | None = None
+        try:
+            async for chunk in response:
+                failure = failure or _response_failure(chunk)
+                yield chunk
+        except (asyncio.CancelledError, GeneratorExit):
+            self._pop_decision(request_data)
+            raise
+        except Exception:
+            decision = self._pop_decision(request_data)
+            if decision is not None:
+                self.coordinator.escalate(
+                    decision,
+                    FailureKind.PROVIDER_ERROR,
+                )
+            raise
+        else:
+            decision = self._pop_decision(request_data)
+            if decision is None:
+                return
+            if failure is None:
+                self.coordinator.record_success(decision)
+            else:
+                self.coordinator.escalate(decision, failure)
+
     def _pop_decision(
         self,
         data: Mapping[str, Any],
@@ -182,6 +214,18 @@ def _response_failure(response: Any) -> FailureKind | None:
         return FailureKind.TRUNCATION
     if payload.get("stop_reason") == "max_tokens":
         return FailureKind.TRUNCATION
+    delta = payload.get("delta")
+    if (
+        isinstance(delta, Mapping)
+        and delta.get("stop_reason") == "max_tokens"
+    ):
+        return FailureKind.TRUNCATION
+    nested_response = payload.get("response")
+    if (
+        isinstance(nested_response, Mapping)
+        and nested_response.get("status") == "incomplete"
+    ):
+        return FailureKind.TRUNCATION
 
     choices = payload.get("choices")
     if isinstance(choices, list):
@@ -194,7 +238,7 @@ def _response_failure(response: Any) -> FailureKind | None:
             if isinstance(message, Mapping) and message.get("refusal"):
                 return FailureKind.REFUSAL
 
-    if _contains_refusal(payload.get("output")):
+    if _contains_refusal(payload):
         return FailureKind.REFUSAL
     return None
 
@@ -214,7 +258,11 @@ def _contains_refusal(value: Any) -> bool:
     if isinstance(value, list):
         return any(_contains_refusal(item) for item in value)
     if isinstance(value, Mapping):
-        if value.get("type") == "refusal":
+        event_type = value.get("type")
+        if (
+            isinstance(event_type, str)
+            and "refusal" in event_type
+        ):
             return True
         return any(_contains_refusal(item) for item in value.values())
     return False

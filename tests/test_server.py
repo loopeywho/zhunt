@@ -186,6 +186,55 @@ class ZhuntProxyHookTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(routed, data)
 
+    async def test_streaming_hook_escalates_and_clears_pending(self) -> None:
+        data = proxy_data(
+            {
+                "model": "zhunt-auto",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "stream": True,
+            },
+            call_id="stream-1",
+            headers={"x-session-id": "session-stream"},
+        )
+        await self.hook.async_pre_call_hook(None, None, data, "acompletion")
+
+        async def chunks():
+            yield litellm.ModelResponseStream(
+                id="stream-response-1",
+                model="provider/chat",
+                choices=[
+                    {
+                        "index": 0,
+                        "finish_reason": "length",
+                        "delta": {"content": "partial"},
+                    }
+                ],
+            )
+
+        with patch.object(
+            self.coordinator,
+            "escalate",
+            wraps=self.coordinator.escalate,
+        ) as escalate:
+            streamed = [
+                chunk
+                async for chunk in (
+                    self.hook.async_post_call_streaming_iterator_hook(
+                        None,
+                        chunks(),
+                        data,
+                    )
+                )
+            ]
+
+        self.assertEqual(len(streamed), 1)
+        escalate.assert_called_once()
+        self.assertEqual(
+            escalate.call_args.args[1],
+            FailureKind.TRUNCATION,
+        )
+        self.assertEqual(self.hook._pending, {})
+
 
 class ResponseFailureTests(unittest.TestCase):
     def test_detects_chat_truncation(self) -> None:
@@ -207,6 +256,28 @@ class ResponseFailureTests(unittest.TestCase):
                 }
             ),
             FailureKind.REFUSAL,
+        )
+
+    def test_detects_anthropic_stream_truncation(self) -> None:
+        self.assertEqual(
+            _response_failure(
+                {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": "max_tokens"},
+                }
+            ),
+            FailureKind.TRUNCATION,
+        )
+
+    def test_detects_responses_stream_truncation(self) -> None:
+        self.assertEqual(
+            _response_failure(
+                {
+                    "type": "response.incomplete",
+                    "response": {"status": "incomplete"},
+                }
+            ),
+            FailureKind.TRUNCATION,
         )
 
     def test_normal_response_has_no_failure(self) -> None:
@@ -262,6 +333,71 @@ tiers:
             provider_call.await_args.kwargs["model"],
             "provider/test-chat",
         )
+
+    def test_streaming_truncation_escalates_and_clears_pending(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-chat:
+    tier: chat
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+  coding:
+    - model: provider/test-coding
+      in: 0.2
+      out: 0.4
+"""
+
+        async def provider_stream():
+            yield litellm.ModelResponseStream(
+                id="stream-response-1",
+                model="provider/test-chat",
+                choices=[
+                    {
+                        "index": 0,
+                        "finish_reason": "length",
+                        "delta": {"content": "partial"},
+                    }
+                ],
+            )
+
+        provider_call = AsyncMock(return_value=provider_stream())
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(registry_path=registry_path)
+                hook = litellm.callbacks[0]
+                with patch.object(
+                    hook.coordinator,
+                    "escalate",
+                    wraps=hook.coordinator.escalate,
+                ) as escalate:
+                    with TestClient(app) as client:
+                        response = client.post(
+                            "/v1/chat/completions",
+                            json={
+                                "model": "zhunt-chat",
+                                "stream": True,
+                                "messages": [
+                                    {
+                                        "role": "user",
+                                        "content": "Hello",
+                                    }
+                                ],
+                            },
+                        )
+
+        self.assertEqual(response.status_code, 200)
+        provider_call.assert_awaited_once()
+        escalate.assert_called_once()
+        self.assertEqual(
+            escalate.call_args.args[1],
+            FailureKind.TRUNCATION,
+        )
+        self.assertEqual(hook._pending, {})
 
 
 if __name__ == "__main__":
