@@ -34,33 +34,36 @@ class DaemonSecurityTests(unittest.TestCase):
                 },
             )
             with TestClient(app) as client:
+                route_payloads = (
+                    (
+                        "/v1/chat/completions",
+                        {"model": "unknown", "messages": []},
+                    ),
+                    (
+                        "/v1/responses",
+                        {"model": "unknown", "input": "hello"},
+                    ),
+                    (
+                        "/v1/messages",
+                        {
+                            "model": "unknown",
+                            "max_tokens": 1,
+                            "messages": [],
+                        },
+                    ),
+                    (
+                        "/v1/messages/count_tokens",
+                        {"model": "unknown", "messages": []},
+                    ),
+                )
                 unauthorized = [
-                    client.post(
-                        path,
-                        json=payload,
+                    client.post(path, headers=headers, json=payload)
+                    for headers in (
+                        {},
+                        {"Authorization": "Bearer wrong-key"},
+                        {"x-api-key": "wrong-key"},
                     )
-                    for path, payload in (
-                        (
-                            "/v1/chat/completions",
-                            {"model": "unknown", "messages": []},
-                        ),
-                        (
-                            "/v1/responses",
-                            {"model": "unknown", "input": "hello"},
-                        ),
-                        (
-                            "/v1/messages",
-                            {
-                                "model": "unknown",
-                                "max_tokens": 1,
-                                "messages": [],
-                            },
-                        ),
-                        (
-                            "/v1/messages/count_tokens",
-                            {"model": "unknown", "messages": []},
-                        ),
-                    )
+                    for path, payload in route_payloads
                 ]
                 preflight = client.options(
                     "/v1/chat/completions",
@@ -81,7 +84,10 @@ class DaemonSecurityTests(unittest.TestCase):
                     },
                 )
 
-        self.assertEqual([response.status_code for response in unauthorized], [401] * 4)
+        self.assertEqual(
+            [response.status_code for response in unauthorized],
+            [401] * 12,
+        )
         self.assertNotIn("access-control-allow-origin", preflight.headers)
         self.assertEqual(admin.status_code, 404)
         self.assertEqual(count_tokens.status_code, 200)
