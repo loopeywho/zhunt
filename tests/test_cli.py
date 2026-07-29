@@ -22,6 +22,7 @@ class ServeCommandTests(unittest.TestCase):
             host="127.0.0.1",
             port=4000,
             registry_path=None,
+            allow_non_loopback=False,
         )
 
     def test_install_and_uninstall_codex_through_cli(self) -> None:

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import litellm
 from fastapi.testclient import TestClient
+from litellm.proxy import proxy_server
 from litellm.types.llms.anthropic_messages.anthropic_response import (
     AnthropicMessagesResponse,
 )
@@ -15,6 +16,13 @@ from zhunt.brain import HeuristicClassifier, Tier
 from zhunt.registry import ModelRegistry
 from zhunt.router import FailureKind, RoutingCoordinator, RoutingRequest
 from zhunt.server import ZhuntProxyHook, _response_failure, create_proxy_app
+
+
+def auth_headers(**extra: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {proxy_server.master_key}",
+        **extra,
+    }
 
 
 REGISTRY = {
@@ -320,10 +328,14 @@ tiers:
             registry_path.write_text(registry_yaml, encoding="utf-8")
             with patch("litellm.acompletion", provider_call):
                 with TestClient(
-                    create_proxy_app(registry_path=registry_path)
+                    create_proxy_app(
+                        registry_path=registry_path,
+                        env_path=Path(directory) / "zhunt.env",
+                    )
                 ) as client:
                     response = client.post(
                         "/v1/chat/completions",
+                        headers=auth_headers(),
                         json={
                             "model": "zhunt-chat",
                             "messages": [
@@ -388,11 +400,14 @@ tiers:
             registry_path.write_text(registry_yaml, encoding="utf-8")
             with patch("litellm.acompletion", provider_call):
                 with TestClient(
-                    create_proxy_app(registry_path=registry_path)
+                    create_proxy_app(
+                        registry_path=registry_path,
+                        env_path=Path(directory) / "zhunt.env",
+                    )
                 ) as client:
                     response = client.post(
                         "/v1/chat/completions",
-                        headers={"x-session-id": "retry-session"},
+                        headers=auth_headers(**{"x-session-id": "retry-session"}),
                         json={
                             "model": "zhunt-auto",
                             "messages": [
@@ -454,11 +469,14 @@ tiers:
             registry_path.write_text(registry_yaml, encoding="utf-8")
             with patch("litellm.acompletion", provider_call):
                 with TestClient(
-                    create_proxy_app(registry_path=registry_path)
+                    create_proxy_app(
+                        registry_path=registry_path,
+                        env_path=Path(directory) / "zhunt.env",
+                    )
                 ) as client:
                     response = client.post(
                         "/v1/chat/completions",
-                        headers={"x-session-id": "error-retry-session"},
+                        headers=auth_headers(**{"x-session-id": "error-retry-session"}),
                         json={
                             "model": "zhunt-auto",
                             "messages": [
@@ -530,12 +548,15 @@ tiers:
             registry_path = Path(directory) / "models.yaml"
             registry_path.write_text(registry_yaml, encoding="utf-8")
             with patch("litellm.acompletion", provider_call):
-                app = create_proxy_app(registry_path=registry_path)
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
                 hook = litellm.callbacks[0]
                 with TestClient(app) as client:
                     response = client.post(
                         "/v1/chat/completions",
-                        headers={"x-session-id": "double-failure"},
+                        headers=auth_headers(**{"x-session-id": "double-failure"}),
                         json={
                             "model": "zhunt-auto",
                             "messages": [
@@ -598,11 +619,14 @@ tiers:
             registry_path.write_text(registry_yaml, encoding="utf-8")
             with patch("litellm.aresponses", provider_call):
                 with TestClient(
-                    create_proxy_app(registry_path=registry_path)
+                    create_proxy_app(
+                        registry_path=registry_path,
+                        env_path=Path(directory) / "zhunt.env",
+                    )
                 ) as client:
                     response = client.post(
                         "/v1/responses",
-                        headers={"x-session-id": "responses-retry"},
+                        headers=auth_headers(**{"x-session-id": "responses-retry"}),
                         json={
                             "model": "zhunt-auto",
                             "input": "Hello",
@@ -661,11 +685,14 @@ tiers:
             registry_path.write_text(registry_yaml, encoding="utf-8")
             with patch("litellm.anthropic_messages", provider_call):
                 with TestClient(
-                    create_proxy_app(registry_path=registry_path)
+                    create_proxy_app(
+                        registry_path=registry_path,
+                        env_path=Path(directory) / "zhunt.env",
+                    )
                 ) as client:
                     response = client.post(
                         "/v1/messages",
-                        headers={"x-session-id": "anthropic-retry"},
+                        headers=auth_headers(**{"x-session-id": "anthropic-retry"}),
                         json={
                             "model": "zhunt-auto",
                             "max_tokens": 10,
@@ -737,7 +764,10 @@ tiers:
             registry_path = Path(directory) / "models.yaml"
             registry_path.write_text(registry_yaml, encoding="utf-8")
             with patch("litellm.acompletion", provider_call):
-                app = create_proxy_app(registry_path=registry_path)
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
                 hook = litellm.callbacks[0]
                 with patch.object(
                     hook.coordinator,
@@ -747,6 +777,7 @@ tiers:
                     with TestClient(app) as client:
                         response = client.post(
                             "/v1/chat/completions",
+                            headers=auth_headers(),
                             json={
                                 "model": "zhunt-chat",
                                 "stream": True,

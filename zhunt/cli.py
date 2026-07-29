@@ -37,10 +37,20 @@ def serve(
         readable=True,
         help="Path to models.yaml.",
     ),
+    allow_non_loopback: bool = typer.Option(
+        False,
+        "--allow-non-loopback",
+        help="Explicitly allow binding beyond localhost.",
+    ),
 ) -> None:
     """Run the local LiteLLM-backed routing daemon."""
 
-    run_proxy(host=host, port=port, registry_path=registry)
+    run_proxy(
+        host=host,
+        port=port,
+        registry_path=registry,
+        allow_non_loopback=allow_non_loopback,
+    )
 
 
 @app.command("install")
@@ -91,10 +101,16 @@ def run_proxy(
     host: str,
     port: int,
     registry_path: Path | None,
+    allow_non_loopback: bool = False,
 ) -> None:
     from zhunt.server import run_proxy as start_proxy
 
-    start_proxy(host=host, port=port, registry_path=registry_path)
+    start_proxy(
+        host=host,
+        port=port,
+        registry_path=registry_path,
+        allow_non_loopback=allow_non_loopback,
+    )
 
 
 def create_installer() -> Installer:

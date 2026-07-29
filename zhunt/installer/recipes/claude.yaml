@@ -13,7 +13,7 @@ modes:
         path: [env]
         value:
           ANTHROPIC_BASE_URL: "{{ base_url }}"
-          ANTHROPIC_AUTH_TOKEN: zhunt-local
+          ANTHROPIC_AUTH_TOKEN: "{{ master_key }}"
   passthrough:
     supported: false
     message: >-

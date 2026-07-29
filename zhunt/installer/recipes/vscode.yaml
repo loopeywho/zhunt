@@ -19,7 +19,7 @@ modes:
         value:
           name: Zhunt
           vendor: customendpoint
-          apiKey: zhunt-local
+          apiKey: "{{ master_key }}"
           apiType: chat-completions
           models:
             - id: zhunt-auto
@@ -36,7 +36,7 @@ modes:
         value:
           name: Zhunt
           vendor: customendpoint
-          apiKey: zhunt-local
+          apiKey: "{{ master_key }}"
           apiType: chat-completions
           models:
             - id: zhunt-auto

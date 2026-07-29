@@ -45,7 +45,7 @@ class InstallerTests(unittest.TestCase):
         )
         self.assertEqual(
             installed["env"]["ANTHROPIC_AUTH_TOKEN"],
-            "zhunt-local",
+            self._master_key(),
         )
         self.assertEqual(installed["permissions"], {"allow": ["Read"]})
         self.assertIsNotNone(result.backup)
@@ -87,6 +87,7 @@ class InstallerTests(unittest.TestCase):
                 "name": "Zhunt",
                 "base_url": f"{BASE_URL}/v1",
                 "wire_api": "responses",
+                "experimental_bearer_token": self._master_key(),
             },
         )
         self.assertIn(
@@ -141,6 +142,7 @@ class InstallerTests(unittest.TestCase):
                     "name": "zhunt",
                     "base_url": f"{BASE_URL}/v1",
                     "api_mode": "chat_completions",
+                    "api_key": self._master_key(),
                 }
             ],
         )
@@ -239,6 +241,14 @@ class InstallerTests(unittest.TestCase):
     def _write(path: Path, content: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+
+    def _master_key(self) -> str:
+        line = next(
+            line
+            for line in (self.home / ".zhunt" / "env").read_text().splitlines()
+            if line.startswith("ZHUNT_MASTER_KEY=")
+        )
+        return line.split("=", 1)[1]
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ modes:
           name: zhunt
           base_url: "{{ openai_base_url }}"
           api_mode: chat_completions
+          api_key: "{{ master_key }}"
       - action: merge
         path: [model]
         value:
@@ -32,3 +33,4 @@ modes:
           name: zhunt
           base_url: "{{ openai_base_url }}"
           api_mode: chat_completions
+          api_key: "{{ master_key }}"

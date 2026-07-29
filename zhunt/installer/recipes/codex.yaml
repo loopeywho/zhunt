@@ -21,6 +21,7 @@ modes:
           name: Zhunt
           base_url: "{{ openai_base_url }}"
           wire_api: responses
+          experimental_bearer_token: "{{ master_key }}"
   passthrough:
     operations:
       - action: merge
@@ -29,3 +30,4 @@ modes:
           name: Zhunt
           base_url: "{{ openai_base_url }}"
           wire_api: responses
+          experimental_bearer_token: "{{ master_key }}"

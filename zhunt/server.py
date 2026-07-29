@@ -11,6 +11,7 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+from fastapi import FastAPI, HTTPException, Request
 from litellm.integrations.custom_logger import CustomLogger
 
 from zhunt.adapters import (
@@ -19,6 +20,7 @@ from zhunt.adapters import (
     OpenAIResponsesAdapter,
 )
 from zhunt.adapters.base import WireAdapter
+from zhunt.auth import ensure_master_key
 from zhunt.registry import ModelRegistry
 from zhunt.router import FailureKind, RoutingCoordinator, RoutingDecision
 
@@ -251,12 +253,15 @@ class RetryMiddleware:
 def create_proxy_app(
     *,
     registry_path: Path | None = None,
+    env_path: Path | None = None,
 ) -> Any:
-    """Configure and return LiteLLM's ASGI proxy application."""
+    """Configure LiteLLM behind a small, authenticated inference surface."""
 
     import litellm
     from litellm.proxy import proxy_server
 
+    master_key = ensure_master_key(env_path)
+    proxy_server.master_key = master_key
     registry = (
         ModelRegistry.from_path(registry_path)
         if registry_path is not None
@@ -269,7 +274,7 @@ def create_proxy_app(
         telemetry=False,
         drop_params=True,
     )
-    return RetryMiddleware(proxy_server.app, hook)
+    return RetryMiddleware(_inference_app(proxy_server), hook)
 
 
 def run_proxy(
@@ -277,7 +282,12 @@ def run_proxy(
     host: str,
     port: int,
     registry_path: Path | None = None,
+    allow_non_loopback: bool = False,
 ) -> None:
+    if not allow_non_loopback and host not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError(
+            "refusing non-loopback host; pass --allow-non-loopback to opt in"
+        )
     import uvicorn
 
     uvicorn.run(
@@ -285,6 +295,61 @@ def run_proxy(
         host=host,
         port=port,
     )
+
+
+def _inference_app(proxy_server: Any) -> FastAPI:
+    """Return only the three supported POST inference routes."""
+
+    from litellm.proxy.anthropic_endpoints import endpoints as anthropic
+    from litellm.proxy.response_api_endpoints import endpoints as responses
+
+    app = FastAPI(
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=proxy_server.app.router.lifespan_context,
+    )
+    app.add_api_route(
+        "/v1/chat/completions",
+        proxy_server.chat_completion,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/v1/responses",
+        responses.responses_api,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/v1/messages",
+        anthropic.anthropic_response,
+        methods=["POST"],
+    )
+    for exception_type, handler in proxy_server.app.exception_handlers.items():
+        app.add_exception_handler(exception_type, handler)
+    app.state.zhunt_master_key = proxy_server.master_key
+    app.dependency_overrides[proxy_server.user_api_key_auth] = (
+        _authenticate_local_request
+    )
+    return app
+
+
+def _authenticate_local_request(request: Request) -> Any:
+    """Authenticate the local daemon without LiteLLM's optional DB layer."""
+
+    from litellm.proxy._types import UserAPIKeyAuth
+
+    token = request.headers.get("authorization", "")
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    else:
+        token = (
+            request.headers.get("x-litellm-api-key")
+            or request.headers.get("x-api-key")
+            or ""
+        )
+    if token != request.app.state.zhunt_master_key:
+        raise HTTPException(status_code=401, detail="invalid Zhunt master key")
+    return UserAPIKeyAuth(api_key=token)
 
 
 def _original_request(

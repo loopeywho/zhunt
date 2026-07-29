@@ -6,7 +6,7 @@ source: https://cursor.com/docs
 instructions:
   - Open Cursor Settings, then Models.
   - Enable Override OpenAI Base URL and enter {{ openai_base_url }}.
-  - Enter API key zhunt-local.
+  - Enter API key {{ master_key }}.
   - Add or select model zhunt-auto for Chat and Agent.
   - Tab completion and inline edit remain on Cursor's backend.
 uninstall_instructions:

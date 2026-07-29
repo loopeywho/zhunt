@@ -19,6 +19,8 @@ import tomlkit
 import yaml
 from ruamel.yaml import YAML
 
+from zhunt.auth import ensure_master_key
+
 
 class InstallerError(ValueError):
     """Raised when a recipe cannot be applied safely."""
@@ -56,7 +58,8 @@ class Installer:
         base_url: str,
     ) -> InstallationResult:
         recipe = _load_recipe(app)
-        context = _template_context(base_url)
+        master_key = ensure_master_key(self.home / ".zhunt" / "env")
+        context = _template_context(base_url, master_key=master_key)
         if recipe.get("format") == "manual":
             instructions = tuple(
                 _render(item, context)
@@ -228,7 +231,7 @@ def _mode_recipe(
     return selected
 
 
-def _template_context(base_url: str) -> dict[str, str]:
+def _template_context(base_url: str, *, master_key: str) -> dict[str, str]:
     root = base_url.rstrip("/")
     if not root.startswith(("http://", "https://")):
         raise InstallerError("base URL must start with http:// or https://")
@@ -236,6 +239,7 @@ def _template_context(base_url: str) -> dict[str, str]:
         "base_url": root,
         "openai_base_url": f"{root}/v1",
         "chat_endpoint": f"{root}/v1/chat/completions",
+        "master_key": master_key,
     }
 
 
