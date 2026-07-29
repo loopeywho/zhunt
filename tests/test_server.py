@@ -307,6 +307,53 @@ class ResponseFailureTests(unittest.TestCase):
 
 
 class LiteLLMProxyIntegrationTests(unittest.TestCase):
+    def test_malformed_chat_payloads_return_client_errors(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+"""
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            app = create_proxy_app(
+                registry_path=registry_path,
+                env_path=Path(directory) / "zhunt.env",
+            )
+            with TestClient(app) as client:
+                responses = [
+                    client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(),
+                        json={"model": 123, "messages": []},
+                    ),
+                    client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(),
+                        json={"messages": []},
+                    ),
+                    client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(),
+                        json={"model": "zhunt-auto"},
+                    ),
+                ]
+
+        self.assertEqual([response.status_code for response in responses], [400] * 3)
+        self.assertIn(
+            "payload requires a non-empty model alias",
+            responses[0].text,
+        )
+        self.assertIn(
+            "Chat Completions payload requires a messages list",
+            responses[2].text,
+        )
+
     def test_unknown_model_passthrough_is_not_a_server_error(self) -> None:
         registry_yaml = """\
 aliases: {}
@@ -484,6 +531,115 @@ tiers:
                 "provider/test-coding",
                 "provider/test-chat",
             ],
+        )
+
+    def test_responses_output_cap_keeps_session_cheap(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+  reasoning:
+    - model: provider/test-reasoning
+      in: 1
+      out: 2
+"""
+        incomplete = ResponsesAPIResponse(
+            id="capped-response",
+            created_at=1,
+            model="provider/test-chat",
+            object="response",
+            output=[],
+            status="incomplete",
+        )
+        provider_call = AsyncMock(return_value=incomplete)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.aresponses", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                with TestClient(app) as client:
+                    responses = [
+                        client.post(
+                            "/v1/responses",
+                            headers=auth_headers(**{"x-session-id": "responses-capped"}),
+                            json={
+                                "model": "zhunt-auto",
+                                "max_output_tokens": 1,
+                                "input": text,
+                            },
+                        )
+                        for text in ("hello", "thanks", "hi", "okay")
+                    ]
+
+        self.assertTrue(all(item.status_code == 200 for item in responses))
+        self.assertEqual(provider_call.await_count, 4)
+        self.assertEqual(
+            [call.kwargs["model"] for call in provider_call.await_args_list],
+            ["provider/test-chat"] * 4,
+        )
+
+    def test_anthropic_output_cap_keeps_session_cheap(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+  reasoning:
+    - model: provider/test-reasoning
+      in: 1
+      out: 2
+"""
+        capped = AnthropicMessagesResponse(
+            id="capped-message",
+            type="message",
+            role="assistant",
+            model="provider/test-chat",
+            content=[{"type": "text", "text": "partial"}],
+            stop_reason="max_tokens",
+            usage={"input_tokens": 1, "output_tokens": 1},
+        )
+        provider_call = AsyncMock(return_value=capped)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.anthropic_messages", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                with TestClient(app) as client:
+                    responses = [
+                        client.post(
+                            "/v1/messages",
+                            headers=auth_headers(**{"x-session-id": "messages-capped"}),
+                            json={
+                                "model": "zhunt-auto",
+                                "max_tokens": 1,
+                                "messages": [{"role": "user", "content": text}],
+                            },
+                        )
+                        for text in ("hello", "thanks", "hi", "okay")
+                    ]
+
+        self.assertTrue(all(item.status_code == 200 for item in responses))
+        self.assertEqual(provider_call.await_count, 4)
+        self.assertEqual(
+            [call.kwargs["model"] for call in provider_call.await_args_list],
+            ["provider/test-chat"] * 4,
         )
 
     def test_chat_endpoint_routes_before_provider_call(self) -> None:

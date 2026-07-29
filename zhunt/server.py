@@ -19,7 +19,7 @@ from zhunt.adapters import (
     OpenAIChatCompletionsAdapter,
     OpenAIResponsesAdapter,
 )
-from zhunt.adapters.base import WireAdapter
+from zhunt.adapters.base import AdapterError, WireAdapter
 from zhunt.auth import ensure_master_key
 from zhunt.registry import ModelRegistry
 from zhunt.router import FailureKind, RoutingCoordinator, RoutingDecision
@@ -82,11 +82,14 @@ class ZhuntProxyHook(CustomLogger):
                 # Unknown model ids are valid LiteLLM passthrough targets.
                 data["model"] = requested_model
                 return data
-            decision = adapter.route(
-                payload,
-                self.coordinator,
-                headers=headers,
-            ).decision
+            try:
+                decision = adapter.route(
+                    payload,
+                    self.coordinator,
+                    headers=headers,
+                ).decision
+            except AdapterError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
         else:
             decision = retry_decision
         data["model"] = decision.model

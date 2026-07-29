@@ -73,7 +73,6 @@ class ServeCommandTests(unittest.TestCase):
 
     def test_cli_installs_every_automatic_app_recipe(self) -> None:
         cases = {
-            "claude": Path(".claude/settings.json"),
             "codex": Path(".codex/config.toml"),
             "hermes": Path(".hermes/config.yaml"),
             "vscode": Path(
@@ -118,8 +117,7 @@ class ServeCommandTests(unittest.TestCase):
                 result = self.runner.invoke(app, ["install", "claude"])
 
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("cannot register Zhunt", result.output)
-        self.assertIn("--mode api", result.output)
+        self.assertIn("Claude Code sends provider model IDs", result.output)
 
 
 if __name__ == "__main__":
