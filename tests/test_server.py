@@ -354,7 +354,7 @@ tiers:
             responses[2].text,
         )
 
-    def test_unknown_model_passthrough_is_not_a_server_error(self) -> None:
+    def test_unknown_model_is_classified_and_rewritten(self) -> None:
         registry_yaml = """\
 aliases: {}
 tiers:
@@ -364,8 +364,8 @@ tiers:
       out: 0.2
 """
         provider_response = litellm.ModelResponse(
-            id="passthrough-response",
-            model="provider/native",
+            id="classified-response",
+            model="provider/test-chat",
             choices=[
                 {
                     "index": 0,
@@ -396,7 +396,49 @@ tiers:
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(provider_call.await_count, 1)
-        self.assertEqual(provider_call.await_args.kwargs["model"], "provider/native")
+        self.assertEqual(provider_call.await_args.kwargs["model"], "provider/test-chat")
+
+    def test_claude_style_model_id_is_classified_and_rewritten(self) -> None:
+        registry_yaml = """\
+aliases: {}
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+"""
+        provider_response = AnthropicMessagesResponse(
+            id="claude-routed",
+            type="message",
+            role="assistant",
+            model="provider/test-chat",
+            content=[{"type": "text", "text": "ok"}],
+            stop_reason="end_turn",
+            usage={"input_tokens": 1, "output_tokens": 1},
+        )
+        provider_call = AsyncMock(return_value=provider_response)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.anthropic_messages", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/v1/messages",
+                        headers=auth_headers(),
+                        json={
+                            "model": "claude-sonnet-4-5-20250929",
+                            "max_tokens": 16,
+                            "messages": [{"role": "user", "content": "Hi"}],
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(provider_call.await_args.kwargs["model"], "provider/test-chat")
 
     def test_client_length_stops_do_not_pin_session_to_expensive_tier(self) -> None:
         registry_yaml = """\

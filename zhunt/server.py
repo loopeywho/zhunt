@@ -74,14 +74,6 @@ class ZhuntProxyHook(CustomLogger):
         retry_decision = self._take_retry(attempt_id)
         retry_attempt = retry_decision is not None
         if retry_decision is None:
-            requested_model = payload.get("model")
-            if (
-                isinstance(requested_model, str)
-                and not self.coordinator.registry.has_alias(requested_model)
-            ):
-                # Unknown model ids are valid LiteLLM passthrough targets.
-                data["model"] = requested_model
-                return data
             try:
                 decision = adapter.route(
                     payload,

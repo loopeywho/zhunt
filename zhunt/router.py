@@ -15,7 +15,7 @@ from zhunt.brain import (
     Tier,
     session_key,
 )
-from zhunt.registry import ModelRegistry
+from zhunt.registry import ModelRegistry, RegistryError
 
 
 class FailureKind(str, Enum):
@@ -89,7 +89,12 @@ class RoutingCoordinator:
             system_prompt=request.system_prompt,
             first_user_message=request.first_user_message,
         )
-        explicit_tier = self.registry.resolve_alias(request.model_alias)
+        try:
+            explicit_tier = self.registry.resolve_alias(request.model_alias)
+        except RegistryError:
+            # Native app model IDs are valid inputs too; classify them when
+            # they are not one of Zhunt's explicit aliases.
+            explicit_tier = None
         classification: Classification | None = None
 
         if explicit_tier is not None:
