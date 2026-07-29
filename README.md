@@ -28,5 +28,8 @@ pytest
 ```
 
 An initial localhost-only LiteLLM daemon and routing hook are implemented. Run
-`zhunt serve --help` for its options. Real-provider validation, current-request
-retry on escalation, and installer recipes remain.
+`zhunt serve --help` for its options. Failed requests are retried once on the
+promoted route. Zhunt buffers the first streaming attempt so a truncated or
+refused response can be discarded before retrying; real-provider streaming and
+tool-call fidelity validation remains pending until provider keys are available.
+Installer recipes remain.

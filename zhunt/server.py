@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections import deque
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -30,13 +32,27 @@ _ADAPTERS: dict[str, WireAdapter] = {
     "aanthropic_messages": AnthropicMessagesAdapter(),
 }
 
+_RETRYABLE_PATHS = {
+    "/v1/chat/completions",
+    "/v1/messages",
+    "/v1/responses",
+}
+_ATTEMPT_HEADER = b"x-zhunt-attempt-id"
+
+
+@dataclass(frozen=True)
+class _PendingRoute:
+    decision: RoutingDecision
+    attempt_id: str | None
+
 
 class ZhuntProxyHook(CustomLogger):
     """Route supported LiteLLM proxy calls before their provider request."""
 
     def __init__(self, coordinator: RoutingCoordinator) -> None:
         self.coordinator = coordinator
-        self._pending: dict[str, RoutingDecision] = {}
+        self._pending: dict[str, _PendingRoute] = {}
+        self._retry_routes: dict[str, RoutingDecision] = {}
         self._lock = RLock()
 
     async def async_pre_call_hook(
@@ -51,23 +67,35 @@ class ZhuntProxyHook(CustomLogger):
             return data
 
         payload, headers = _original_request(data)
-        routed = adapter.route(payload, self.coordinator, headers=headers)
-        data["model"] = routed.decision.model
+        attempt_id = _header(headers, _ATTEMPT_HEADER.decode())
+        retry_decision = self._take_retry(attempt_id)
+        if retry_decision is None:
+            decision = adapter.route(
+                payload,
+                self.coordinator,
+                headers=headers,
+            ).decision
+        else:
+            decision = retry_decision
+        data["model"] = decision.model
         call_id = _call_id(data)
         with self._lock:
-            self._pending[call_id] = routed.decision
+            self._pending[call_id] = _PendingRoute(
+                decision=decision,
+                attempt_id=attempt_id,
+            )
 
         metadata = data.get("metadata")
         if not isinstance(metadata, dict):
             metadata = {}
             data["metadata"] = metadata
         metadata["zhunt"] = {
-            "requested_alias": routed.decision.requested_alias,
-            "session_key": routed.decision.session_key,
-            "tier": routed.decision.tier.value,
-            "model": routed.decision.model,
-            "reused_session_route": routed.decision.reused_session_route,
-            "escalation_count": routed.decision.escalation_count,
+            "requested_alias": decision.requested_alias,
+            "session_key": decision.session_key,
+            "tier": decision.tier.value,
+            "model": decision.model,
+            "reused_session_route": decision.reused_session_route,
+            "escalation_count": decision.escalation_count,
         }
         return data
 
@@ -77,14 +105,14 @@ class ZhuntProxyHook(CustomLogger):
         user_api_key_dict: Any,
         response: Any,
     ) -> None:
-        decision = self._pop_decision(data)
-        if decision is None:
+        pending = self._pop_pending(data)
+        if pending is None:
             return
         failure = _response_failure(response)
         if failure is None:
-            self.coordinator.record_success(decision)
+            self.coordinator.record_success(pending.decision)
         else:
-            self.coordinator.escalate(decision, failure)
+            self._escalate(pending, failure)
 
     async def async_post_call_failure_hook(
         self,
@@ -93,9 +121,9 @@ class ZhuntProxyHook(CustomLogger):
         user_api_key_dict: Any,
         traceback_str: str | None = None,
     ) -> None:
-        decision = self._pop_decision(request_data)
-        if decision is not None:
-            self.coordinator.escalate(decision, FailureKind.PROVIDER_ERROR)
+        pending = self._pop_pending(request_data)
+        if pending is not None:
+            self._escalate(pending, FailureKind.PROVIDER_ERROR)
 
     async def async_post_call_streaming_iterator_hook(
         self,
@@ -109,34 +137,115 @@ class ZhuntProxyHook(CustomLogger):
                 failure = failure or _response_failure(chunk)
                 yield chunk
         except (asyncio.CancelledError, GeneratorExit):
-            self._pop_decision(request_data)
+            self._pop_pending(request_data)
             raise
         except Exception:
-            decision = self._pop_decision(request_data)
-            if decision is not None:
-                self.coordinator.escalate(
-                    decision,
-                    FailureKind.PROVIDER_ERROR,
-                )
+            pending = self._pop_pending(request_data)
+            if pending is not None:
+                self._escalate(pending, FailureKind.PROVIDER_ERROR)
             raise
         else:
-            decision = self._pop_decision(request_data)
-            if decision is None:
+            pending = self._pop_pending(request_data)
+            if pending is None:
                 return
             if failure is None:
-                self.coordinator.record_success(decision)
+                self.coordinator.record_success(pending.decision)
             else:
-                self.coordinator.escalate(decision, failure)
+                self._escalate(pending, failure)
 
-    def _pop_decision(
+    def has_retry(self, attempt_id: str) -> bool:
+        with self._lock:
+            return attempt_id in self._retry_routes
+
+    def discard_retry(self, attempt_id: str) -> None:
+        with self._lock:
+            self._retry_routes.pop(attempt_id, None)
+
+    def _escalate(
+        self,
+        pending: _PendingRoute,
+        failure: FailureKind,
+    ) -> None:
+        promoted = self.coordinator.escalate(pending.decision, failure)
+        if pending.attempt_id is not None:
+            with self._lock:
+                self._retry_routes[pending.attempt_id] = promoted
+
+    def _take_retry(
+        self,
+        attempt_id: str | None,
+    ) -> RoutingDecision | None:
+        if attempt_id is None:
+            return None
+        with self._lock:
+            return self._retry_routes.pop(attempt_id, None)
+
+    def _pop_pending(
         self,
         data: Mapping[str, Any],
-    ) -> RoutingDecision | None:
+    ) -> _PendingRoute | None:
         call_id = data.get("litellm_call_id")
         if not isinstance(call_id, str):
             return None
         with self._lock:
             return self._pending.pop(call_id, None)
+
+
+class RetryMiddleware:
+    """Replay one failed LLM request after the hook promotes its route."""
+
+    def __init__(self, app: Any, hook: ZhuntProxyHook) -> None:
+        self.app = app
+        self.hook = hook
+
+    async def __call__(
+        self,
+        scope: dict[str, Any],
+        receive: Callable[[], Awaitable[dict[str, Any]]],
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
+        if (
+            scope.get("type") != "http"
+            or scope.get("method") != "POST"
+            or scope.get("path") not in _RETRYABLE_PATHS
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        attempt_id = str(uuid4())
+        retry_scope = _with_attempt_header(scope, attempt_id)
+        recorded_request: list[dict[str, Any]] = []
+
+        async def recording_receive() -> dict[str, Any]:
+            message = await receive()
+            if message.get("type") == "http.request":
+                recorded_request.append(dict(message))
+            return message
+
+        first_response: list[dict[str, Any]] = []
+
+        async def capture_first(message: dict[str, Any]) -> None:
+            first_response.append(message)
+
+        await self.app(retry_scope, recording_receive, capture_first)
+        if not self.hook.has_retry(attempt_id):
+            await _send_messages(first_response, send)
+            return
+
+        second_response: list[dict[str, Any]] = []
+        replay = deque(recorded_request)
+
+        async def replay_receive() -> dict[str, Any]:
+            if replay:
+                return replay.popleft()
+            return await receive()
+
+        async def capture_second(message: dict[str, Any]) -> None:
+            second_response.append(message)
+
+        await self.app(retry_scope, replay_receive, capture_second)
+        self.hook.discard_retry(attempt_id)
+        await _send_messages(second_response, send)
 
 
 def create_proxy_app(
@@ -160,7 +269,7 @@ def create_proxy_app(
         telemetry=False,
         drop_params=True,
     )
-    return proxy_server.app
+    return RetryMiddleware(proxy_server.app, hook)
 
 
 def run_proxy(
@@ -197,6 +306,42 @@ def _original_request(
         else None
     )
     return payload, headers
+
+
+def _header(
+    headers: Mapping[str, str] | None,
+    name: str,
+) -> str | None:
+    if headers is None:
+        return None
+    target = name.lower()
+    for key, value in headers.items():
+        if key.lower() == target:
+            return value
+    return None
+
+
+def _with_attempt_header(
+    scope: Mapping[str, Any],
+    attempt_id: str,
+) -> dict[str, Any]:
+    updated = dict(scope)
+    headers = [
+        (key, value)
+        for key, value in scope.get("headers", [])
+        if key.lower() != _ATTEMPT_HEADER
+    ]
+    headers.append((_ATTEMPT_HEADER, attempt_id.encode()))
+    updated["headers"] = headers
+    return updated
+
+
+async def _send_messages(
+    messages: list[dict[str, Any]],
+    send: Callable[[dict[str, Any]], Awaitable[None]],
+) -> None:
+    for message in messages:
+        await send(message)
 
 
 def _call_id(data: dict[str, Any]) -> str:
