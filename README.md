@@ -46,18 +46,18 @@ an app's native default where the app supports that distinction.
 
 ```console
 zhunt install hermes --mode api
-zhunt install claude --mode api
 zhunt install codex --mode passthrough
 zhunt install cursor
 zhunt install vscode
 zhunt uninstall codex
 ```
 
-Hermes, Claude Code, Codex, and VS Code use automatic config merges. Cursor keeps
+Hermes, Codex, and VS Code use automatic config merges. Cursor keeps
 its API key in UI-managed secure storage, so its recipe prints the supported
-manual steps instead of modifying undocumented internal state. Claude Code has
-only one Anthropic base URL and therefore requires `--mode api`; it cannot
-register a dormant passthrough provider.
+manual steps instead of modifying undocumented internal state. Claude Code is
+currently rejected by the installer: its provider-selected model IDs cannot be
+rewritten through `ANTHROPIC_BASE_URL` alone, and silently forwarding them would
+provide no routing savings.
 
 Provider-backed one-token verification and real-provider streaming/tool-call
 fidelity tests remain pending until provider keys are available.

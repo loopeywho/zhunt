@@ -8,14 +8,14 @@ target:
 source: https://code.claude.com/docs/en/llm-gateway-connect
 modes:
   api:
-    operations:
-      - action: merge
-        path: [env]
-        value:
-          ANTHROPIC_BASE_URL: "{{ base_url }}"
-          ANTHROPIC_AUTH_TOKEN: "{{ master_key }}"
+    supported: false
+    message: >-
+      Claude Code sends provider model IDs that Zhunt cannot rewrite through its
+      base URL alone, so API mode would silently bypass routing and provide no
+      savings. Claude Code installation is unavailable until an explicit model
+      alias integration is supported.
   passthrough:
     supported: false
     message: >-
-      Claude Code has one Anthropic base URL, so it cannot register Zhunt
-      without routing all model traffic through it. Use --mode api.
+      Claude Code sends provider model IDs that Zhunt cannot rewrite through its
+      base URL alone, so passthrough mode cannot register a useful Zhunt provider.

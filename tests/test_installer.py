@@ -27,38 +27,23 @@ class InstallerTests(unittest.TestCase):
             ("claude", "codex", "cursor", "hermes", "vscode"),
         )
 
-    def test_claude_install_and_uninstall_restore_original_bytes(self) -> None:
+    def test_claude_api_install_fails_loudly_without_changes(self) -> None:
         target = self.home / ".claude" / "settings.json"
         original = b'{\n  "permissions": {"allow": ["Read"]}\n}\n'
         self._write(target, original)
 
-        result = self.installer.install(
-            "claude",
-            mode="api",
-            base_url=BASE_URL,
-        )
-
-        installed = json.loads(target.read_text(encoding="utf-8"))
-        self.assertEqual(
-            installed["env"]["ANTHROPIC_BASE_URL"],
-            BASE_URL,
-        )
-        self.assertEqual(
-            installed["env"]["ANTHROPIC_AUTH_TOKEN"],
-            self._master_key(),
-        )
-        self.assertEqual(installed["permissions"], {"allow": ["Read"]})
-        self.assertIsNotNone(result.backup)
-        self.assertEqual(result.backup.read_bytes(), original)
-
-        self.installer.uninstall("claude")
-
+        with self.assertRaisesRegex(InstallerError, "silently bypass"):
+            self.installer.install(
+                "claude",
+                mode="api",
+                base_url=BASE_URL,
+            )
         self.assertEqual(target.read_bytes(), original)
 
     def test_claude_passthrough_is_rejected_without_changes(self) -> None:
         with self.assertRaisesRegex(
             InstallerError,
-            "cannot register Zhunt",
+            "cannot register a useful Zhunt provider",
         ):
             self.installer.install(
                 "claude",
