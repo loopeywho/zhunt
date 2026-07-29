@@ -482,6 +482,84 @@ tiers:
             "recovered",
         )
 
+    def test_second_failure_stops_after_one_retry_and_pins_top_tier(
+        self,
+    ) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+  coding:
+    - model: provider/test-coding
+      in: 0.2
+      out: 0.4
+  reasoning:
+    - model: provider/test-reasoning
+      in: 1
+      out: 2
+"""
+
+        def truncated_response(identifier: str, model: str):
+            return litellm.ModelResponse(
+                id=identifier,
+                model=model,
+                choices=[
+                    {
+                        "index": 0,
+                        "finish_reason": "length",
+                        "message": {
+                            "role": "assistant",
+                            "content": "partial",
+                        },
+                    }
+                ],
+            )
+
+        provider_call = AsyncMock(
+            side_effect=[
+                truncated_response("response-1", "provider/test-chat"),
+                truncated_response("response-2", "provider/test-coding"),
+            ]
+        )
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(registry_path=registry_path)
+                hook = litellm.callbacks[0]
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/v1/chat/completions",
+                        headers={"x-session-id": "double-failure"},
+                        json={
+                            "model": "zhunt-auto",
+                            "messages": [
+                                {"role": "user", "content": "Hello"}
+                            ],
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(provider_call.await_count, 2)
+        self.assertEqual(hook._pending, {})
+        self.assertEqual(hook._retry_routes, {})
+        later = hook.coordinator.route(
+            RoutingRequest(
+                model_alias="zhunt-auto",
+                user_text="Continue",
+                first_user_message="Hello",
+                session_id="double-failure",
+                estimated_input_tokens=10,
+            )
+        )
+        self.assertEqual(later.tier, Tier.REASONING)
+        self.assertEqual(later.escalation_count, 2)
+
     def test_responses_endpoint_retries_incomplete_response(self) -> None:
         registry_yaml = """\
 aliases:
