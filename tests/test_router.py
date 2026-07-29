@@ -168,6 +168,17 @@ class RoutingCoordinatorTests(unittest.TestCase):
         self.assertEqual(next_retry.escalation_count, 1)
         self.assertEqual(next_retry.tier, Tier.LONG_CONTEXT)
 
+    def test_escalation_decays_after_clean_turns(self) -> None:
+        initial = self.coordinator.route(request(text="Hello"))
+        promoted = self.coordinator.escalate(initial, FailureKind.TRUNCATION)
+
+        for _ in range(3):
+            self.coordinator.record_success(promoted)
+
+        later = self.coordinator.route(request(text="Thanks"))
+        self.assertEqual(later.tier, Tier.CHAT)
+        self.assertEqual(later.model, "chat-model")
+
     def test_escalation_at_top_tier_stays_at_top(self) -> None:
         initial = self.coordinator.route(
             request(alias="zhunt-reasoning", text="Prove it")

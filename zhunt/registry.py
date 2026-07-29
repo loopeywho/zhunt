@@ -96,6 +96,9 @@ class ModelRegistry:
         except KeyError as error:
             raise RegistryError(f"unknown model alias: {alias}") from error
 
+    def has_alias(self, alias: str) -> bool:
+        return alias in self._aliases
+
     def select_model(
         self,
         tier: Tier,

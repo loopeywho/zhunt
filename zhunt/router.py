@@ -62,6 +62,8 @@ class RoutingDecision:
 class RoutingCoordinator:
     """The shared routing contract used by all inbound dialects."""
 
+    _CLEAN_TURNS_TO_DECAY = 3
+
     def __init__(
         self,
         *,
@@ -73,6 +75,7 @@ class RoutingCoordinator:
         self.classifier = classifier or HeuristicClassifier()
         self.stickiness = stickiness or SessionStickiness()
         self._failure_counts: dict[str, int] = {}
+        self._promoted_sessions: dict[str, int] = {}
         self._lock = RLock()
 
     def route(
@@ -138,6 +141,7 @@ class RoutingCoordinator:
         with self._lock:
             strikes = self._failure_counts.get(decision.session_key, 0) + 1
             self._failure_counts[decision.session_key] = strikes
+            self._promoted_sessions[decision.session_key] = 0
 
         target_tier = (
             Tier.highest() if strikes >= 2 else decision.tier.next_higher()
@@ -170,8 +174,18 @@ class RoutingCoordinator:
     def record_success(self, decision: RoutingDecision) -> None:
         """Reset failure telemetry after an upstream request completes cleanly."""
 
+        should_decay = False
         with self._lock:
             self._failure_counts.pop(decision.session_key, None)
+            if decision.session_key in self._promoted_sessions:
+                clean_turns = self._promoted_sessions[decision.session_key] + 1
+                if clean_turns >= self._CLEAN_TURNS_TO_DECAY:
+                    self._promoted_sessions.pop(decision.session_key, None)
+                    should_decay = True
+                else:
+                    self._promoted_sessions[decision.session_key] = clean_turns
+        if should_decay:
+            self.stickiness.clear(decision.session_key)
 
     def _select_model(
         self,

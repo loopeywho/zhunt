@@ -72,6 +72,14 @@ class ZhuntProxyHook(CustomLogger):
         attempt_id = _header(headers, _ATTEMPT_HEADER.decode())
         retry_decision = self._take_retry(attempt_id)
         if retry_decision is None:
+            requested_model = payload.get("model")
+            if (
+                isinstance(requested_model, str)
+                and not self.coordinator.registry.has_alias(requested_model)
+            ):
+                # Unknown model ids are valid LiteLLM passthrough targets.
+                data["model"] = requested_model
+                return data
             decision = adapter.route(
                 payload,
                 self.coordinator,
@@ -110,7 +118,7 @@ class ZhuntProxyHook(CustomLogger):
         pending = self._pop_pending(data)
         if pending is None:
             return
-        failure = _response_failure(response)
+        failure = _response_failure(response, request_data=data)
         if failure is None:
             self.coordinator.record_success(pending.decision)
         else:
@@ -136,7 +144,10 @@ class ZhuntProxyHook(CustomLogger):
         failure: FailureKind | None = None
         try:
             async for chunk in response:
-                failure = failure or _response_failure(chunk)
+                failure = failure or _response_failure(
+                    chunk,
+                    request_data=request_data,
+                )
                 yield chunk
         except (asyncio.CancelledError, GeneratorExit):
             self._pop_pending(request_data)
@@ -418,22 +429,29 @@ def _call_id(data: dict[str, Any]) -> str:
     return generated
 
 
-def _response_failure(response: Any) -> FailureKind | None:
+def _response_failure(
+    response: Any,
+    *,
+    request_data: Mapping[str, Any] | None = None,
+) -> FailureKind | None:
+    client_set_output_cap = _client_set_output_cap(request_data)
     payload = _response_mapping(response)
-    if payload.get("status") == "incomplete":
+    if payload.get("status") == "incomplete" and not client_set_output_cap:
         return FailureKind.TRUNCATION
-    if payload.get("stop_reason") == "max_tokens":
+    if payload.get("stop_reason") == "max_tokens" and not client_set_output_cap:
         return FailureKind.TRUNCATION
     delta = payload.get("delta")
     if (
         isinstance(delta, Mapping)
         and delta.get("stop_reason") == "max_tokens"
+        and not client_set_output_cap
     ):
         return FailureKind.TRUNCATION
     nested_response = payload.get("response")
     if (
         isinstance(nested_response, Mapping)
         and nested_response.get("status") == "incomplete"
+        and not client_set_output_cap
     ):
         return FailureKind.TRUNCATION
 
@@ -442,7 +460,10 @@ def _response_failure(response: Any) -> FailureKind | None:
         for choice in choices:
             if not isinstance(choice, Mapping):
                 continue
-            if choice.get("finish_reason") in {"length", "max_tokens"}:
+            if (
+                choice.get("finish_reason") in {"length", "max_tokens"}
+                and not client_set_output_cap
+            ):
                 return FailureKind.TRUNCATION
             message = choice.get("message")
             if isinstance(message, Mapping) and message.get("refusal"):
@@ -451,6 +472,18 @@ def _response_failure(response: Any) -> FailureKind | None:
     if _contains_refusal(payload):
         return FailureKind.REFUSAL
     return None
+
+
+def _client_set_output_cap(
+    request_data: Mapping[str, Any] | None,
+) -> bool:
+    if request_data is None:
+        return False
+    payload, _ = _original_request(request_data)
+    return any(
+        key in payload
+        for key in ("max_tokens", "max_completion_tokens", "max_output_tokens")
+    )
 
 
 def _response_mapping(response: Any) -> Mapping[str, Any]:

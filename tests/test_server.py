@@ -249,6 +249,14 @@ class ZhuntProxyHookTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ResponseFailureTests(unittest.TestCase):
+    def test_client_output_cap_makes_length_stop_routine(self) -> None:
+        self.assertIsNone(
+            _response_failure(
+                {"choices": [{"finish_reason": "length"}]},
+                request_data={"max_tokens": 1},
+            )
+        )
+
     def test_detects_chat_truncation(self) -> None:
         self.assertEqual(
             _response_failure({"choices": [{"finish_reason": "length"}]}),
@@ -299,6 +307,107 @@ class ResponseFailureTests(unittest.TestCase):
 
 
 class LiteLLMProxyIntegrationTests(unittest.TestCase):
+    def test_unknown_model_passthrough_is_not_a_server_error(self) -> None:
+        registry_yaml = """\
+aliases: {}
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+"""
+        provider_response = litellm.ModelResponse(
+            id="passthrough-response",
+            model="provider/native",
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "ok"},
+                }
+            ],
+        )
+        provider_call = AsyncMock(return_value=provider_response)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(),
+                        json={
+                            "model": "provider/native",
+                            "messages": [{"role": "user", "content": "Hi"}],
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(provider_call.await_count, 1)
+        self.assertEqual(provider_call.await_args.kwargs["model"], "provider/native")
+
+    def test_client_length_stops_do_not_pin_session_to_expensive_tier(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+  coding:
+    - model: provider/test-coding
+      in: 0.2
+      out: 0.4
+"""
+        provider_response = litellm.ModelResponse(
+            id="response-length",
+            model="provider/test-chat",
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "content": "partial"},
+                }
+            ],
+        )
+        provider_call = AsyncMock(return_value=provider_response)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                with TestClient(app) as client:
+                    responses = [
+                        client.post(
+                            "/v1/chat/completions",
+                            headers=auth_headers(**{"x-session-id": "cost-session"}),
+                            json={
+                                "model": "zhunt-auto",
+                                "max_tokens": 1,
+                                "messages": [{"role": "user", "content": text}],
+                            },
+                        )
+                        for text in ("hello", "thanks", "hi", "okay")
+                    ]
+
+        self.assertTrue(all(response.status_code == 200 for response in responses))
+        self.assertEqual(provider_call.await_count, 4)
+        self.assertEqual(
+            [call.kwargs["model"] for call in provider_call.await_args_list],
+            ["provider/test-chat"] * 4,
+        )
+
     def test_chat_endpoint_routes_before_provider_call(self) -> None:
         registry_yaml = """\
 aliases:
@@ -645,7 +754,7 @@ tiers:
         )
         self.assertEqual(response.json()["status"], "completed")
 
-    def test_anthropic_endpoint_retries_truncated_message(self) -> None:
+    def test_anthropic_client_max_tokens_stop_is_not_retried(self) -> None:
         registry_yaml = """\
 aliases:
   zhunt-auto:
@@ -669,16 +778,7 @@ tiers:
             stop_reason="max_tokens",
             usage={"input_tokens": 1, "output_tokens": 1},
         )
-        recovered = AnthropicMessagesResponse(
-            id="message-2",
-            type="message",
-            role="assistant",
-            model="provider/test-coding",
-            content=[{"type": "text", "text": "recovered"}],
-            stop_reason="end_turn",
-            usage={"input_tokens": 1, "output_tokens": 1},
-        )
-        provider_call = AsyncMock(side_effect=[truncated, recovered])
+        provider_call = AsyncMock(return_value=truncated)
 
         with TemporaryDirectory() as directory:
             registry_path = Path(directory) / "models.yaml"
@@ -703,16 +803,12 @@ tiers:
                     )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(provider_call.await_count, 2)
+        self.assertEqual(provider_call.await_count, 1)
         self.assertEqual(
             provider_call.await_args_list[0].kwargs["model"],
             "provider/test-chat",
         )
-        self.assertEqual(
-            provider_call.await_args_list[1].kwargs["model"],
-            "provider/test-coding",
-        )
-        self.assertEqual(response.json()["content"][0]["text"], "recovered")
+        self.assertEqual(response.json()["content"][0]["text"], "partial")
 
     def test_streaming_truncation_escalates_and_clears_pending(self) -> None:
         registry_yaml = """\
