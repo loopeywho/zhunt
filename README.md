@@ -28,10 +28,15 @@ pytest
 ```
 
 An initial localhost-only LiteLLM daemon and routing hook are implemented. Run
-`zhunt serve --help` for its options. Failed requests are retried once on the
-promoted route. Zhunt buffers the first streaming attempt so a truncated or
-refused response can be discarded before retrying; real-provider streaming and
-tool-call fidelity validation remains pending until provider keys are available.
+`zhunt serve --help` for its options. The daemon exposes only the three inference
+POST routes and creates a local master key in `~/.zhunt/env` on first run; the
+same key is used by the app installer recipes. Non-loopback binding requires
+`--allow-non-loopback`. Failed requests are retried once on the promoted route.
+Zhunt buffers the first streaming attempt so a truncated or refused response can
+be discarded before retrying; routine client-requested output limits do not
+escalate a session, and escalated routes decay after clean turns. Real-provider
+streaming and tool-call fidelity validation remains pending until provider keys
+are available.
 
 ## App wiring
 
