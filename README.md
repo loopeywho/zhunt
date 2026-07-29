@@ -13,8 +13,10 @@ contract.
 
 Routing through Zhunt uses your provider API keys and is billed per token. It does
 not consume flat-rate Claude Max, ChatGPT Pro, Copilot, or Cursor Pro allowances,
-so it can cost more than using those subscriptions directly. Passthrough mode is
-the installer default for subscription-backed apps.
+so it can cost more than using those subscriptions directly. For Claude Code,
+there is no supported passthrough mode: `zhunt install claude --mode api` routes
+all Claude traffic through pay-per-token API keys. Claude Max subscribers should
+not install that recipe unless they explicitly intend to create that bill.
 
 ## Development
 
@@ -42,8 +44,8 @@ pending until provider keys are available.
 ## App wiring
 
 The installer backs up an existing configuration before merging a packaged YAML
-recipe. `passthrough` is the safe default: it registers Zhunt without replacing
-an app's native default where the app supports that distinction.
+recipe. Where supported, `passthrough` registers Zhunt without replacing an
+app's native default; it is an installer behavior, not a daemon-side bypass.
 
 ```console
 zhunt install hermes --mode api

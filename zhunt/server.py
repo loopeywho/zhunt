@@ -311,7 +311,7 @@ def run_proxy(
 
 
 def _inference_app(proxy_server: Any) -> FastAPI:
-    """Return only the three supported POST inference routes."""
+    """Return only the supported authenticated inference routes."""
 
     from litellm.proxy.anthropic_endpoints import endpoints as anthropic
     from litellm.proxy.response_api_endpoints import endpoints as responses
@@ -335,6 +335,11 @@ def _inference_app(proxy_server: Any) -> FastAPI:
     app.add_api_route(
         "/v1/messages",
         anthropic.anthropic_response,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/v1/messages/count_tokens",
+        anthropic.count_tokens,
         methods=["POST"],
     )
     for exception_type, handler in proxy_server.app.exception_handlers.items():

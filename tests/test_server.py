@@ -1,4 +1,5 @@
 import unittest
+from typing import Any
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
@@ -37,6 +38,147 @@ REGISTRY = {
         "reasoning": [{"model": "provider/reasoning", "in": 1, "out": 2}],
     },
 }
+
+
+REALISTIC_REGISTRY_YAML = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+  coding:
+    - model: provider/test-coding
+      in: 0.2
+      out: 0.4
+  long-context:
+    - model: provider/test-long
+      in: 0.3
+      out: 0.6
+  reasoning:
+    - model: provider/test-reasoning
+      in: 1
+      out: 2
+"""
+
+REALISTIC_SYSTEM = [
+    {
+        "type": "text",
+        "text": (
+            "You are a coding agent. Follow the repository instructions, plan "
+            "changes carefully, and think about edge cases. Analyze existing "
+            "code before editing and explain the final result."
+        ),
+    },
+    {
+        "type": "text",
+        "text": "Use the available tools for file inspection and architecture work.",
+    },
+]
+
+REALISTIC_TOOLS = [
+    {
+        "name": "read_file",
+        "description": "Read a file from the workspace.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    }
+]
+
+REALISTIC_CHAT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a file from the workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+    }
+]
+
+
+def _four_tier_response(
+    *,
+    dialect: str,
+    identifier: str,
+) -> Any:
+    if dialect == "messages":
+        return AnthropicMessagesResponse(
+            id=identifier,
+            type="message",
+            role="assistant",
+            model="provider/test-coding",
+            content=[{"type": "text", "text": "ok"}],
+            stop_reason="end_turn",
+            usage={"input_tokens": 1, "output_tokens": 1},
+        )
+    if dialect == "responses":
+        return ResponsesAPIResponse(
+            id=identifier,
+            created_at=1,
+            model="provider/test-coding",
+            object="response",
+            output=[],
+            status="completed",
+        )
+    return litellm.ModelResponse(
+        id=identifier,
+        model="provider/test-coding",
+        choices=[
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "ok"},
+            }
+        ],
+    )
+
+
+def _assert_realistic_session(
+    testcase: unittest.TestCase,
+    *,
+    dialect: str,
+    provider_patch: str,
+    payloads: list[dict],
+) -> None:
+    provider_call = AsyncMock(
+        return_value=_four_tier_response(
+            dialect=dialect,
+            identifier=f"{dialect}-realistic",
+        )
+    )
+    with TemporaryDirectory() as directory:
+        registry_path = Path(directory) / "models.yaml"
+        registry_path.write_text(REALISTIC_REGISTRY_YAML, encoding="utf-8")
+        with patch(provider_patch, provider_call):
+            app = create_proxy_app(
+                registry_path=registry_path,
+                env_path=Path(directory) / "zhunt.env",
+            )
+            with TestClient(app) as client:
+                responses = [
+                    client.post(
+                        path,
+                        headers=auth_headers(**{"x-session-id": f"realistic-{dialect}"}),
+                        json=payload,
+                    )
+                    for path, payload in payloads
+                ]
+    testcase.assertTrue(all(response.status_code == 200 for response in responses))
+    testcase.assertEqual(provider_call.await_count, len(payloads))
+    testcase.assertEqual(
+        [call.kwargs["model"] for call in provider_call.await_args_list],
+        ["provider/test-coding"] * len(payloads),
+    )
 
 
 def proxy_data(
@@ -307,6 +449,79 @@ class ResponseFailureTests(unittest.TestCase):
 
 
 class LiteLLMProxyIntegrationTests(unittest.TestCase):
+    def test_claude_recipe_payload_stays_on_coding_tier(self) -> None:
+        _assert_realistic_session(
+            self,
+            dialect="messages",
+            provider_patch="litellm.anthropic_messages",
+            payloads=[
+                (
+                    "/v1/messages",
+                    {
+                        "model": "claude-sonnet-4-5-20250929",
+                        "system": REALISTIC_SYSTEM,
+                        "tools": REALISTIC_TOOLS,
+                        "max_tokens": 8192,
+                        "messages": [
+                            {"role": "user", "content": text}
+                        ],
+                    },
+                )
+                for text in ("Thanks.", "Continue.", "What changed?", "Looks good.")
+            ],
+        )
+
+    def test_codex_recipe_payload_stays_on_coding_tier(self) -> None:
+        _assert_realistic_session(
+            self,
+            dialect="responses",
+            provider_patch="litellm.aresponses",
+            payloads=[
+                (
+                    "/v1/responses",
+                    {
+                        "model": "zhunt-auto",
+                        "instructions": REALISTIC_SYSTEM,
+                        "tools": REALISTIC_CHAT_TOOLS,
+                        "max_output_tokens": 8192,
+                        "input": text,
+                    },
+                )
+                for text in ("Thanks.", "Continue.", "What changed?", "Looks good.")
+            ],
+        )
+
+    def test_hermes_recipe_payload_stays_on_coding_tier(self) -> None:
+        self._assert_chat_recipe_session("zhunt-auto", "hermes")
+
+    def test_cursor_recipe_payload_stays_on_coding_tier(self) -> None:
+        self._assert_chat_recipe_session("zhunt-auto", "cursor")
+
+    def test_vscode_recipe_payload_stays_on_coding_tier(self) -> None:
+        self._assert_chat_recipe_session("zhunt-auto", "vscode")
+
+    def _assert_chat_recipe_session(self, model: str, recipe: str) -> None:
+        _assert_realistic_session(
+            self,
+            dialect=recipe,
+            provider_patch="litellm.acompletion",
+            payloads=[
+                (
+                    "/v1/chat/completions",
+                    {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": REALISTIC_SYSTEM},
+                            {"role": "user", "content": text},
+                        ],
+                        "tools": REALISTIC_CHAT_TOOLS,
+                        "max_tokens": 8192,
+                    },
+                )
+                for text in ("Thanks.", "Continue.", "What changed?", "Looks good.")
+            ],
+        )
+
     def test_malformed_chat_payloads_return_client_errors(self) -> None:
         registry_yaml = """\
 aliases:

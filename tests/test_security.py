@@ -26,7 +26,12 @@ class DaemonSecurityTests(unittest.TestCase):
             }
             self.assertEqual(
                 paths,
-                {"/v1/chat/completions", "/v1/responses", "/v1/messages"},
+                {
+                    "/v1/chat/completions",
+                    "/v1/responses",
+                    "/v1/messages",
+                    "/v1/messages/count_tokens",
+                },
             )
             with TestClient(app) as client:
                 unauthorized = client.post(
@@ -41,10 +46,22 @@ class DaemonSecurityTests(unittest.TestCase):
                     },
                 )
                 admin = client.get("/ui/")
+                count_tokens = client.post(
+                    "/v1/messages/count_tokens",
+                    headers={
+                        "Authorization": f"Bearer {app.app.state.zhunt_master_key}",
+                    },
+                    json={
+                        "model": "claude-sonnet-4-5-20250929",
+                        "messages": [{"role": "user", "content": "hello"}],
+                    },
+                )
 
         self.assertEqual(unauthorized.status_code, 401)
         self.assertNotIn("access-control-allow-origin", preflight.headers)
         self.assertEqual(admin.status_code, 404)
+        self.assertEqual(count_tokens.status_code, 200)
+        self.assertIn("input_tokens", count_tokens.json())
 
     def test_non_loopback_binding_requires_explicit_opt_in(self) -> None:
         with self.assertRaisesRegex(ValueError, "refusing non-loopback"):
