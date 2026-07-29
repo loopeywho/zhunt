@@ -408,6 +408,84 @@ tiers:
             ["provider/test-chat"] * 4,
         )
 
+    def test_uncapped_truncation_promotes_once_per_turn(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+  coding:
+    - model: provider/test-coding
+      in: 0.2
+      out: 0.4
+  reasoning:
+    - model: provider/test-reasoning
+      in: 1
+      out: 2
+"""
+
+        def response(identifier: str, model: str, finish_reason: str):
+            return litellm.ModelResponse(
+                id=identifier,
+                model=model,
+                choices=[
+                    {
+                        "index": 0,
+                        "finish_reason": finish_reason,
+                        "message": {"role": "assistant", "content": "ok"},
+                    }
+                ],
+            )
+
+        provider_call = AsyncMock(
+            side_effect=[
+                response("one-chat", "provider/test-chat", "length"),
+                response("one-coding", "provider/test-coding", "length"),
+                response("two", "provider/test-coding", "stop"),
+                response("three", "provider/test-coding", "stop"),
+                response("four", "provider/test-coding", "stop"),
+                response("five", "provider/test-chat", "stop"),
+            ]
+        )
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                with TestClient(app) as client:
+                    responses = [
+                        client.post(
+                            "/v1/chat/completions",
+                            headers=auth_headers(**{"x-session-id": "uncapped"}),
+                            json={
+                                "model": "zhunt-auto",
+                                "messages": [{"role": "user", "content": text}],
+                            },
+                        )
+                        for text in ("one", "two", "three", "four", "five")
+                    ]
+
+        self.assertTrue(all(item.status_code == 200 for item in responses))
+        self.assertEqual(
+            [call.kwargs["model"] for call in provider_call.await_args_list],
+            [
+                "provider/test-chat",
+                "provider/test-coding",
+                "provider/test-coding",
+                "provider/test-coding",
+                "provider/test-coding",
+                "provider/test-chat",
+            ],
+        )
+
     def test_chat_endpoint_routes_before_provider_call(self) -> None:
         registry_yaml = """\
 aliases:
@@ -609,7 +687,7 @@ tiers:
             "recovered",
         )
 
-    def test_second_failure_stops_after_one_retry_and_pins_top_tier(
+    def test_second_failure_stops_after_one_retry_without_double_promotion(
         self,
     ) -> None:
         registry_yaml = """\
@@ -687,8 +765,8 @@ tiers:
                 estimated_input_tokens=10,
             )
         )
-        self.assertEqual(later.tier, Tier.REASONING)
-        self.assertEqual(later.escalation_count, 2)
+        self.assertEqual(later.tier, Tier.CODING)
+        self.assertEqual(later.escalation_count, 1)
 
     def test_responses_endpoint_retries_incomplete_response(self) -> None:
         registry_yaml = """\

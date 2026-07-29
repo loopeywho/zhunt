@@ -46,6 +46,7 @@ _ATTEMPT_HEADER = b"x-zhunt-attempt-id"
 class _PendingRoute:
     decision: RoutingDecision
     attempt_id: str | None
+    retry_attempt: bool = False
 
 
 class ZhuntProxyHook(CustomLogger):
@@ -71,6 +72,7 @@ class ZhuntProxyHook(CustomLogger):
         payload, headers = _original_request(data)
         attempt_id = _header(headers, _ATTEMPT_HEADER.decode())
         retry_decision = self._take_retry(attempt_id)
+        retry_attempt = retry_decision is not None
         if retry_decision is None:
             requested_model = payload.get("model")
             if (
@@ -93,6 +95,7 @@ class ZhuntProxyHook(CustomLogger):
             self._pending[call_id] = _PendingRoute(
                 decision=decision,
                 attempt_id=attempt_id,
+                retry_attempt=retry_attempt,
             )
 
         metadata = data.get("metadata")
@@ -179,6 +182,10 @@ class ZhuntProxyHook(CustomLogger):
         pending: _PendingRoute,
         failure: FailureKind,
     ) -> None:
+        if pending.retry_attempt:
+            # One original request gets at most one promotion. A failed replay
+            # must not consume the next strike in the same turn.
+            return
         promoted = self.coordinator.escalate(pending.decision, failure)
         if pending.attempt_id is not None:
             with self._lock:

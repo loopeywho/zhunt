@@ -34,9 +34,10 @@ same key is used by the app installer recipes. Non-loopback binding requires
 `--allow-non-loopback`. Failed requests are retried once on the promoted route.
 Zhunt buffers the first streaming attempt so a truncated or refused response can
 be discarded before retrying; routine client-requested output limits do not
-escalate a session, and escalated routes decay after clean turns. Real-provider
-streaming and tool-call fidelity validation remains pending until provider keys
-are available.
+escalate a session, while an uncapped provider truncation can promote one tier
+for that turn and never double-promotes its replay. Escalated routes decay after
+clean turns. Real-provider streaming and tool-call fidelity validation remains
+pending until provider keys are available.
 
 ## App wiring
 
