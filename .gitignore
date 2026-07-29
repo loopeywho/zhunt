@@ -4,3 +4,5 @@ graphify-out/
 __pycache__/
 *.egg-info/
 .venv/
+AUDIT_ROUND_*.md
+HANDOFF.md
