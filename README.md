@@ -30,7 +30,7 @@ pytest
 ```
 
 An initial localhost-only LiteLLM daemon and routing hook are implemented. Run
-`zhunt serve --help` for its options. The daemon exposes only the three inference
+`zhunt serve --help` for its options. The daemon exposes only the four inference
 POST routes and creates a local master key in `~/.zhunt/env` on first run; the
 same key is used by the app installer recipes. Non-loopback binding requires
 `--allow-non-loopback`. Failed requests are retried once on the promoted route.
@@ -55,6 +55,12 @@ zhunt install cursor
 zhunt install vscode
 zhunt uninstall codex
 ```
+
+The Claude command is intentionally marked `--mode api`: Claude Code has no
+supported passthrough mode, so it moves all traffic from a flat-rate Claude Max
+subscription to pay-per-token API billing. Real Claude Code turns include tools,
+so Zhunt keeps those sessions in the coding tier; expect roughly 1.9×–2.3× savings
+versus Sonnet 4.5, not the much larger chat-tier multiple.
 
 Hermes, Claude Code, Codex, and VS Code use automatic config merges. Cursor keeps
 its API key in UI-managed secure storage, so its recipe prints the supported

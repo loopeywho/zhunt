@@ -46,35 +46,55 @@ aliases:
     tier: auto
 tiers:
   chat:
-    - model: provider/test-chat
+    - model: provider/test-chat-cheap
       in: 0.1
       out: 0.2
+    - model: provider/test-chat-premium
+      in: 0.8
+      out: 1.6
   coding:
-    - model: provider/test-coding
+    - model: provider/test-coding-cheap
       in: 0.2
       out: 0.4
+    - model: provider/test-coding-premium
+      in: 1.6
+      out: 3.2
   long-context:
-    - model: provider/test-long
+    - model: provider/test-long-cheap
       in: 0.3
       out: 0.6
+    - model: provider/test-long-premium
+      in: 2
+      out: 4
   reasoning:
-    - model: provider/test-reasoning
+    - model: provider/test-reasoning-cheap
       in: 1
       out: 2
+    - model: provider/test-reasoning-premium
+      in: 4
+      out: 8
 """
+
+REALISTIC_CLAUDE_SYSTEM = [
+    {
+        "type": "text",
+        "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+        "cache_control": {"type": "ephemeral"},
+    },
+    {
+        "type": "text",
+        "text": "Follow repository instructions and use tools for workspace tasks.",
+    },
+]
 
 REALISTIC_SYSTEM = [
     {
         "type": "text",
-        "text": (
-            "You are a coding agent. Follow the repository instructions, plan "
-            "changes carefully, and think about edge cases. Analyze existing "
-            "code before editing and explain the final result."
-        ),
+        "text": "You are an assistant integrated into a development workspace.",
     },
     {
         "type": "text",
-        "text": "Use the available tools for file inspection and architecture work.",
+        "text": "Follow repository instructions and use tools when needed.",
     },
 ]
 
@@ -116,7 +136,7 @@ def _four_tier_response(
             id=identifier,
             type="message",
             role="assistant",
-            model="provider/test-coding",
+            model="provider/test-coding-cheap",
             content=[{"type": "text", "text": "ok"}],
             stop_reason="end_turn",
             usage={"input_tokens": 1, "output_tokens": 1},
@@ -125,14 +145,14 @@ def _four_tier_response(
         return ResponsesAPIResponse(
             id=identifier,
             created_at=1,
-            model="provider/test-coding",
+            model="provider/test-coding-cheap",
             object="response",
             output=[],
             status="completed",
         )
     return litellm.ModelResponse(
         id=identifier,
-        model="provider/test-coding",
+        model="provider/test-coding-cheap",
         choices=[
             {
                 "index": 0,
@@ -177,7 +197,7 @@ def _assert_realistic_session(
     testcase.assertEqual(provider_call.await_count, len(payloads))
     testcase.assertEqual(
         [call.kwargs["model"] for call in provider_call.await_args_list],
-        ["provider/test-coding"] * len(payloads),
+        ["provider/test-coding-cheap"] * len(payloads),
     )
 
 
@@ -459,7 +479,7 @@ class LiteLLMProxyIntegrationTests(unittest.TestCase):
                     "/v1/messages",
                     {
                         "model": "claude-sonnet-4-5-20250929",
-                        "system": REALISTIC_SYSTEM,
+                        "system": REALISTIC_CLAUDE_SYSTEM,
                         "tools": REALISTIC_TOOLS,
                         "max_tokens": 8192,
                         "messages": [
@@ -481,13 +501,49 @@ class LiteLLMProxyIntegrationTests(unittest.TestCase):
                     "/v1/responses",
                     {
                         "model": "zhunt-auto",
-                        "instructions": REALISTIC_SYSTEM,
-                        "tools": REALISTIC_CHAT_TOOLS,
+                        "instructions": (
+                            "You are Codex, an engineering agent. Follow repository "
+                            "instructions and use tools when needed."
+                        ),
+                        "tools": [
+                            {
+                                "type": "function",
+                                "name": "read_file",
+                                "description": "Read a workspace file.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {"path": {"type": "string"}},
+                                },
+                            }
+                        ],
                         "max_output_tokens": 8192,
-                        "input": text,
+                        "input": (
+                            [
+                                {
+                                    "type": "message",
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "input_text", "text": text}
+                                    ],
+                                }
+                            ]
+                            + (
+                                [
+                                    {
+                                        "type": "function_call_output",
+                                        "call_id": "call_read_file",
+                                        "output": "file contents",
+                                    }
+                                ]
+                                if index > 0
+                                else []
+                            )
+                        ),
                     },
                 )
-                for text in ("Thanks.", "Continue.", "What changed?", "Looks good.")
+                for index, text in enumerate(
+                    ("Thanks.", "Continue.", "What changed?", "Looks good.")
+                )
             ],
         )
 
@@ -501,25 +557,78 @@ class LiteLLMProxyIntegrationTests(unittest.TestCase):
         self._assert_chat_recipe_session("zhunt-auto", "vscode")
 
     def _assert_chat_recipe_session(self, model: str, recipe: str) -> None:
+        turns = ("Thanks.", "Continue.", "What changed?", "Looks good.")
+
+        def payload(index: int, text: str) -> dict:
+            if recipe == "hermes":
+                messages = [
+                    {"role": "system", "content": REALISTIC_SYSTEM},
+                    {"role": "user", "content": text},
+                ]
+                tools = REALISTIC_CHAT_TOOLS if index == 0 else []
+                return {
+                    "model": model,
+                    "messages": messages,
+                    "tools": tools,
+                    "max_tokens": 8192,
+                }
+            if recipe == "cursor":
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "You are Cursor's coding assistant. Use workspace tools.",
+                    },
+                    {"role": "user", "content": text},
+                ]
+                return {
+                    "model": model,
+                    "messages": messages,
+                    "tools": REALISTIC_CHAT_TOOLS if index == 0 else [],
+                    "max_completion_tokens": 8192,
+                }
+            messages = [
+                {
+                    "role": "developer",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "You are VS Code's coding assistant.",
+                        }
+                    ],
+                },
+                {"role": "user", "content": text},
+            ]
+            if index == 1:
+                messages.insert(
+                    1,
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_read_file",
+                                "type": "function",
+                                "function": {
+                                    "name": "read_file",
+                                    "arguments": '{"path":"README.md"}',
+                                },
+                            }
+                        ],
+                    },
+                )
+            return {
+                "model": model,
+                "messages": messages,
+                "tools": REALISTIC_CHAT_TOOLS if index == 0 else [],
+                "max_tokens": 8192,
+            }
+
         _assert_realistic_session(
             self,
             dialect=recipe,
             provider_patch="litellm.acompletion",
-            payloads=[
-                (
-                    "/v1/chat/completions",
-                    {
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": REALISTIC_SYSTEM},
-                            {"role": "user", "content": text},
-                        ],
-                        "tools": REALISTIC_CHAT_TOOLS,
-                        "max_tokens": 8192,
-                    },
-                )
-                for text in ("Thanks.", "Continue.", "What changed?", "Looks good.")
-            ],
+            payloads=[("/v1/chat/completions", payload(index, text))
+                      for index, text in enumerate(turns)],
         )
 
     def test_malformed_chat_payloads_return_client_errors(self) -> None:
