@@ -14,7 +14,7 @@ contract.
 Routing through Zhunt uses your provider API keys and is billed per token. It does
 not consume flat-rate Claude Max, ChatGPT Pro, Copilot, or Cursor Pro allowances,
 so it can cost more than using those subscriptions directly. Passthrough mode is
-planned as the default for subscription-backed apps.
+the installer default for subscription-backed apps.
 
 ## Development
 
@@ -32,4 +32,27 @@ An initial localhost-only LiteLLM daemon and routing hook are implemented. Run
 promoted route. Zhunt buffers the first streaming attempt so a truncated or
 refused response can be discarded before retrying; real-provider streaming and
 tool-call fidelity validation remains pending until provider keys are available.
-Installer recipes remain.
+
+## App wiring
+
+The installer backs up an existing configuration before merging a packaged YAML
+recipe. `passthrough` is the safe default: it registers Zhunt without replacing
+an app's native default where the app supports that distinction.
+
+```console
+zhunt install hermes --mode api
+zhunt install claude --mode api
+zhunt install codex --mode passthrough
+zhunt install cursor
+zhunt install vscode
+zhunt uninstall codex
+```
+
+Hermes, Claude Code, Codex, and VS Code use automatic config merges. Cursor keeps
+its API key in UI-managed secure storage, so its recipe prints the supported
+manual steps instead of modifying undocumented internal state. Claude Code has
+only one Anthropic base URL and therefore requires `--mode api`; it cannot
+register a dormant passthrough provider.
+
+Provider-backed one-token verification and real-provider streaming/tool-call
+fidelity tests remain pending until provider keys are available.

@@ -26,9 +26,6 @@ modes:
               name: Zhunt Auto
               url: "{{ chat_endpoint }}"
               toolCalling: true
-              vision: true
-              maxInputTokens: 128000
-              maxOutputTokens: 16384
   passthrough:
     operations:
       - action: upsert_list
@@ -46,6 +43,3 @@ modes:
               name: Zhunt Auto
               url: "{{ chat_endpoint }}"
               toolCalling: true
-              vision: true
-              maxInputTokens: 128000
-              maxOutputTokens: 16384
