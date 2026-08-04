@@ -235,7 +235,11 @@ class ZhuntProxyHook(CustomLogger):
                 return
             if not self.health.is_healthy(pending.decision.model):
                 return
-        promoted = self.coordinator.escalate(pending.decision, failure)
+        promoted = self.coordinator.escalate(
+            pending.decision,
+            failure,
+            healthy_models=self.health.healthy_models(),
+        )
         if pending.attempt_id is not None:
             with self._lock:
                 self._retry_routes[pending.attempt_id] = _RetryRoute(

@@ -1273,6 +1273,74 @@ tiers:
             "recovered sideways",
         )
 
+    def test_escalation_skips_unhealthy_target_model(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat-only
+      in: 0.1
+      out: 0.2
+  coding:
+    - model: provider/test-coding-dead
+      in: 0.2
+      out: 0.4
+    - model: provider/test-coding-alive
+      in: 0.3
+      out: 0.6
+"""
+        recovered = litellm.ModelResponse(
+            id="healthy-escalation-response",
+            model="provider/test-coding-alive",
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "recovered on healthy escalation target",
+                    },
+                }
+            ],
+        )
+        provider_call = AsyncMock(
+            side_effect=[RuntimeError("chat provider unavailable"), recovered]
+        )
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                app.hook.health.record_failure("provider/test-coding-dead")
+                app.hook.health.record_failure("provider/test-coding-dead")
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(**{"x-session-id": "healthy-escalation"}),
+                        json={
+                            "model": "zhunt-auto",
+                            "messages": [
+                                {"role": "user", "content": "Hello"}
+                            ],
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [call.kwargs["model"] for call in provider_call.await_args_list],
+            ["provider/test-chat-only", "provider/test-coding-alive"],
+        )
+        self.assertEqual(
+            response.json()["choices"][0]["message"]["content"],
+            "recovered on healthy escalation target",
+        )
+
     def test_second_failure_stops_after_one_retry_without_double_promotion(
         self,
     ) -> None:
