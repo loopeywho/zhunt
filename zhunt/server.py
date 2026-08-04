@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -21,8 +22,18 @@ from zhunt.adapters import (
 )
 from zhunt.adapters.base import AdapterError, WireAdapter
 from zhunt.auth import ensure_master_key
+from zhunt.health import (
+    ModelHealth,
+    litellm_model_available,
+    validate_registry_models,
+)
 from zhunt.registry import ModelRegistry
-from zhunt.router import FailureKind, RoutingCoordinator, RoutingDecision
+from zhunt.router import (
+    FailureKind,
+    RoutingCoordinator,
+    RoutingDecision,
+    RoutingRequest,
+)
 
 
 _ADAPTERS: dict[str, WireAdapter] = {
@@ -45,17 +56,29 @@ _ATTEMPT_HEADER = b"x-zhunt-attempt-id"
 @dataclass(frozen=True)
 class _PendingRoute:
     decision: RoutingDecision
+    request: RoutingRequest
     attempt_id: str | None
     retry_attempt: bool = False
+
+
+@dataclass(frozen=True)
+class _RetryRoute:
+    decision: RoutingDecision
+    request: RoutingRequest
 
 
 class ZhuntProxyHook(CustomLogger):
     """Route supported LiteLLM proxy calls before their provider request."""
 
-    def __init__(self, coordinator: RoutingCoordinator) -> None:
+    def __init__(
+        self,
+        coordinator: RoutingCoordinator,
+        health: ModelHealth | None = None,
+    ) -> None:
         self.coordinator = coordinator
+        self.health = health or ModelHealth(coordinator.registry.model_ids())
         self._pending: dict[str, _PendingRoute] = {}
-        self._retry_routes: dict[str, RoutingDecision] = {}
+        self._retry_routes: dict[str, _RetryRoute] = {}
         self._lock = RLock()
 
     async def async_pre_call_hook(
@@ -75,20 +98,25 @@ class ZhuntProxyHook(CustomLogger):
         retry_attempt = retry_decision is not None
         if retry_decision is None:
             try:
-                decision = adapter.route(
+                routed = adapter.route(
                     payload,
                     self.coordinator,
                     headers=headers,
-                ).decision
+                    healthy_models=self.health.healthy_models(),
+                )
+                decision = routed.decision
+                request = routed.request
             except AdapterError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
         else:
-            decision = retry_decision
+            decision = retry_decision.decision
+            request = retry_decision.request
         data["model"] = decision.model
         call_id = _call_id(data)
         with self._lock:
             self._pending[call_id] = _PendingRoute(
                 decision=decision,
+                request=request,
                 attempt_id=attempt_id,
                 retry_attempt=retry_attempt,
             )
@@ -118,6 +146,7 @@ class ZhuntProxyHook(CustomLogger):
             return
         failure = _response_failure(response, request_data=data)
         if failure is None:
+            self.health.record_success(pending.decision.model)
             self.coordinator.record_success(pending.decision)
         else:
             self._escalate(pending, failure)
@@ -160,6 +189,7 @@ class ZhuntProxyHook(CustomLogger):
             if pending is None:
                 return
             if failure is None:
+                self.health.record_success(pending.decision.model)
                 self.coordinator.record_success(pending.decision)
             else:
                 self._escalate(pending, failure)
@@ -177,19 +207,46 @@ class ZhuntProxyHook(CustomLogger):
         pending: _PendingRoute,
         failure: FailureKind,
     ) -> None:
+        if failure == FailureKind.PROVIDER_ERROR:
+            self.health.record_failure(pending.decision.model)
         if pending.retry_attempt:
             # One original request gets at most one promotion. A failed replay
             # must not consume the next strike in the same turn.
             return
+        if failure == FailureKind.PROVIDER_ERROR:
+            try:
+                sideways = self.coordinator.reroute_same_tier(
+                    pending.decision,
+                    pending.request,
+                    healthy_models=self.health.healthy_models(
+                        exclude={pending.decision.model}
+                    ),
+                    failure=failure,
+                )
+            except Exception:
+                sideways = None
+            if sideways is not None and sideways.model != pending.decision.model:
+                if pending.attempt_id is not None:
+                    with self._lock:
+                        self._retry_routes[pending.attempt_id] = _RetryRoute(
+                            decision=sideways,
+                            request=pending.request,
+                        )
+                return
+            if not self.health.is_healthy(pending.decision.model):
+                return
         promoted = self.coordinator.escalate(pending.decision, failure)
         if pending.attempt_id is not None:
             with self._lock:
-                self._retry_routes[pending.attempt_id] = promoted
+                self._retry_routes[pending.attempt_id] = _RetryRoute(
+                    decision=promoted,
+                    request=pending.request,
+                )
 
     def _take_retry(
         self,
         attempt_id: str | None,
-    ) -> RoutingDecision | None:
+    ) -> _RetryRoute | None:
         if attempt_id is None:
             return None
         with self._lock:
@@ -267,6 +324,9 @@ def create_proxy_app(
     *,
     registry_path: Path | None = None,
     env_path: Path | None = None,
+    validate_startup: bool = False,
+    availability_checker: Callable[[str], bool] | None = None,
+    health_failure_threshold: int = 2,
 ) -> Any:
     """Configure LiteLLM behind a small, authenticated inference surface."""
 
@@ -280,7 +340,19 @@ def create_proxy_app(
         if registry_path is not None
         else ModelRegistry.default()
     )
-    hook = ZhuntProxyHook(RoutingCoordinator(registry=registry))
+    if validate_startup:
+        validate_registry_models(
+            registry,
+            availability_checker or litellm_model_available,
+        )
+    health = ModelHealth(
+        registry.model_ids(),
+        failure_threshold=health_failure_threshold,
+    )
+    hook = ZhuntProxyHook(
+        RoutingCoordinator(registry=registry),
+        health=health,
+    )
     litellm.callbacks = [hook]
     proxy_server.save_worker_config(
         model="*",
@@ -304,7 +376,10 @@ def run_proxy(
     import uvicorn
 
     uvicorn.run(
-        create_proxy_app(registry_path=registry_path),
+        create_proxy_app(
+            registry_path=registry_path,
+            validate_startup=True,
+        ),
         host=host,
         port=port,
     )
@@ -365,7 +440,7 @@ def _authenticate_local_request(request: Request) -> Any:
             or request.headers.get("x-api-key")
             or ""
         )
-    if token != request.app.state.zhunt_master_key:
+    if not secrets.compare_digest(token, request.app.state.zhunt_master_key):
         raise HTTPException(status_code=401, detail="invalid Zhunt master key")
     return UserAPIKeyAuth(api_key=token)
 

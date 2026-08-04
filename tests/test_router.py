@@ -193,6 +193,29 @@ class RoutingCoordinatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no healthy models"):
             self.coordinator.route(request(), healthy_models=set())
 
+    def test_unhealthy_sticky_model_is_replaced_within_tier(self) -> None:
+        registry = ModelRegistry.from_data(
+            {
+                "aliases": {"zhunt-auto": {"tier": "auto"}},
+                "tiers": {
+                    "chat": [
+                        {"model": "chat-model", "in": 0.1, "out": 0.2},
+                        {"model": "chat-backup", "in": 0.2, "out": 0.4},
+                    ]
+                },
+            }
+        )
+        coordinator = RoutingCoordinator(registry=registry)
+        first = coordinator.route(request())
+        second = coordinator.route(
+            request(text="Continue"),
+            healthy_models={"chat-backup"},
+        )
+
+        self.assertEqual(first.model, "chat-model")
+        self.assertEqual(second.model, "chat-backup")
+        self.assertFalse(second.reused_session_route)
+
 
 class TierEscalationTests(unittest.TestCase):
     def test_next_higher_caps_at_highest_tier(self) -> None:

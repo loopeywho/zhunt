@@ -96,6 +96,15 @@ class ModelRegistry:
         except KeyError as error:
             raise RegistryError(f"unknown model alias: {alias}") from error
 
+    def model_ids(self) -> tuple[str, ...]:
+        """Return every configured upstream model identifier."""
+
+        return tuple(
+            model.model
+            for models in self._tiers.values()
+            for model in models
+        )
+
     def select_model(
         self,
         tier: Tier,

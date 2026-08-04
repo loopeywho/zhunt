@@ -1209,6 +1209,70 @@ tiers:
             "recovered",
         )
 
+    def test_provider_error_retries_sideways_within_same_tier(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat-cheap
+      in: 0.1
+      out: 0.2
+    - model: provider/test-chat-backup
+      in: 0.2
+      out: 0.4
+"""
+        recovered = litellm.ModelResponse(
+            id="sideways-response",
+            model="provider/test-chat-backup",
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "recovered sideways",
+                    },
+                }
+            ],
+        )
+        provider_call = AsyncMock(
+            side_effect=[RuntimeError("provider unavailable"), recovered]
+        )
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                with TestClient(
+                    create_proxy_app(
+                        registry_path=registry_path,
+                        env_path=Path(directory) / "zhunt.env",
+                    )
+                ) as client:
+                    response = client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(**{"x-session-id": "sideways-session"}),
+                        json={
+                            "model": "zhunt-auto",
+                            "messages": [
+                                {"role": "user", "content": "Hello"}
+                            ],
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(provider_call.await_count, 2)
+        self.assertEqual(
+            [call.kwargs["model"] for call in provider_call.await_args_list],
+            ["provider/test-chat-cheap", "provider/test-chat-backup"],
+        )
+        self.assertEqual(
+            response.json()["choices"][0]["message"]["content"],
+            "recovered sideways",
+        )
+
     def test_second_failure_stops_after_one_retry_without_double_promotion(
         self,
     ) -> None:

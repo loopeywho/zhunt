@@ -99,9 +99,13 @@ class DaemonSecurityTests(unittest.TestCase):
 
         with patch("uvicorn.run") as uvicorn_run, patch(
             "zhunt.server.create_proxy_app", return_value=object()
-        ):
+        ) as create_app:
             run_proxy(host="0.0.0.0", port=4000, allow_non_loopback=True)
         uvicorn_run.assert_called_once()
+        create_app.assert_called_once_with(
+            registry_path=None,
+            validate_startup=True,
+        )
 
 
 if __name__ == "__main__":

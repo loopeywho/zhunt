@@ -123,6 +123,17 @@ class RoutingCoordinator:
                 healthy_models=healthy_models,
             ),
         )
+        if healthy_models is not None and sticky.route.model not in healthy_models:
+            self.stickiness.clear(key)
+            sticky = self.stickiness.choose(
+                session_key=key,
+                classified_tier=classification.tier,
+                select_model=lambda tier: self._select_model(
+                    tier,
+                    request=request,
+                    healthy_models=healthy_models,
+                ),
+            )
         return RoutingDecision(
             session_key=key,
             requested_alias=request.model_alias,
@@ -173,6 +184,33 @@ class RoutingCoordinator:
             model=promoted.route.model,
             reused_session_route=not promoted.changed,
             escalation_count=strikes,
+            failure=failure,
+        )
+
+    def reroute_same_tier(
+        self,
+        decision: RoutingDecision,
+        request: RoutingRequest,
+        *,
+        healthy_models: Collection[str],
+        failure: FailureKind = FailureKind.PROVIDER_ERROR,
+    ) -> RoutingDecision:
+        """Choose a replacement model without promoting the capability tier."""
+
+        self.stickiness.clear(decision.session_key)
+        sticky = self.stickiness.choose(
+            session_key=decision.session_key,
+            classified_tier=decision.tier,
+            select_model=lambda tier: self._select_model(
+                tier,
+                request=request,
+                healthy_models=healthy_models,
+            ),
+        )
+        return replace(
+            decision,
+            model=sticky.route.model,
+            reused_session_route=False,
             failure=failure,
         )
 
