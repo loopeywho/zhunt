@@ -85,12 +85,17 @@ def validate_registry_models(
 
 
 def litellm_model_available(model: str) -> bool:
-    """Use LiteLLM's provider model map as the default startup check."""
+    """Check that LiteLLM recognizes the model/provider syntax.
+
+    LiteLLM's ``get_model_info`` is a pricing metadata lookup, not an
+    availability check. Explicit ``api_base`` models are intentionally absent
+    from that map, so startup must validate provider resolution instead.
+    """
 
     import litellm
 
     try:
-        litellm.get_model_info(model)
+        resolved_model, provider, *_ = litellm.get_llm_provider(model)
     except Exception:
         return False
-    return True
+    return bool(resolved_model and provider)
