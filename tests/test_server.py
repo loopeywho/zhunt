@@ -829,6 +829,10 @@ tiers:
     - model: provider/test-chat
       in: 0.1
       out: 0.2
+  reasoning:
+    - model: provider/test-reasoning
+      in: 5.0
+      out: 10.0
 """
         provider_response = litellm.ModelResponse(
             id="telemetry-response",
@@ -869,6 +873,7 @@ tiers:
         self.assertEqual(event["app"], "openai-chat-completions")
         self.assertEqual(event["input_tokens"], 2)
         self.assertEqual(event["output_tokens"], 3)
+        self.assertEqual(event["counterfactual_top_model_cost"], 0.00004)
         self.assertTrue(event["success"])
 
     def test_claude_style_model_id_is_classified_and_rewritten(self) -> None:

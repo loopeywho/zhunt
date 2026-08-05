@@ -16,7 +16,10 @@ REGISTRY = ModelRegistry.from_data(
             "chat": [
                 {"model": "provider/chat-cheap", "in": 0.1, "out": 0.2},
                 {"model": "provider/chat-top", "in": 1.0, "out": 2.0},
-            ]
+            ],
+            "reasoning": [
+                {"model": "provider/reasoning-top", "in": 5.0, "out": 10.0},
+            ],
         },
     }
 )
@@ -49,11 +52,11 @@ class TelemetryTests(unittest.TestCase):
             )
 
         self.assertEqual(event["actual_cost"], 0.3)
-        self.assertEqual(event["counterfactual_top_model_cost"], 3.0)
+        self.assertEqual(event["counterfactual_top_model_cost"], 15.0)
         self.assertEqual(summary["requests"], 1)
         self.assertEqual(summary["actual_spend"], 0.3)
-        self.assertEqual(summary["counterfactual_spend"], 3.0)
-        self.assertEqual(summary["savings"], 2.7)
+        self.assertEqual(summary["counterfactual_spend"], 15.0)
+        self.assertEqual(summary["savings"], 14.7)
         self.assertEqual(summary["by_app"]["openai-chat-completions"]["requests"], 1)
 
     def test_invalid_lines_are_ignored(self) -> None:

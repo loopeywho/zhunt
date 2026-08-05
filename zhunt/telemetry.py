@@ -36,8 +36,7 @@ class TelemetryLogger:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
-        counterfactual_cost = self.registry.top_model_cost(
-            decision.tier,
+        counterfactual_cost = self.registry.top_model_cost_all(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )

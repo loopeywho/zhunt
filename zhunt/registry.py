@@ -140,6 +140,29 @@ class ModelRegistry:
             for model in models
         )
 
+    def top_model_cost_all(
+        self,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> Decimal:
+        """Return the counterfactual cost of the most expensive registry model."""
+
+        models = [
+            model
+            for tier_models in self._tiers.values()
+            for model in tier_models
+        ]
+        if not models:
+            raise RegistryError("no models available for counterfactual cost")
+        return max(
+            model.projected_cost(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+            for model in models
+        )
+
     def select_model(
         self,
         tier: Tier,
