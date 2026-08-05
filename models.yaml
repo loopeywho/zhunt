@@ -26,13 +26,13 @@ providers:
           in: 0.70
           out: 3.50
       long-context:
-        - model: openai/portal/m2-25-fast
-          in: 0.70
-          out: 3.50
+        - model: openai/portal/m3-500k-fast
+          in: 2.80
+          out: 8.40
       reasoning:
-        - model: openai/portal/m2-25-fast
-          in: 0.70
-          out: 3.50
+        - model: openai/portal/m3-55-xh-1m
+          in: 3.50
+          out: 21.00
 
 tiers:
   chat:

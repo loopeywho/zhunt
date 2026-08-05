@@ -111,6 +111,14 @@ class ModelRegistryTests(unittest.TestCase):
             registry.select_model(Tier.CODING).model,
             "openai/portal/m2-25-fast",
         )
+        self.assertEqual(
+            registry.select_model(Tier.LONG_CONTEXT).model,
+            "openai/portal/m3-500k-fast",
+        )
+        self.assertEqual(
+            registry.select_model(Tier.REASONING).model,
+            "openai/portal/m3-55-xh-1m",
+        )
 
 
 if __name__ == "__main__":

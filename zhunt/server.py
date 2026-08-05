@@ -432,7 +432,10 @@ def create_proxy_app(
     proxy_server.master_key = master_key
     provider = configured_provider()
     registry = (
-        ModelRegistry.from_path(registry_path)
+        ModelRegistry.from_path(
+            registry_path,
+            provider_id=provider.id if provider is not None else None,
+        )
         if registry_path is not None
         else ModelRegistry.default(
             provider_id=provider.id if provider is not None else None,

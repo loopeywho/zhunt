@@ -28,6 +28,11 @@ class NousPortalRoutingTests(unittest.TestCase):
         provider_call = AsyncMock(return_value=response)
         with TemporaryDirectory() as directory:
             root = Path(directory)
+            registry_path = root / "models.yaml"
+            registry_path.write_text(
+                Path("models.yaml").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
             env_path = root / "env"
             env_path.write_text(
                 'ZHUNT_PROVIDER="nous-portal"\nPORTAL_API_KEY="sk-portal-test"\n',
@@ -36,6 +41,7 @@ class NousPortalRoutingTests(unittest.TestCase):
             with patch.dict(os.environ, {}, clear=False):
                 with patch("litellm.acompletion", provider_call):
                     app = create_proxy_app(
+                        registry_path=registry_path,
                         env_path=env_path,
                         telemetry_path=root / "telemetry.jsonl",
                     )
