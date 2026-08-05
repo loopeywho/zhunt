@@ -1,6 +1,6 @@
 # Zhunt
 
-Zhunt (pronounced “shunt” with a z) routes each LLM request to the cheapest
+Zhunt (pronounced “shunt” with a z) shunts every LLM request to the cheapest
 capable model without requiring the calling app to change protocols.
 
 The shared routing core includes request classification, a YAML-backed model
