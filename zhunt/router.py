@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from threading import RLock
@@ -70,10 +70,12 @@ class RoutingCoordinator:
         registry: ModelRegistry,
         classifier: HeuristicClassifier | None = None,
         stickiness: SessionStickiness | None = None,
+        latency_weight: float = 0.0,
     ) -> None:
         self.registry = registry
         self.classifier = classifier or HeuristicClassifier()
         self.stickiness = stickiness or SessionStickiness()
+        self.latency_weight = latency_weight
         self._failure_counts: dict[str, int] = {}
         self._promoted_sessions: dict[str, int] = {}
         self._lock = RLock()
@@ -83,6 +85,7 @@ class RoutingCoordinator:
         request: RoutingRequest,
         *,
         healthy_models: Collection[str] | None = None,
+        latency_metrics: Mapping[str, float] | None = None,
     ) -> RoutingDecision:
         key = session_key(
             session_id=request.session_id,
@@ -102,6 +105,7 @@ class RoutingCoordinator:
                 explicit_tier,
                 request=request,
                 healthy_models=healthy_models,
+                latency_metrics=latency_metrics,
             )
             return RoutingDecision(
                 session_key=key,
@@ -121,6 +125,7 @@ class RoutingCoordinator:
                 tier,
                 request=request,
                 healthy_models=healthy_models,
+                latency_metrics=latency_metrics,
             ),
         )
         if healthy_models is not None and sticky.route.model not in healthy_models:
@@ -132,6 +137,7 @@ class RoutingCoordinator:
                     tier,
                     request=request,
                     healthy_models=healthy_models,
+                    latency_metrics=latency_metrics,
                 ),
             )
         return RoutingDecision(
@@ -153,6 +159,7 @@ class RoutingCoordinator:
         estimated_input_tokens: int | None = None,
         estimated_output_tokens: int = 1,
         healthy_models: Collection[str] | None = None,
+        latency_metrics: Mapping[str, float] | None = None,
     ) -> RoutingDecision:
         with self._lock:
             strikes = self._failure_counts.get(decision.session_key, 0) + 1
@@ -176,6 +183,7 @@ class RoutingCoordinator:
                 tier,
                 request=request,
                 healthy_models=healthy_models,
+                latency_metrics=latency_metrics,
             ),
         )
         return replace(
@@ -194,6 +202,7 @@ class RoutingCoordinator:
         *,
         healthy_models: Collection[str],
         failure: FailureKind = FailureKind.PROVIDER_ERROR,
+        latency_metrics: Mapping[str, float] | None = None,
     ) -> RoutingDecision:
         """Choose a replacement model without promoting the capability tier."""
 
@@ -205,6 +214,7 @@ class RoutingCoordinator:
                 tier,
                 request=request,
                 healthy_models=healthy_models,
+                latency_metrics=latency_metrics,
             ),
         )
         return replace(
@@ -236,6 +246,7 @@ class RoutingCoordinator:
         *,
         request: RoutingRequest,
         healthy_models: Collection[str] | None,
+        latency_metrics: Mapping[str, float] | None = None,
     ) -> str:
         input_tokens = (
             request.estimated_input_tokens
@@ -247,6 +258,8 @@ class RoutingCoordinator:
             input_tokens=input_tokens,
             output_tokens=request.estimated_output_tokens,
             healthy_models=healthy_models,
+            latency_metrics=latency_metrics,
+            latency_weight=self.latency_weight,
         ).model
 
     def _failure_count(self, key: str) -> int:

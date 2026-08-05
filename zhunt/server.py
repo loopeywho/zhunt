@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from zhunt.health import (
     litellm_model_available,
     validate_registry_models,
 )
+from zhunt.latency import LatencyTracker
 from zhunt.registry import ModelRegistry
 from zhunt.router import (
     FailureKind,
@@ -58,6 +60,7 @@ class _PendingRoute:
     decision: RoutingDecision
     request: RoutingRequest
     attempt_id: str | None
+    started_at: float
     retry_attempt: bool = False
 
 
@@ -74,9 +77,11 @@ class ZhuntProxyHook(CustomLogger):
         self,
         coordinator: RoutingCoordinator,
         health: ModelHealth | None = None,
+        latency_tracker: LatencyTracker | None = None,
     ) -> None:
         self.coordinator = coordinator
         self.health = health or ModelHealth(coordinator.registry.model_ids())
+        self.latency_tracker = latency_tracker or LatencyTracker()
         self._pending: dict[str, _PendingRoute] = {}
         self._retry_routes: dict[str, _RetryRoute] = {}
         self._lock = RLock()
@@ -103,6 +108,7 @@ class ZhuntProxyHook(CustomLogger):
                     self.coordinator,
                     headers=headers,
                     healthy_models=self.health.healthy_models(),
+                    latency_metrics=self.latency_tracker.snapshot(),
                 )
                 decision = routed.decision
                 request = routed.request
@@ -118,6 +124,7 @@ class ZhuntProxyHook(CustomLogger):
                 decision=decision,
                 request=request,
                 attempt_id=attempt_id,
+                started_at=time.perf_counter(),
                 retry_attempt=retry_attempt,
             )
 
@@ -146,6 +153,10 @@ class ZhuntProxyHook(CustomLogger):
             return
         failure = _response_failure(response, request_data=data)
         if failure is None:
+            self.latency_tracker.observe(
+                pending.decision.model,
+                (time.perf_counter() - pending.started_at) * 1000,
+            )
             self.health.record_success(pending.decision.model)
             self.coordinator.record_success(pending.decision)
         else:
@@ -169,8 +180,11 @@ class ZhuntProxyHook(CustomLogger):
         request_data: dict[str, Any],
     ) -> Any:
         failure: FailureKind | None = None
+        first_chunk_at: float | None = None
         try:
             async for chunk in response:
+                if first_chunk_at is None:
+                    first_chunk_at = time.perf_counter()
                 failure = failure or _response_failure(
                     chunk,
                     request_data=request_data,
@@ -189,6 +203,11 @@ class ZhuntProxyHook(CustomLogger):
             if pending is None:
                 return
             if failure is None:
+                observed_at = first_chunk_at or time.perf_counter()
+                self.latency_tracker.observe(
+                    pending.decision.model,
+                    (observed_at - pending.started_at) * 1000,
+                )
                 self.health.record_success(pending.decision.model)
                 self.coordinator.record_success(pending.decision)
             else:
@@ -222,6 +241,7 @@ class ZhuntProxyHook(CustomLogger):
                         exclude={pending.decision.model}
                     ),
                     failure=failure,
+                    latency_metrics=self.latency_tracker.snapshot(),
                 )
             except Exception:
                 sideways = None
@@ -239,6 +259,7 @@ class ZhuntProxyHook(CustomLogger):
             pending.decision,
             failure,
             healthy_models=self.health.healthy_models(),
+            latency_metrics=self.latency_tracker.snapshot(),
         )
         if pending.attempt_id is not None:
             with self._lock:
@@ -331,6 +352,7 @@ def create_proxy_app(
     validate_startup: bool = False,
     availability_checker: Callable[[str], bool] | None = None,
     health_failure_threshold: int = 2,
+    latency_weight: float = 0.5,
 ) -> Any:
     """Configure LiteLLM behind a small, authenticated inference surface."""
 
@@ -354,8 +376,12 @@ def create_proxy_app(
         failure_threshold=health_failure_threshold,
     )
     hook = ZhuntProxyHook(
-        RoutingCoordinator(registry=registry),
+        RoutingCoordinator(
+            registry=registry,
+            latency_weight=latency_weight,
+        ),
         health=health,
+        latency_tracker=LatencyTracker(),
     )
     litellm.callbacks = [hook]
     proxy_server.save_worker_config(

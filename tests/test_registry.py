@@ -56,6 +56,31 @@ class ModelRegistryTests(unittest.TestCase):
 
         self.assertEqual(selected.model, "provider/input-cheap")
 
+    def test_latency_weight_can_choose_faster_measured_model(self) -> None:
+        selected = self.registry.select_model(
+            Tier.CHAT,
+            input_tokens=10_000,
+            output_tokens=10,
+            latency_metrics={
+                "provider/input-cheap": 500.0,
+                "provider/preferred": 10.0,
+            },
+            latency_weight=1.0,
+        )
+
+        self.assertEqual(selected.model, "provider/preferred")
+
+    def test_missing_latency_measurements_preserve_cost_selection(self) -> None:
+        selected = self.registry.select_model(
+            Tier.CHAT,
+            input_tokens=10_000,
+            output_tokens=10,
+            latency_metrics={"provider/preferred": 10.0},
+            latency_weight=1.0,
+        )
+
+        self.assertEqual(selected.model, "provider/input-cheap")
+
     def test_empty_healthy_set_fails_closed(self) -> None:
         with self.assertRaisesRegex(RegistryError, "no healthy models"):
             self.registry.select_model(Tier.CHAT, healthy_models=set())

@@ -23,6 +23,7 @@ class Model:
     model: str
     input_cost: Decimal
     output_cost: Decimal
+    ttft_ms: Decimal | None = None
 
     def projected_cost(self, *, input_tokens: int, output_tokens: int) -> Decimal:
         if input_tokens < 0 or output_tokens < 0:
@@ -112,7 +113,11 @@ class ModelRegistry:
         input_tokens: int = 1,
         output_tokens: int = 1,
         healthy_models: Collection[str] | None = None,
+        latency_metrics: Mapping[str, float] | None = None,
+        latency_weight: float = 0.0,
     ) -> Model:
+        if not 0 <= latency_weight <= 1:
+            raise ValueError("latency_weight must be between 0 and 1")
         candidates = self._tiers.get(tier, ())
         if healthy_models is not None:
             candidates = tuple(
@@ -121,12 +126,52 @@ class ModelRegistry:
         if not candidates:
             raise RegistryError(f"no healthy models available for tier {tier.value!r}")
 
-        return min(
-            candidates,
-            key=lambda model: model.projected_cost(
+        costs = {
+            model.model: model.projected_cost(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-            ),
+            )
+            for model in candidates
+        }
+        latency_values: dict[str, float] = {}
+        for model in candidates:
+            measured = latency_metrics.get(model.model) if latency_metrics else None
+            configured = model.ttft_ms
+            if measured is None and configured is not None:
+                measured = float(configured)
+            if measured is None:
+                break
+            latency_values[model.model] = measured
+        else:
+            if latency_weight > 0:
+                min_cost, max_cost = min(costs.values()), max(costs.values())
+                min_latency = min(latency_values.values())
+                max_latency = max(latency_values.values())
+                cost_span = max_cost - min_cost
+                latency_span = max_latency - min_latency
+
+                def weighted_score(model: Model) -> tuple[float, Decimal]:
+                    cost_norm = (
+                        float((costs[model.model] - min_cost) / cost_span)
+                        if cost_span
+                        else 0.0
+                    )
+                    latency_norm = (
+                        (latency_values[model.model] - min_latency) / latency_span
+                        if latency_span
+                        else 0.0
+                    )
+                    score = (
+                        (1 - latency_weight) * cost_norm
+                        + latency_weight * latency_norm
+                    )
+                    return score, costs[model.model]
+
+                return min(candidates, key=weighted_score)
+
+        return min(
+            candidates,
+            key=lambda model: costs[model.model],
         )
 
 
@@ -150,4 +195,18 @@ def _parse_model(data: Any, tier: Tier) -> Model:
         raise RegistryError(f"model {model!r} has invalid pricing") from error
     if input_cost < 0 or output_cost < 0:
         raise RegistryError(f"model {model!r} has negative pricing")
-    return Model(model=model, input_cost=input_cost, output_cost=output_cost)
+    raw_ttft = data.get("ttft_ms")
+    ttft_ms: Decimal | None = None
+    if raw_ttft is not None:
+        try:
+            ttft_ms = Decimal(str(raw_ttft))
+        except InvalidOperation as error:
+            raise RegistryError(f"model {model!r} has invalid ttft_ms") from error
+        if ttft_ms < 0:
+            raise RegistryError(f"model {model!r} has negative ttft_ms")
+    return Model(
+        model=model,
+        input_cost=input_cost,
+        output_cost=output_cost,
+        ttft_ms=ttft_ms,
+    )

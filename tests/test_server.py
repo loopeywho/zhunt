@@ -722,6 +722,104 @@ tiers:
         self.assertEqual(provider_call.await_count, 1)
         self.assertEqual(provider_call.await_args.kwargs["model"], "provider/test-chat")
 
+    def test_successful_request_records_latency_observation(self) -> None:
+        registry_yaml = """\
+aliases: {}
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+"""
+        provider_response = litellm.ModelResponse(
+            id="latency-response",
+            model="provider/test-chat",
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "ok"},
+                }
+            ],
+        )
+        provider_call = AsyncMock(return_value=provider_response)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                )
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(),
+                        json={
+                            "model": "provider/native",
+                            "messages": [{"role": "user", "content": "Hi"}],
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("provider/test-chat", app.hook.latency_tracker.snapshot())
+        self.assertGreaterEqual(
+            app.hook.latency_tracker.snapshot()["provider/test-chat"],
+            0.0,
+        )
+
+    def test_measured_latency_can_choose_faster_model_within_tier(self) -> None:
+        registry_yaml = """\
+aliases:
+  zhunt-auto:
+    tier: auto
+tiers:
+  chat:
+    - model: provider/test-chat-cheap
+      in: 0.1
+      out: 0.2
+    - model: provider/test-chat-fast
+      in: 0.2
+      out: 0.4
+"""
+        provider_response = litellm.ModelResponse(
+            id="fast-response",
+            model="provider/test-chat-fast",
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "fast"},
+                }
+            ],
+        )
+        provider_call = AsyncMock(return_value=provider_response)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                    latency_weight=1.0,
+                )
+                app.hook.latency_tracker.observe("provider/test-chat-cheap", 500.0)
+                app.hook.latency_tracker.observe("provider/test-chat-fast", 10.0)
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(),
+                        json={
+                            "model": "zhunt-auto",
+                            "messages": [{"role": "user", "content": "Hi"}],
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(provider_call.await_args.kwargs["model"], "provider/test-chat-fast")
+
     def test_claude_style_model_id_is_classified_and_rewritten(self) -> None:
         registry_yaml = """\
 aliases: {}

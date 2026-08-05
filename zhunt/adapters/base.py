@@ -51,9 +51,14 @@ class WireAdapter(ABC):
         *,
         headers: Mapping[str, str] | None = None,
         healthy_models: Collection[str] | None = None,
+        latency_metrics: Mapping[str, float] | None = None,
     ) -> RoutedPayload:
         request = self.normalize(payload, headers=headers)
-        decision = coordinator.route(request, healthy_models=healthy_models)
+        decision = coordinator.route(
+            request,
+            healthy_models=healthy_models,
+            latency_metrics=latency_metrics,
+        )
         return RoutedPayload(
             request=request,
             decision=decision,
