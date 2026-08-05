@@ -47,6 +47,21 @@ spend, and `zhunt sync` to refresh matching registry prices from OpenRouter's
 models API. No prompt or response content is written to telemetry, and Zhunt
 does not phone home.
 
+## Local setup UI
+
+For browser-based setup, run:
+
+```console
+zhunt setup
+```
+
+This opens a loopback-only setup page where you choose OpenRouter or Nous Portal,
+enter an API key, validate access to the provider's model list, and select app
+recipes to configure. The key is written with restrictive permissions to
+`~/.zhunt/env`; the setup page uses a one-time local token and is not exposed by
+the inference daemon. Nous Portal uses its OpenAI-compatible endpoint and
+`PORTAL_API_KEY`; live provider responses still require a real account key.
+
 ## App wiring
 
 The installer backs up an existing configuration before merging a packaged YAML

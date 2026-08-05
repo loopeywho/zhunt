@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+import secrets
+import webbrowser
 
 import typer
 
 from zhunt.installer import InstallationResult, Installer, InstallerError
+from zhunt.onboarding import create_onboarding_app
 from zhunt.pricing import PricingSyncError, sync_registry
 from zhunt.telemetry import summarize_telemetry
 
@@ -52,6 +55,40 @@ def serve(
         port=port,
         registry_path=registry,
         allow_non_loopback=allow_non_loopback,
+    )
+
+
+@app.command()
+def setup(
+    host: str = typer.Option(
+        "127.0.0.1",
+        help="Address for the local setup page. Non-loopback hosts are refused.",
+    ),
+    port: int = typer.Option(8400, min=1, max=65_535),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Print the setup URL without opening a browser.",
+    ),
+) -> None:
+    """Open the local provider and app setup page."""
+
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise typer.BadParameter(
+            "setup is local-only; use 127.0.0.1, localhost, or ::1",
+            param_hint="host",
+        )
+    token = secrets.token_urlsafe(24)
+    url = f"http://{host}:{port}/?token={token}"
+    typer.echo(f"Open Zhunt setup: {url}")
+    if not no_browser:
+        webbrowser.open(url)
+    import uvicorn
+
+    uvicorn.run(
+        create_onboarding_app(setup_token=token),
+        host=host,
+        port=port,
     )
 
 

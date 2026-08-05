@@ -27,6 +27,15 @@ class ServeCommandTests(unittest.TestCase):
             allow_non_loopback=False,
         )
 
+    def test_setup_refuses_non_loopback_host(self) -> None:
+        result = self.runner.invoke(
+            app,
+            ["setup", "--host", "0.0.0.0", "--no-browser"],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("setup is local-only", result.output)
+
     def test_install_and_uninstall_codex_through_cli(self) -> None:
         with TemporaryDirectory() as directory:
             home = Path(directory)

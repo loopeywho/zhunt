@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 import time
 from collections import deque
@@ -29,6 +30,7 @@ from zhunt.health import (
     validate_registry_models,
 )
 from zhunt.latency import LatencyTracker
+from zhunt.providers import ProviderSpec, configured_provider
 from zhunt.registry import ModelRegistry
 from zhunt.router import (
     FailureKind,
@@ -81,11 +83,13 @@ class ZhuntProxyHook(CustomLogger):
         health: ModelHealth | None = None,
         latency_tracker: LatencyTracker | None = None,
         telemetry: TelemetryLogger | None = None,
+        provider: ProviderSpec | None = None,
     ) -> None:
         self.coordinator = coordinator
         self.health = health or ModelHealth(coordinator.registry.model_ids())
         self.latency_tracker = latency_tracker or LatencyTracker()
         self.telemetry = telemetry
+        self.provider = provider
         self._pending: dict[str, _PendingRoute] = {}
         self._retry_routes: dict[str, _RetryRoute] = {}
         self._lock = RLock()
@@ -121,7 +125,26 @@ class ZhuntProxyHook(CustomLogger):
         else:
             decision = retry_decision.decision
             request = retry_decision.request
-        data["model"] = decision.model
+        upstream_model = decision.model
+        if self.provider is not None:
+            upstream_model = self.provider.model_for_tier(
+                decision.tier,
+                decision.model,
+            )
+            if self.provider.id == "nous-portal":
+                api_key = os.environ.get(self.provider.key_env)
+                if not api_key:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"{self.provider.key_env} is not configured",
+                    )
+                data["api_base"] = self.provider.base_url
+                data["api_key"] = api_key
+                data["model"] = f"openai/{upstream_model}"
+            else:
+                data["model"] = upstream_model
+        else:
+            data["model"] = upstream_model
         call_id = _call_id(data)
         with self._lock:
             self._pending[call_id] = _PendingRoute(
@@ -142,6 +165,7 @@ class ZhuntProxyHook(CustomLogger):
             "session_key": decision.session_key,
             "tier": decision.tier.value,
             "model": decision.model,
+            "upstream_model": upstream_model,
             "reused_session_route": decision.reused_session_route,
             "escalation_count": decision.escalation_count,
         }
@@ -411,6 +435,7 @@ def create_proxy_app(
 
     master_key = ensure_master_key(env_path)
     proxy_server.master_key = master_key
+    provider = configured_provider()
     registry = (
         ModelRegistry.from_path(registry_path)
         if registry_path is not None
@@ -437,6 +462,7 @@ def create_proxy_app(
             if telemetry_path is not None
             else None
         ),
+        provider=provider,
     )
     litellm.callbacks = [hook]
     proxy_server.save_worker_config(
