@@ -8,6 +8,8 @@ from pathlib import Path
 import typer
 
 from zhunt.installer import InstallationResult, Installer, InstallerError
+from zhunt.pricing import PricingSyncError, sync_registry
+from zhunt.telemetry import summarize_telemetry
 
 
 app = typer.Typer(no_args_is_help=True)
@@ -94,6 +96,55 @@ def uninstall_app(
             typer.echo(f"- {instruction}")
         return
     typer.echo(f"Restored {result.app}: {result.target}")
+
+
+@app.command()
+def status(
+    telemetry: Path = typer.Option(
+        Path.home() / ".zhunt" / "telemetry.jsonl",
+        exists=False,
+        dir_okay=False,
+        help="Local request telemetry JSONL path.",
+    ),
+) -> None:
+    """Show today's local spend and counterfactual top-model spend."""
+
+    summary = summarize_telemetry(telemetry)
+    typer.echo(f"Date: {summary['day']}")
+    typer.echo(f"Requests: {summary['requests']}")
+    typer.echo(f"Actual spend: ${summary.get('actual_spend', 0.0):.6f}")
+    typer.echo(
+        "Counterfactual top-model spend: "
+        f"${summary.get('counterfactual_spend', 0.0):.6f}"
+    )
+    typer.echo(f"Savings: ${summary.get('savings', 0.0):.6f}")
+    for app_name, app_summary in sorted(summary["by_app"].items()):
+        typer.echo(
+            f"{app_name}: {app_summary['requests']} requests, "
+            f"${app_summary['actual_spend']:.6f} actual"
+        )
+
+
+@app.command()
+def sync(
+    registry: Path = typer.Option(
+        Path("models.yaml"),
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Registry file to refresh from OpenRouter.",
+    ),
+) -> None:
+    """Refresh matching model prices from OpenRouter's models API."""
+
+    try:
+        result = sync_registry(registry)
+    except PricingSyncError as error:
+        raise typer.BadParameter(str(error), param_hint="registry") from error
+    typer.echo(f"Updated: {len(result.updated)} models")
+    typer.echo(f"Unavailable: {len(result.unavailable)} models")
+    if result.cheaper_tiers:
+        typer.echo("Cheaper tier candidates: " + ", ".join(result.cheaper_tiers))
 
 
 def run_proxy(

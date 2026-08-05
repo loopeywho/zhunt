@@ -106,6 +106,40 @@ class ModelRegistry:
             for model in models
         )
 
+    def projected_cost(
+        self,
+        model_id: str,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> Decimal:
+        for models in self._tiers.values():
+            for model in models:
+                if model.model == model_id:
+                    return model.projected_cost(
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
+        raise RegistryError(f"unknown model id: {model_id}")
+
+    def top_model_cost(
+        self,
+        tier: Tier,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> Decimal:
+        models = self._tiers.get(tier, ())
+        if not models:
+            raise RegistryError(f"no models available for tier {tier.value!r}")
+        return max(
+            model.projected_cost(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+            for model in models
+        )
+
     def select_model(
         self,
         tier: Tier,

@@ -105,6 +105,7 @@ class DaemonSecurityTests(unittest.TestCase):
         create_app.assert_called_once_with(
             registry_path=None,
             validate_startup=True,
+            telemetry_path=Path.home() / ".zhunt" / "telemetry.jsonl",
         )
 
 

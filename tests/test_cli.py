@@ -1,4 +1,6 @@
 import unittest
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -119,6 +121,56 @@ class ServeCommandTests(unittest.TestCase):
 
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("cannot register Zhunt", result.output)
+
+    def test_status_shows_local_spend_summary(self) -> None:
+        with TemporaryDirectory() as directory:
+            telemetry = Path(directory) / "telemetry.jsonl"
+            telemetry.write_text(
+                json.dumps(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "event": "request",
+                        "app": "hermes",
+                        "actual_cost": 0.25,
+                        "counterfactual_top_model_cost": 1.0,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = self.runner.invoke(
+                app,
+                ["status", "--telemetry", str(telemetry)],
+            )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Requests: 1", result.output)
+        self.assertIn("Actual spend: $0.250000", result.output)
+        self.assertIn("Savings: $0.750000", result.output)
+
+    def test_sync_reports_pricing_changes(self) -> None:
+        sync_result = type(
+            "SyncResult",
+            (),
+            {
+                "updated": ("provider/chat",),
+                "unavailable": ("provider/missing",),
+                "cheaper_tiers": ("chat",),
+            },
+        )()
+        with TemporaryDirectory() as directory:
+            registry = Path(directory) / "models.yaml"
+            registry.write_text("tiers: {}\n", encoding="utf-8")
+            with patch("zhunt.cli.sync_registry", return_value=sync_result):
+                result = self.runner.invoke(
+                    app,
+                    ["sync", "--registry", str(registry)],
+                )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("Updated: 1 models", result.output)
+        self.assertIn("Unavailable: 1 models", result.output)
+        self.assertIn("Cheaper tier candidates: chat", result.output)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import unittest
+import json
 from typing import Any
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -819,6 +820,56 @@ tiers:
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(provider_call.await_args.kwargs["model"], "provider/test-chat-fast")
+
+    def test_successful_request_writes_local_telemetry(self) -> None:
+        registry_yaml = """\
+aliases: {}
+tiers:
+  chat:
+    - model: provider/test-chat
+      in: 0.1
+      out: 0.2
+"""
+        provider_response = litellm.ModelResponse(
+            id="telemetry-response",
+            model="provider/test-chat",
+            choices=[
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "ok"},
+                }
+            ],
+            usage={"prompt_tokens": 2, "completion_tokens": 3},
+        )
+        provider_call = AsyncMock(return_value=provider_response)
+
+        with TemporaryDirectory() as directory:
+            registry_path = Path(directory) / "models.yaml"
+            telemetry_path = Path(directory) / "telemetry.jsonl"
+            registry_path.write_text(registry_yaml, encoding="utf-8")
+            with patch("litellm.acompletion", provider_call):
+                app = create_proxy_app(
+                    registry_path=registry_path,
+                    env_path=Path(directory) / "zhunt.env",
+                    telemetry_path=telemetry_path,
+                )
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/v1/chat/completions",
+                        headers=auth_headers(),
+                        json={
+                            "model": "provider/native",
+                            "messages": [{"role": "user", "content": "Hi"}],
+                        },
+                    )
+            event = json.loads(telemetry_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(event["app"], "openai-chat-completions")
+        self.assertEqual(event["input_tokens"], 2)
+        self.assertEqual(event["output_tokens"], 3)
+        self.assertTrue(event["success"])
 
     def test_claude_style_model_id_is_classified_and_rewritten(self) -> None:
         registry_yaml = """\

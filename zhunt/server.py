@@ -36,6 +36,7 @@ from zhunt.router import (
     RoutingDecision,
     RoutingRequest,
 )
+from zhunt.telemetry import TelemetryLogger
 
 
 _ADAPTERS: dict[str, WireAdapter] = {
@@ -61,6 +62,7 @@ class _PendingRoute:
     request: RoutingRequest
     attempt_id: str | None
     started_at: float
+    app: str
     retry_attempt: bool = False
 
 
@@ -78,10 +80,12 @@ class ZhuntProxyHook(CustomLogger):
         coordinator: RoutingCoordinator,
         health: ModelHealth | None = None,
         latency_tracker: LatencyTracker | None = None,
+        telemetry: TelemetryLogger | None = None,
     ) -> None:
         self.coordinator = coordinator
         self.health = health or ModelHealth(coordinator.registry.model_ids())
         self.latency_tracker = latency_tracker or LatencyTracker()
+        self.telemetry = telemetry
         self._pending: dict[str, _PendingRoute] = {}
         self._retry_routes: dict[str, _RetryRoute] = {}
         self._lock = RLock()
@@ -125,6 +129,7 @@ class ZhuntProxyHook(CustomLogger):
                 request=request,
                 attempt_id=attempt_id,
                 started_at=time.perf_counter(),
+                app=_telemetry_app(call_type),
                 retry_attempt=retry_attempt,
             )
 
@@ -152,6 +157,12 @@ class ZhuntProxyHook(CustomLogger):
         if pending is None:
             return
         failure = _response_failure(response, request_data=data)
+        self._record_telemetry(
+            pending,
+            response=response,
+            success=failure is None,
+            failure=failure,
+        )
         if failure is None:
             self.latency_tracker.observe(
                 pending.decision.model,
@@ -171,6 +182,12 @@ class ZhuntProxyHook(CustomLogger):
     ) -> None:
         pending = self._pop_pending(request_data)
         if pending is not None:
+            self._record_telemetry(
+                pending,
+                response=None,
+                success=False,
+                failure=FailureKind.PROVIDER_ERROR,
+            )
             self._escalate(pending, FailureKind.PROVIDER_ERROR)
 
     async def async_post_call_streaming_iterator_hook(
@@ -181,8 +198,10 @@ class ZhuntProxyHook(CustomLogger):
     ) -> Any:
         failure: FailureKind | None = None
         first_chunk_at: float | None = None
+        last_chunk: Any = None
         try:
             async for chunk in response:
+                last_chunk = chunk
                 if first_chunk_at is None:
                     first_chunk_at = time.perf_counter()
                 failure = failure or _response_failure(
@@ -202,6 +221,12 @@ class ZhuntProxyHook(CustomLogger):
             pending = self._pop_pending(request_data)
             if pending is None:
                 return
+            self._record_telemetry(
+                pending,
+                response=last_chunk,
+                success=failure is None,
+                failure=failure,
+            )
             if failure is None:
                 observed_at = first_chunk_at or time.perf_counter()
                 self.latency_tracker.observe(
@@ -287,6 +312,30 @@ class ZhuntProxyHook(CustomLogger):
         with self._lock:
             return self._pending.pop(call_id, None)
 
+    def _record_telemetry(
+        self,
+        pending: _PendingRoute,
+        *,
+        response: Any,
+        success: bool,
+        failure: FailureKind | None,
+    ) -> None:
+        if self.telemetry is None:
+            return
+        input_tokens, output_tokens = _usage_tokens(response)
+        if input_tokens is None:
+            input_tokens = pending.request.estimated_input_tokens or 1
+        if output_tokens is None:
+            output_tokens = pending.request.estimated_output_tokens
+        self.telemetry.record_request(
+            app=pending.app,
+            decision=pending.decision,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            success=success,
+            failure=failure.value if failure is not None else None,
+        )
+
 
 class RetryMiddleware:
     """Replay one failed LLM request after the hook promotes its route."""
@@ -353,6 +402,7 @@ def create_proxy_app(
     availability_checker: Callable[[str], bool] | None = None,
     health_failure_threshold: int = 2,
     latency_weight: float = 0.5,
+    telemetry_path: Path | None = None,
 ) -> Any:
     """Configure LiteLLM behind a small, authenticated inference surface."""
 
@@ -382,6 +432,11 @@ def create_proxy_app(
         ),
         health=health,
         latency_tracker=LatencyTracker(),
+        telemetry=(
+            TelemetryLogger(telemetry_path, registry)
+            if telemetry_path is not None
+            else None
+        ),
     )
     litellm.callbacks = [hook]
     proxy_server.save_worker_config(
@@ -409,6 +464,7 @@ def run_proxy(
         create_proxy_app(
             registry_path=registry_path,
             validate_startup=True,
+            telemetry_path=Path.home() / ".zhunt" / "telemetry.jsonl",
         ),
         host=host,
         port=port,
@@ -607,6 +663,30 @@ def _response_mapping(response: Any) -> Mapping[str, Any]:
         if isinstance(dumped, Mapping):
             return dumped
     return {}
+
+
+def _usage_tokens(response: Any) -> tuple[int | None, int | None]:
+    payload = _response_mapping(response)
+    usage = payload.get("usage")
+    if not isinstance(usage, Mapping):
+        return None, None
+    input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
+    output_tokens = usage.get(
+        "completion_tokens",
+        usage.get("output_tokens"),
+    )
+    return (
+        input_tokens if isinstance(input_tokens, int) else None,
+        output_tokens if isinstance(output_tokens, int) else None,
+    )
+
+
+def _telemetry_app(call_type: str) -> str:
+    if call_type in {"anthropic_messages", "aanthropic_messages"}:
+        return "anthropic-messages"
+    if call_type in {"responses", "aresponses"}:
+        return "openai-responses"
+    return "openai-chat-completions"
 
 
 def _contains_refusal(value: Any) -> bool:
