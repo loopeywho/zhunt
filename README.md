@@ -3,11 +3,11 @@
 Zhunt (pronounced “shunt” with a z) routes each LLM request to the cheapest
 capable model without requiring the calling app to change protocols.
 
-The project is in early development. The shared routing core currently includes
-request classification, a YAML-backed model registry, session-level model
-stickiness, and failure escalation. Thin inbound adapters normalize Anthropic
-Messages, OpenAI Responses, and OpenAI Chat Completions requests into that shared
-contract.
+The shared routing core includes request classification, a YAML-backed model
+registry, session-level model stickiness, health-aware failover, measured
+latency-aware selection, and failure escalation. Thin inbound adapters normalize
+Anthropic Messages, OpenAI Responses, and OpenAI Chat Completions requests into
+that shared contract.
 
 ## Billing warning
 
@@ -40,6 +40,12 @@ escalate a session, while an uncapped provider truncation can promote one tier
 for that turn and never double-promotes its replay. Escalated routes decay after
 clean turns. Real-provider streaming and tool-call fidelity validation remains
 pending until provider keys are available.
+
+The daemon keeps request telemetry locally in `~/.zhunt/telemetry.jsonl`. Use
+`zhunt status` to view today's actual spend versus the counterfactual top-model
+spend, and `zhunt sync` to refresh matching registry prices from OpenRouter's
+models API. No prompt or response content is written to telemetry, and Zhunt
+does not phone home.
 
 ## App wiring
 
