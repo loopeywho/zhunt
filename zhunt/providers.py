@@ -9,9 +9,6 @@ from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from zhunt.brain import Tier
-
-
 class ProviderError(RuntimeError):
     """Raised when a provider cannot be configured or validated."""
 
@@ -24,17 +21,10 @@ class ProviderSpec:
     key_env: str
     models_path: str = "/models"
     docs_url: str = ""
-    tier_models: Mapping[Tier, str] | None = None
 
     @property
     def models_url(self) -> str:
         return f"{self.base_url.rstrip('/')}{self.models_path}"
-
-    def model_for_tier(self, tier: Tier, default: str) -> str:
-        if self.tier_models is None:
-            return default
-        return self.tier_models.get(tier, default)
-
 
 PROVIDERS: dict[str, ProviderSpec] = {
     "openrouter": ProviderSpec(
@@ -50,12 +40,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         base_url="https://api.portal.ai/v1",
         key_env="PORTAL_API_KEY",
         docs_url="https://platform.portal.ai/docs.html",
-        tier_models={
-            Tier.CHAT: "portal/m2-25",
-            Tier.CODING: "portal/m2-25",
-            Tier.LONG_CONTEXT: "portal/m3-500k-fast",
-            Tier.REASONING: "portal/m3-55-xh-1m",
-        },
     ),
 }
 

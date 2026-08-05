@@ -1,7 +1,5 @@
 import unittest
 from urllib.request import Request
-
-from zhunt.brain import Tier
 from zhunt.providers import ProviderError, get_provider, validate_provider_key
 
 
@@ -10,7 +8,6 @@ class ProviderTests(unittest.TestCase):
         provider = get_provider("nous-portal")
         self.assertEqual(provider.base_url, "https://api.portal.ai/v1")
         self.assertEqual(provider.key_env, "PORTAL_API_KEY")
-        self.assertEqual(provider.model_for_tier(Tier.CHAT, "fallback"), "portal/m2-25")
 
     def test_validation_uses_bearer_key_and_counts_models(self) -> None:
         seen: list[Request] = []

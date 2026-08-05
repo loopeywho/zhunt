@@ -100,6 +100,18 @@ class ModelRegistryTests(unittest.TestCase):
         for tier in Tier:
             self.assertIsNotNone(registry.select_model(tier))
 
+    def test_nous_portal_profile_uses_real_upstream_prices(self) -> None:
+        registry = ModelRegistry.default(provider_id="nous-portal")
+
+        self.assertEqual(
+            registry.select_model(Tier.CHAT).model,
+            "openai/portal/m2-25",
+        )
+        self.assertEqual(
+            registry.select_model(Tier.CODING).model,
+            "openai/portal/m2-25-fast",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

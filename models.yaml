@@ -5,6 +5,35 @@ aliases:
   zhunt-long-context: {tier: long-context}
   zhunt-reasoning: {tier: reasoning}
 
+providers:
+  nous-portal:
+    aliases:
+      zhunt-auto: {tier: auto}
+      zhunt-chat: {tier: chat}
+      zhunt-coding: {tier: coding}
+      zhunt-long-context: {tier: long-context}
+      zhunt-reasoning: {tier: reasoning}
+    tiers:
+      chat:
+        - model: openai/portal/m2-25
+          in: 0.12
+          out: 0.59
+        - model: openai/portal/m2-25-fast
+          in: 0.70
+          out: 3.50
+      coding:
+        - model: openai/portal/m2-25-fast
+          in: 0.70
+          out: 3.50
+      long-context:
+        - model: openai/portal/m2-25-fast
+          in: 0.70
+          out: 3.50
+      reasoning:
+        - model: openai/portal/m2-25-fast
+          in: 0.70
+          out: 3.50
+
 tiers:
   chat:
     - model: openrouter/deepseek/deepseek-chat

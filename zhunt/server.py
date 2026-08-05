@@ -125,12 +125,7 @@ class ZhuntProxyHook(CustomLogger):
         else:
             decision = retry_decision.decision
             request = retry_decision.request
-        upstream_model = decision.model
         if self.provider is not None:
-            upstream_model = self.provider.model_for_tier(
-                decision.tier,
-                decision.model,
-            )
             if self.provider.id == "nous-portal":
                 api_key = os.environ.get(self.provider.key_env)
                 if not api_key:
@@ -140,11 +135,11 @@ class ZhuntProxyHook(CustomLogger):
                     )
                 data["api_base"] = self.provider.base_url
                 data["api_key"] = api_key
-                data["model"] = f"openai/{upstream_model}"
+                data["model"] = decision.model
             else:
-                data["model"] = upstream_model
+                data["model"] = decision.model
         else:
-            data["model"] = upstream_model
+            data["model"] = decision.model
         call_id = _call_id(data)
         with self._lock:
             self._pending[call_id] = _PendingRoute(
@@ -165,7 +160,7 @@ class ZhuntProxyHook(CustomLogger):
             "session_key": decision.session_key,
             "tier": decision.tier.value,
             "model": decision.model,
-            "upstream_model": upstream_model,
+            "upstream_model": decision.model,
             "reused_session_route": decision.reused_session_route,
             "escalation_count": decision.escalation_count,
         }
@@ -439,7 +434,9 @@ def create_proxy_app(
     registry = (
         ModelRegistry.from_path(registry_path)
         if registry_path is not None
-        else ModelRegistry.default()
+        else ModelRegistry.default(
+            provider_id=provider.id if provider is not None else None,
+        )
     )
     if validate_startup:
         validate_registry_models(

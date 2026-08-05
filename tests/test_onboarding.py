@@ -10,6 +10,15 @@ from zhunt.onboarding import create_onboarding_app
 
 
 class OnboardingTests(unittest.TestCase):
+    def test_setup_page_carries_claude_billing_warning(self) -> None:
+        with TemporaryDirectory() as directory:
+            app = create_onboarding_app(home=Path(directory), setup_token="setup-token")
+            with TestClient(app) as client:
+                response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("will not use Claude Max", response.text)
+
     def test_provider_catalog_is_available_without_secret(self) -> None:
         with TemporaryDirectory() as directory:
             app = create_onboarding_app(

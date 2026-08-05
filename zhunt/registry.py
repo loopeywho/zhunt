@@ -45,22 +45,48 @@ class ModelRegistry:
         self._tiers = dict(tiers)
 
     @classmethod
-    def from_path(cls, path: str | Path) -> ModelRegistry:
+    def from_path(
+        cls,
+        path: str | Path,
+        *,
+        provider_id: str | None = None,
+    ) -> ModelRegistry:
         with Path(path).open(encoding="utf-8") as registry_file:
-            return cls.from_data(yaml.safe_load(registry_file))
+            return cls.from_data(yaml.safe_load(registry_file), provider_id=provider_id)
 
     @classmethod
-    def default(cls) -> ModelRegistry:
+    def default(cls, *, provider_id: str | None = None) -> ModelRegistry:
         packaged = resources.files("zhunt").joinpath("models.yaml")
         if packaged.is_file():
             with packaged.open(encoding="utf-8") as registry_file:
-                return cls.from_data(yaml.safe_load(registry_file))
-        return cls.from_path(Path(__file__).parent.parent / "models.yaml")
+                return cls.from_data(
+                    yaml.safe_load(registry_file),
+                    provider_id=provider_id,
+                )
+        return cls.from_path(
+            Path(__file__).parent.parent / "models.yaml",
+            provider_id=provider_id,
+        )
 
     @classmethod
-    def from_data(cls, data: Any) -> ModelRegistry:
+    def from_data(
+        cls,
+        data: Any,
+        *,
+        provider_id: str | None = None,
+    ) -> ModelRegistry:
         if not isinstance(data, Mapping):
             raise RegistryError("registry root must be a mapping")
+
+        if provider_id is not None:
+            profiles = data.get("providers")
+            if isinstance(profiles, Mapping) and provider_id in profiles:
+                profile = profiles[provider_id]
+                if not isinstance(profile, Mapping):
+                    raise RegistryError(
+                        f"provider profile {provider_id!r} must be a mapping"
+                    )
+                data = profile
 
         raw_aliases = data.get("aliases")
         raw_tiers = data.get("tiers")
