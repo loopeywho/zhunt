@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Zhunt routes coding-agent requests to the cheapest capable model while showing the cost and trade-offs." />
+    <title>Zhunt — Give every token a job</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="#top" aria-label="Zhunt home">
+          <span class="brand-mark" aria-hidden="true">z</span>
+          <span>Zhunt</span>
+        </a>
+        <nav class="nav" aria-label="Primary navigation">
+          <a href="#how-it-works">How it works</a>
+          <a href="#evidence">Evidence</a>
+          <a href="#pricing">Pricing</a>
+          <a class="nav-cta" href="#start">Start free</a>
+        </nav>
+      </header>
+
+      <main id="top">
+        <section class="hero section-grid">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="pulse"></span> Local-first routing for coding agents</p>
+            <h1>Give every token a <em>job.</em></h1>
+            <p class="hero-lede">
+              Zhunt sends routine work to a capable lower-cost model, keeps harder work moving up the ladder, and shows you what actually happened.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="#start">Run your first cost check <span>↗</span></a>
+              <a class="button button-quiet" href="#how-it-works">See how it works <span>↓</span></a>
+            </div>
+            <p class="hero-note">Bring your own OpenRouter or Nous Portal key. Zhunt does not hide provider billing.</p>
+          </div>
+          <div class="hero-visual" aria-label="Illustration of a request being routed through model tiers">
+            <div class="visual-glow"></div>
+            <div class="route-card route-card-top">
+              <div><span class="route-dot dot-lime"></span><span>simple request</span></div>
+              <strong>chat</strong>
+              <small>$</small>
+            </div>
+            <div class="route-line line-one"></div>
+            <div class="route-card route-card-middle">
+              <div><span class="route-dot dot-blue"></span><span>coding turn</span></div>
+              <strong>coding</strong>
+              <small>$$</small>
+            </div>
+            <div class="route-line line-two"></div>
+            <div class="route-card route-card-bottom">
+              <div><span class="route-dot dot-orange"></span><span>hard problem</span></div>
+              <strong>reasoning</strong>
+              <small>$$$</small>
+            </div>
+            <div class="visual-caption">one conversation · the right tier per turn</div>
+          </div>
+        </section>
+
+        <section class="proof-strip" aria-label="Zhunt product highlights">
+          <div><strong>Local by default</strong><span>Your daemon stays on your machine.</span></div>
+          <div><strong>Works with your tools</strong><span>Hermes · Claude Code · Codex · Cursor · VS Code</span></div>
+          <div><strong>Evidence, not promises</strong><span>Cost, model, tier, and escalation are visible.</span></div>
+        </section>
+
+        <section class="content-section" id="how-it-works">
+          <div class="section-heading">
+            <p class="eyebrow">The simple version</p>
+            <h2>Your app stays the same.<br /><span>Zhunt does the sorting.</span></h2>
+          </div>
+          <div class="steps-grid">
+            <article class="step-card"><span class="step-number">01</span><h3>Connect once</h3><p>Choose OpenRouter or Nous Portal, enter your key in the local setup page, and verify it before a request leaves your machine.</p></article>
+            <article class="step-card"><span class="step-number">02</span><h3>Keep your workflow</h3><p>Install a recipe for Hermes, Claude Code, Codex, Cursor, or VS Code. Your app keeps speaking its native protocol.</p></article>
+            <article class="step-card"><span class="step-number">03</span><h3>See the trade-off</h3><p>Review the selected model, projected cost, escalations, and session behavior. No black-box “trust us” score.</p></article>
+          </div>
+        </section>
+
+        <section class="evidence-section" id="evidence">
+          <div class="evidence-copy">
+            <p class="eyebrow">A better first conversation</p>
+            <h2>Show people the bill they can understand.</h2>
+            <p>Start with a small, private benchmark. Compare the model your app normally uses with the route Zhunt would choose. Keep quality and latency separate from cost so a cheap number never pretends to be a good answer.</p>
+            <a class="text-link" href="#start">Build a local report <span>↗</span></a>
+          </div>
+          <div class="report-card">
+            <div class="report-header"><span>offline benchmark · example</span><span class="report-status">no provider calls</span></div>
+            <div class="report-main"><strong>43.5%</strong><span>projected difference</span></div>
+            <div class="report-bars">
+              <div class="bar-row"><span>top-model baseline</span><div class="bar"><i class="bar-baseline"></i></div><b>$0.112</b></div>
+              <div class="bar-row"><span>Zhunt route</span><div class="bar"><i class="bar-zhunt"></i></div><b>$0.064</b></div>
+            </div>
+            <div class="report-foot"><span>5 representative turns</span><span>quality: not measured</span></div>
+          </div>
+        </section>
+
+        <section class="audience-section">
+          <div class="section-heading compact"><p class="eyebrow">For where you are now</p><h2>Start simple. Go deeper when you need to.</h2></div>
+          <div class="audience-grid">
+            <article><span class="audience-icon icon-spark">✦</span><h3>New to API keys</h3><p>One guided setup page. Plain language. A hard billing warning before you connect.</p></article>
+            <article><span class="audience-icon icon-bracket">{ }</span><h3>Building every day</h3><p>Keep your agent, tools, and prompts. Add a routing layer without rebuilding your workflow.</p></article>
+            <article><span class="audience-icon icon-pulse">↗</span><h3>Running a team</h3><p>Make model policy visible, compare spend, and give every developer a safer default.</p></article>
+          </div>
+        </section>
+
+        <section class="start-section" id="start">
+          <div class="start-card">
+            <div><p class="eyebrow">The pilot</p><h2>Try the local app before you pay for a dashboard.</h2><p>Free local routing. Bring your own provider key. A capped pilot will come before hosted team features.</p></div>
+            <div class="start-actions"><a class="button button-primary" href="#how-it-works">See the setup flow <span>↗</span></a><p>Installer downloads and pilot access are being connected for launch.</p></div>
+          </div>
+        </section>
+
+        <section class="pricing-section" id="pricing">
+          <div class="section-heading compact"><p class="eyebrow">Pricing direction</p><h2>Keep the local core free.<br /><span>Charge for the work around it.</span></h2></div>
+          <div class="pricing-grid">
+            <article class="price-card"><p class="price-label">Local</p><h3>Free</h3><p class="price-copy">One machine. Basic routing. Local cost report.</p><span class="price-rule"></span><p class="price-foot">You pay your provider directly.</p></article>
+            <article class="price-card featured"><p class="price-label">Pilot target</p><h3>Pro <small>from £5/mo</small></h3><p class="price-copy">History, policy controls, multiple apps, and richer reports.</p><span class="price-rule"></span><p class="price-foot">Provider usage remains separate and visible.</p></article>
+            <article class="price-card"><p class="price-label">Teams</p><h3>Shared</h3><p class="price-copy">Shared policies, admin controls, and team reporting.</p><span class="price-rule"></span><p class="price-foot">Available after the pilot.</p></article>
+          </div>
+        </section>
+
+        <section class="final-cta">
+          <p class="eyebrow">Zhunt by Kindred Wildcat</p>
+          <h2>Spend less on the easy turns.<br />Keep the hard ones honest.</h2>
+          <a class="button button-primary" href="#start">Follow the pilot <span>↗</span></a>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div><a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">z</span><span>Zhunt</span></a><p>Local-first routing for coding agents.</p></div>
+        <div class="footer-links"><a href="#how-it-works">How it works</a><a href="#evidence">Evidence</a><a href="#pricing">Pricing</a><a href="#start">Pilot</a></div>
+        <div class="footer-meta"><span>© 2026 Kindred Wildcat</span><span>Provider billing applies</span></div>
+      </footer>
+    </div>
+  </body>
+</html>
