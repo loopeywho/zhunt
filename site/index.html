@@ -16,9 +16,11 @@
         </a>
         <nav class="nav" aria-label="Primary navigation">
           <a href="#how-it-works">How it works</a>
+          <a href="#security">Security</a>
+          <a href="#downloads">Downloads</a>
           <a href="#evidence">Evidence</a>
           <a href="#pricing">Pricing</a>
-          <a class="nav-cta" href="#start">Start free</a>
+          <a class="nav-cta" href="#trial">Start 7-day trial</a>
         </nav>
       </header>
 
@@ -28,13 +30,13 @@
             <p class="eyebrow"><span class="pulse"></span> Local-first routing for coding agents</p>
             <h1>Give every token a <em>job.</em></h1>
             <p class="hero-lede">
-              Zhunt sends routine work to a capable lower-cost model, keeps harder work moving up the ladder, and shows you what actually happened.
+              Zhunt routes coding-agent requests locally, sends them directly to the provider you choose, and shows you what actually happened. The local core is free; Pro adds history, policy controls, multiple-app support, and richer cost reports.
             </p>
             <div class="hero-actions">
-              <a class="button button-primary" href="#start">Run your first cost check <span>↗</span></a>
-              <a class="button button-quiet" href="#how-it-works">See how it works <span>↓</span></a>
+              <a class="button button-primary" href="#trial">Start your 7-day Pro trial <span>↗</span></a>
+              <a class="button button-quiet" href="#downloads">Download the free local core <span>↓</span></a>
             </div>
-            <p class="hero-note">Bring your own OpenRouter or Nous Portal key. Zhunt does not hide provider billing.</p>
+            <p class="hero-note">Card required for the trial. £0 today · £5/month after the trial. Your provider billing remains separate.</p>
           </div>
           <div class="hero-visual" aria-label="Illustration of a request being routed through model tiers">
             <div class="visual-glow"></div>
@@ -77,12 +79,31 @@
           </div>
         </section>
 
+        <section class="security-section" id="security">
+          <div class="security-copy">
+            <p class="eyebrow">The provider boundary</p>
+            <h2>Your prompt is inspected <span>locally.</span></h2>
+            <p>Zhunt analyzes the request—and, when needed, recent conversation context—on your machine before selecting a route. It does not upload prompts to Zhunt for classification.</p>
+            <p>After a route is selected, the request goes directly from your machine to OpenRouter or Nous Portal. The provider you choose still receives the prompt, just as it would if you used that provider directly.</p>
+            <div class="security-links"><a class="text-link" href="#privacy">Security architecture <span>↗</span></a><a class="text-link" href="#privacy">Privacy policy <span>↗</span></a></div>
+          </div>
+          <div class="security-card">
+            <div class="security-card-heading"><span class="security-lock" aria-hidden="true">⌁</span><strong>Local by default</strong></div>
+            <ul class="bullet-list">
+              <li>Provider keys stay on your machine in <code>~/.zhunt/env</code> with restrictive file permissions.</li>
+              <li>Zhunt does not proxy requests through its own servers.</li>
+              <li>Prompts, responses, and provider keys are excluded from telemetry.</li>
+              <li>You can inspect or delete local credentials at any time.</li>
+            </ul>
+          </div>
+        </section>
+
         <section class="evidence-section" id="evidence">
           <div class="evidence-copy">
             <p class="eyebrow">A better first conversation</p>
             <h2>Show people the bill they can understand.</h2>
             <p>Start with a small, private benchmark. Compare the model your app normally uses with the route Zhunt would choose. Keep quality and latency separate from cost so a cheap number never pretends to be a good answer.</p>
-            <a class="text-link" href="#start">Build a local report <span>↗</span></a>
+            <a class="text-link" href="#evidence">Build a local report <span>↗</span></a>
           </div>
           <div class="report-card">
             <div class="report-header"><span>offline benchmark · example</span><span class="report-status">no provider calls</span></div>
@@ -104,33 +125,64 @@
           </div>
         </section>
 
-        <section class="start-section" id="start">
-          <div class="start-card">
-            <div><p class="eyebrow">The pilot</p><h2>Try the local app before you pay for a dashboard.</h2><p>Free local routing. Bring your own provider key. A capped pilot will come before hosted team features.</p></div>
-            <div class="start-actions"><a class="button button-primary" href="#how-it-works">See the setup flow <span>↗</span></a><p>Installer downloads and pilot access are being connected for launch.</p></div>
+        <section class="downloads-section" id="downloads">
+          <div class="section-heading compact"><p class="eyebrow">Available for your computer</p><h2>Download the free <span>local core.</span></h2></div>
+          <div class="download-grid">
+            <article class="download-card"><span class="download-badge">macOS</span><h3>macOS Universal</h3><p>Runs natively on Apple Silicon and Intel Macs.</p><span class="download-status">Installer connection in progress</span></article>
+            <article class="download-card"><span class="download-badge">Windows</span><h3>Windows x64</h3><p>For most Intel and AMD PCs.</p><span class="download-status">Installer connection in progress</span></article>
+            <article class="download-card muted-card"><span class="download-badge">Windows</span><h3>Windows ARM64</h3><p>Native ARM build will be listed when ready.</p><span class="download-status">Coming soon</span></article>
+          </div>
+          <p class="section-note">No card is needed for the local core. Connect your own OpenRouter or Nous Portal key during setup.</p>
+        </section>
+
+        <section class="trial-section" id="trial">
+          <div class="section-heading compact"><p class="eyebrow">How the trial works</p><h2>Full workflow for <span>seven days.</span></h2></div>
+          <div class="trial-grid">
+            <div class="trial-steps">
+              <article><span class="step-number">01</span><div><h3>Download the free local core</h3><p>Install Zhunt for macOS or Windows. No card is needed to use local routing.</p></div></article>
+              <article><span class="step-number">02</span><div><h3>Start Pro when you want it</h3><p>Choose the 7-day Pro trial. Stripe securely collects your payment method; Zhunt never receives your full card number.</p></div></article>
+              <article><span class="step-number">03</span><div><h3>Continue or cancel</h3><p>Your checkout screen shows the exact renewal date. Cancel from the billing portal at any time before renewal.</p></div></article>
+            </div>
+            <div class="checkout-card" id="checkout">
+              <p class="eyebrow">Checkout disclosure</p>
+              <h3>7-day Pro trial</h3>
+              <strong class="checkout-price">£0 today <span>·</span> £5/month after the trial</strong>
+              <p>Your card is required to prevent automated signups. You will not be charged today. Unless cancelled, your subscription renews at £5/month on the exact date shown at checkout.</p>
+              <a class="button button-primary" href="#trial">Start 7-day trial — £0 today <span>↗</span></a>
+              <p class="checkout-note">Checkout integration is being connected. This page does not collect payment details.</p>
+            </div>
           </div>
         </section>
 
         <section class="pricing-section" id="pricing">
-          <div class="section-heading compact"><p class="eyebrow">Pricing direction</p><h2>Keep the local core free.<br /><span>Charge for the work around it.</span></h2></div>
+          <div class="section-heading compact"><p class="eyebrow">Simple pricing</p><h2>Keep the local core free.<br /><span>Charge for the work around it.</span></h2></div>
           <div class="pricing-grid">
-            <article class="price-card"><p class="price-label">Local</p><h3>Free</h3><p class="price-copy">One machine. Basic routing. Local cost report.</p><span class="price-rule"></span><p class="price-foot">You pay your provider directly.</p></article>
-            <article class="price-card featured"><p class="price-label">Pilot target</p><h3>Pro <small>from £5/mo</small></h3><p class="price-copy">History, policy controls, multiple apps, and richer reports.</p><span class="price-rule"></span><p class="price-foot">Provider usage remains separate and visible.</p></article>
+            <article class="price-card"><p class="price-label">Local core</p><h3>Free</h3><p class="price-copy">One machine, basic local routing, and a local cost report. No subscription and no card required.</p><span class="price-rule"></span><p class="price-foot">You pay your provider directly.</p></article>
+            <article class="price-card featured"><p class="price-label">Pro</p><h3>£5/mo <small>after 7 days</small></h3><p class="price-copy">History, policy controls, multiple apps, and richer reports. Card required to start; no charge today.</p><span class="price-rule"></span><p class="price-foot">Provider usage remains separate and visible.</p></article>
             <article class="price-card"><p class="price-label">Teams</p><h3>Shared</h3><p class="price-copy">Shared policies, admin controls, and team reporting.</p><span class="price-rule"></span><p class="price-foot">Available after the pilot.</p></article>
+          </div>
+        </section>
+
+        <section class="privacy-section" id="privacy">
+          <p class="eyebrow">Trust, cancellation, and billing</p>
+          <h2>Keep control of <span>your data and spend.</span></h2>
+          <div class="privacy-grid">
+            <p>Provider billing remains separate. Zhunt cannot see your full card number, provider secret, prompts, or responses. Your selected provider still receives requests routed to it.</p>
+            <p>Cancel Pro any time from the billing portal before the renewal date shown at checkout. The local core continues to work without a subscription.</p>
           </div>
         </section>
 
         <section class="final-cta">
           <p class="eyebrow">Zhunt by Kindred Wildcat</p>
           <h2>Spend less on the easy turns.<br />Keep the hard ones honest.</h2>
-          <a class="button button-primary" href="#start">Follow the pilot <span>↗</span></a>
+          <a class="button button-primary" href="#trial">Start your 7-day trial <span>↗</span></a>
         </section>
       </main>
 
       <footer class="site-footer">
         <div><a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">z</span><span>Zhunt</span></a><p>Local-first routing for coding agents.</p></div>
-        <div class="footer-links"><a href="#how-it-works">How it works</a><a href="#evidence">Evidence</a><a href="#pricing">Pricing</a><a href="#start">Pilot</a></div>
-        <div class="footer-meta"><span>© 2026 Kindred Wildcat</span><span>Provider billing applies</span></div>
+        <div class="footer-links"><a href="#how-it-works">How it works</a><a href="#security">Security</a><a href="#pricing">Pricing</a><a href="#privacy">Privacy</a></div>
+        <div class="footer-meta"><span>© 2026 Kindred Wildcat</span><span>Provider billing remains separate</span></div>
       </footer>
     </div>
   </body>
