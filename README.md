@@ -47,6 +47,17 @@ spend, and `zhunt sync` to refresh matching registry prices from OpenRouter's
 models API. No prompt or response content is written to telemetry, and Zhunt
 does not phone home.
 
+Run the offline benchmark with:
+
+```console
+zhunt benchmark --output ~/.zhunt/benchmark.json
+```
+
+This uses representative, sanitized requests and the registry's projected
+prices. It makes no provider calls and does not measure response quality or
+real latency, so treat it as a routing/cost baseline rather than proof of
+production savings.
+
 ## Local setup UI
 
 For browser-based setup, run:

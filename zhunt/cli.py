@@ -9,9 +9,11 @@ import webbrowser
 
 import typer
 
+from zhunt.benchmark import run_benchmark
 from zhunt.installer import InstallationResult, Installer, InstallerError
 from zhunt.onboarding import create_onboarding_app
 from zhunt.pricing import PricingSyncError, sync_registry
+from zhunt.registry import ModelRegistry
 from zhunt.telemetry import summarize_telemetry
 
 
@@ -159,6 +161,59 @@ def status(
         typer.echo(
             f"{app_name}: {app_summary['requests']} requests, "
             f"${app_summary['actual_spend']:.6f} actual"
+        )
+
+
+@app.command()
+def benchmark(
+    provider: str | None = typer.Option(
+        None,
+        help="Provider profile to benchmark, such as nous-portal.",
+    ),
+    registry: Path | None = typer.Option(
+        None,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional models.yaml path; defaults to the packaged registry.",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        help="Optional JSON output path.",
+    ),
+) -> None:
+    """Run the offline routing benchmark without provider calls."""
+
+    selected_registry = (
+        ModelRegistry.from_path(registry, provider_id=provider)
+        if registry is not None
+        else ModelRegistry.default(provider_id=provider)
+    )
+    result = run_benchmark(selected_registry)
+    if output is not None:
+        import json
+
+        output = output.expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        typer.echo(f"Wrote benchmark report: {output}")
+    typer.echo(f"Requests: {result['requests']}")
+    typer.echo(f"Projected Zhunt cost: ${result['actual_projected_cost']:.6f}")
+    typer.echo(
+        "Counterfactual top-model cost: "
+        f"${result['baseline_projected_cost']:.6f}"
+    )
+    typer.echo(
+        "Projected savings: "
+        f"${result['projected_savings']:.6f} "
+        f"({result['projected_savings_percent']:.1f}%)"
+    )
+    typer.echo("Quality measured: no (offline benchmark)")
+    typer.echo("Provider calls: no")
+    for turn in result["turns"]:
+        typer.echo(
+            f"- {turn['case']}/{turn['turn']}: "
+            f"{turn['tier']} -> {turn['model']}"
         )
 
 
