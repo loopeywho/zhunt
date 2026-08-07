@@ -60,6 +60,15 @@ Copy-Item (Join-Path $root "LICENSE") $package
 if (-not $SkipInno) {
     $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
     if ($null -eq $iscc) {
+        $knownIscc = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+            (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+        ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($knownIscc) {
+            $iscc = Get-Item $knownIscc
+        }
+    }
+    if ($null -eq $iscc) {
         throw "Inno Setup (ISCC.exe) is required to create the installer. Use -SkipInno for an onedir smoke build."
     }
     & $iscc.Source (Join-Path $root "packaging\windows\zhunt.iss")

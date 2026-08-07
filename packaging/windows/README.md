@@ -22,6 +22,12 @@ under `%LOCALAPPDATA%\Programs\Zhunt` and does not delete `%USERPROFILE%\.zhunt`
 on uninstall. Provider keys and the daemon master key are generated or entered
 at runtime; no secrets are bundled.
 
+After installation, run the automated localhost smoke check from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging/windows/verify.ps1
+```
+
 ## Required Quill verification
 
 Use a fresh Windows 11 x64 environment and the produced installer, not the repo
