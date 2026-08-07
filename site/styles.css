@@ -90,6 +90,8 @@ code { padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,.08); 
 .download-badge { color: var(--lime); text-transform: uppercase; letter-spacing: .13em; font-size: 10px; font-weight: 750; }
 .download-card h3 { margin: 50px 0 10px; font-size: 23px; font-weight: 560; letter-spacing: -.04em; }
 .download-card p { min-height: 42px; margin-bottom: 20px; color: var(--muted); font-size: 13px; }
+.download-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.download-actions .button { padding: 10px 14px; gap: 10px; font-size: 11px; }
 .download-status { color: var(--dim); font-size: 11px; }
 .section-note { margin: 24px 0 0; color: var(--dim); font-size: 12px; }
 .trial-section { padding: 130px 0 115px; border-top: 1px solid var(--line); }
