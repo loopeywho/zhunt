@@ -24,7 +24,8 @@ class TelemetryLogger:
     def record_request(
         self,
         *,
-        app: str,
+        wire_dialect: str | None = None,
+        app: str | None = None,
         decision: RoutingDecision,
         input_tokens: int,
         output_tokens: int,
@@ -40,10 +41,12 @@ class TelemetryLogger:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+        # ``app`` remains a compatibility keyword for pre-Phase-5 callers.
+        dialect = wire_dialect or app or "unknown"
         event: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event": "request",
-            "app": app,
+            "wire_dialect": dialect,
             "session": decision.session_key,
             "tier": decision.tier.value,
             "model": decision.model,
@@ -72,7 +75,7 @@ def summarize_telemetry(
     """Aggregate today's (or the requested day's) local request events."""
 
     target_day = day or datetime.now(timezone.utc).date()
-    by_app: dict[str, dict[str, float | int]] = defaultdict(
+    by_wire_dialect: dict[str, dict[str, float | int]] = defaultdict(
         lambda: {
             "requests": 0,
             "actual_spend": 0.0,
@@ -81,7 +84,11 @@ def summarize_telemetry(
     )
     path = path.expanduser()
     if not path.is_file():
-        return {"day": target_day.isoformat(), "requests": 0, "by_app": {}}
+        return {
+            "day": target_day.isoformat(),
+            "requests": 0,
+            "by_wire_dialect": {},
+        }
 
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -93,23 +100,32 @@ def summarize_telemetry(
             continue
         if timestamp.date() != target_day or event.get("event") != "request":
             continue
-        app = str(event.get("app", "unknown"))
-        summary = by_app[app]
+        # Read pre-Phase-5 files that used the misleading ``app`` key, but
+        # expose the dimension honestly as a wire dialect going forward.
+        wire_dialect = str(
+            event.get("wire_dialect", event.get("app", "unknown"))
+        )
+        summary = by_wire_dialect[wire_dialect]
         summary["requests"] += 1
         summary["actual_spend"] += float(event.get("actual_cost", 0.0))
         summary["counterfactual_spend"] += float(
             event.get("counterfactual_top_model_cost", 0.0)
         )
 
-    actual = sum(float(item["actual_spend"]) for item in by_app.values())
+    actual = sum(
+        float(item["actual_spend"]) for item in by_wire_dialect.values()
+    )
     counterfactual = sum(
-        float(item["counterfactual_spend"]) for item in by_app.values()
+        float(item["counterfactual_spend"])
+        for item in by_wire_dialect.values()
     )
     return {
         "day": target_day.isoformat(),
-        "requests": sum(int(item["requests"]) for item in by_app.values()),
+        "requests": sum(
+            int(item["requests"]) for item in by_wire_dialect.values()
+        ),
         "actual_spend": actual,
         "counterfactual_spend": counterfactual,
         "savings": counterfactual - actual,
-        "by_app": dict(by_app),
+        "by_wire_dialect": dict(by_wire_dialect),
     }

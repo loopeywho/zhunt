@@ -870,7 +870,7 @@ tiers:
             event = json.loads(telemetry_path.read_text(encoding="utf-8"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(event["app"], "openai-chat-completions")
+        self.assertEqual(event["wire_dialect"], "openai-chat-completions")
         self.assertEqual(event["input_tokens"], 2)
         self.assertEqual(event["output_tokens"], 3)
         self.assertEqual(event["counterfactual_top_model_cost"], 0.00004)

@@ -64,7 +64,7 @@ class _PendingRoute:
     request: RoutingRequest
     attempt_id: str | None
     started_at: float
-    app: str
+    wire_dialect: str
     retry_attempt: bool = False
 
 
@@ -147,7 +147,7 @@ class ZhuntProxyHook(CustomLogger):
                 request=request,
                 attempt_id=attempt_id,
                 started_at=time.perf_counter(),
-                app=_telemetry_app(call_type),
+                wire_dialect=_telemetry_wire_dialect(call_type),
                 retry_attempt=retry_attempt,
             )
 
@@ -347,7 +347,7 @@ class ZhuntProxyHook(CustomLogger):
         if output_tokens is None:
             output_tokens = pending.request.estimated_output_tokens
         self.telemetry.record_request(
-            app=pending.app,
+            wire_dialect=pending.wire_dialect,
             decision=pending.decision,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -707,7 +707,7 @@ def _usage_tokens(response: Any) -> tuple[int | None, int | None]:
     )
 
 
-def _telemetry_app(call_type: str) -> str:
+def _telemetry_wire_dialect(call_type: str) -> str:
     if call_type in {"anthropic_messages", "aanthropic_messages"}:
         return "anthropic-messages"
     if call_type in {"responses", "aresponses"}:

@@ -146,7 +146,7 @@ def status(
         help="Local request telemetry JSONL path.",
     ),
 ) -> None:
-    """Show today's local spend and counterfactual top-model spend."""
+    """Show today's local spend and counterfactual spend by wire dialect."""
 
     summary = summarize_telemetry(telemetry)
     typer.echo(f"Date: {summary['day']}")
@@ -157,10 +157,12 @@ def status(
         f"${summary.get('counterfactual_spend', 0.0):.6f}"
     )
     typer.echo(f"Savings: ${summary.get('savings', 0.0):.6f}")
-    for app_name, app_summary in sorted(summary["by_app"].items()):
+    for wire_dialect, dialect_summary in sorted(
+        summary["by_wire_dialect"].items()
+    ):
         typer.echo(
-            f"{app_name}: {app_summary['requests']} requests, "
-            f"${app_summary['actual_spend']:.6f} actual"
+            f"{wire_dialect}: {dialect_summary['requests']} requests, "
+            f"${dialect_summary['actual_spend']:.6f} actual"
         )
 
 

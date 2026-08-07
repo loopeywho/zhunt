@@ -40,7 +40,7 @@ class TelemetryTests(unittest.TestCase):
             path = Path(directory) / "telemetry.jsonl"
             logger = TelemetryLogger(path, REGISTRY)
             event = logger.record_request(
-                app="openai-chat-completions",
+                wire_dialect="openai-chat-completions",
                 decision=decision,
                 input_tokens=1_000_000,
                 output_tokens=1_000_000,
@@ -57,7 +57,23 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(summary["actual_spend"], 0.3)
         self.assertEqual(summary["counterfactual_spend"], 15.0)
         self.assertEqual(summary["savings"], 14.7)
-        self.assertEqual(summary["by_app"]["openai-chat-completions"]["requests"], 1)
+        self.assertEqual(
+            summary["by_wire_dialect"]["openai-chat-completions"]["requests"],
+            1,
+        )
+
+    def test_legacy_app_key_is_read_as_wire_dialect(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "telemetry.jsonl"
+            path.write_text(
+                '{"timestamp":"%s","event":"request","app":"hermes",'
+                '"actual_cost":0.1,"counterfactual_top_model_cost":0.2}\n'
+                % datetime.now(timezone.utc).isoformat(),
+                encoding="utf-8",
+            )
+            summary = summarize_telemetry(path)
+
+        self.assertEqual(summary["by_wire_dialect"]["hermes"]["requests"], 1)
 
     def test_invalid_lines_are_ignored(self) -> None:
         with TemporaryDirectory() as directory:

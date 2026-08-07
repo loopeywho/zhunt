@@ -139,7 +139,7 @@ class ServeCommandTests(unittest.TestCase):
                     {
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "event": "request",
-                        "app": "hermes",
+                        "wire_dialect": "openai-chat-completions",
                         "actual_cost": 0.25,
                         "counterfactual_top_model_cost": 1.0,
                     }
@@ -156,6 +156,7 @@ class ServeCommandTests(unittest.TestCase):
         self.assertIn("Requests: 1", result.output)
         self.assertIn("Actual spend: $0.250000", result.output)
         self.assertIn("Savings: $0.750000", result.output)
+        self.assertIn("openai-chat-completions: 1 requests", result.output)
 
     def test_sync_reports_pricing_changes(self) -> None:
         sync_result = type(

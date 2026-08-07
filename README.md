@@ -43,9 +43,12 @@ pending until provider keys are available.
 
 The daemon keeps request telemetry locally in `~/.zhunt/telemetry.jsonl`. Use
 `zhunt status` to view today's actual spend versus the counterfactual top-model
-spend, and `zhunt sync` to refresh matching registry prices from OpenRouter's
-models API. No prompt or response content is written to telemetry, and Zhunt
-does not phone home.
+spend, broken down by wire dialect. Zhunt does not claim to identify the
+originating desktop app unless a future integration supplies that identity;
+this avoids merging Cursor/VS Code traffic into another app's bucket. Use
+`zhunt sync` to refresh matching registry prices from OpenRouter's models API.
+No prompt or response content is written to telemetry, and Zhunt does not
+phone home.
 
 Run the offline benchmark with:
 
