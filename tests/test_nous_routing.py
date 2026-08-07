@@ -12,6 +12,9 @@ from zhunt.providers import get_provider
 from zhunt.server import create_proxy_app
 
 
+ROOT = Path(__file__).parent.parent
+
+
 class NousPortalRoutingTests(unittest.TestCase):
     def test_configured_portal_profile_rewrites_real_request(self) -> None:
         response = litellm.ModelResponse(
@@ -30,7 +33,7 @@ class NousPortalRoutingTests(unittest.TestCase):
             root = Path(directory)
             registry_path = root / "models.yaml"
             registry_path.write_text(
-                Path("models.yaml").read_text(encoding="utf-8"),
+                (ROOT / "models.yaml").read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
             env_path = root / "env"

@@ -103,6 +103,23 @@ tiers:
                     validate_startup=True,
                 )
 
+    def test_proxy_startup_accepts_explicit_copy_of_shipped_registry(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            registry_path = root / "models.yaml"
+            registry_path.write_text(
+                (Path(__file__).parent.parent / "models.yaml").read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
+
+            create_proxy_app(
+                registry_path=registry_path,
+                env_path=root / "env",
+                validate_startup=True,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
