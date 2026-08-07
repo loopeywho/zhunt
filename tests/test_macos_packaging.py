@@ -26,6 +26,12 @@ class MacOSPackagingTests(unittest.TestCase):
         self.assertIn("not yet a Universal 2 build", readme)
         self.assertIn("Developer ID signing and", readme)
 
+    def test_top_level_readme_gates_macos_release(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("## macOS arm64 preview", readme)
+        self.assertIn("not a Universal 2 build", readme)
+        self.assertIn("Do not publish", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

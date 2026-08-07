@@ -75,6 +75,23 @@ key, loopback setup, provider validation, recipe install/uninstall with backup
 restore, and preservation of `%USERPROFILE%\\.zhunt` across uninstall. Do not
 describe the Windows installer as release-ready until that test passes on Quill.
 
+## macOS arm64 preview
+
+The macOS packaging path currently produces Apple Silicon (`arm64`) `.dmg` and
+`.pkg` installers. It is not a Universal 2 build: an independently tested
+x86_64 build is still required before describing the download as macOS
+Universal. The packages are also unsigned; public distribution requires
+Developer ID signing and notarization, and Gatekeeper may reject the unsigned
+artifacts.
+
+The macOS release gate is a fresh Apple Silicon install from the produced
+artifact: verify the package checksum, run `zhunt --help`, keep `zhunt serve`
+running with an unauthenticated request returning 401, open the loopback setup
+UI, and confirm `~/.zhunt/env` is created with user-only access. Do not publish
+the macOS installers as release-ready until signing/notarization and this
+fresh-machine check are complete. Build instructions are in
+`packaging/macos/README.md`.
+
 ## Local setup UI
 
 For browser-based setup, run:
