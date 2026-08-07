@@ -68,7 +68,7 @@ cp "$ROOT/packaging/linux/README.md" "$PACKAGE/README-linux.md"
 
 ARCHIVE="$OUTPUT/Zhunt-Setup-linux-x64.tar.gz"
 tar -C "$DIST" -czf "$ARCHIVE" zhunt
-sha256sum "$ARCHIVE" | awk '{print $1 "  " $2}' > "$ARCHIVE.sha256"
+(cd "$OUTPUT" && sha256sum "$(basename "$ARCHIVE")") > "$ARCHIVE.sha256"
 
 echo "Built Linux x86_64 package:"
 echo "  $ARCHIVE"

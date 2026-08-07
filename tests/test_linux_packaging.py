@@ -10,6 +10,7 @@ def test_linux_package_targets_x86_64_and_bundles_registry():
 
     assert "Zhunt-Setup-linux-x64.tar.gz" in build
     assert '--add-data "$ROOT/models.yaml:zhunt"' in build
+    assert '(cd "$OUTPUT" && sha256sum "$(basename "$ARCHIVE")")' in build
     assert "ubuntu-22.04" in workflow
     assert "packaging/linux/verify.sh" in workflow
     assert "zhunt-linux-x64" in workflow
