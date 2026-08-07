@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 .windows-build/
 .macos-build/
+.linux-build/
 zhunt.spec
 AUDIT_ROUND_*.md
 HANDOFF.md

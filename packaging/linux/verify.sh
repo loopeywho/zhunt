@@ -24,7 +24,9 @@ HOME="$VERIFY_HOME" "$PACKAGE/zhunt" serve --host 127.0.0.1 --port "$PORT" >"$SE
 SERVER_PID=$!
 READY=0
 for _ in $(seq 1 30); do
-    STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:$PORT/v1/models" || true)
+    STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+        -X POST -H 'content-type: application/json' -d '{}' \
+        "http://127.0.0.1:$PORT/v1/chat/completions" || true)
     if [ "$STATUS" = "401" ]; then
         READY=1
         break

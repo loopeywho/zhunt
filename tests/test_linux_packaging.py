@@ -13,3 +13,11 @@ def test_linux_package_targets_x86_64_and_bundles_registry():
     assert "ubuntu-22.04" in workflow
     assert "packaging/linux/verify.sh" in workflow
     assert "zhunt-linux-x64" in workflow
+
+
+def test_linux_smoke_uses_an_authenticated_inference_route():
+    verify = (ROOT / "packaging/linux/verify.sh").read_text(encoding="utf-8")
+
+    assert "-X POST" in verify
+    assert "/v1/chat/completions" in verify
+    assert "/v1/models" not in verify
