@@ -25,4 +25,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zhunt-windows-x64
-          path: dist/Zhunt-Setup-win-x64.exe
+          path: |
+            dist/Zhunt-Setup-win-x64.exe
+            dist/Zhunt-Setup-win-x64.exe.sha256

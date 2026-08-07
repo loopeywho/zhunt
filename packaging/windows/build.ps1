@@ -26,6 +26,7 @@ if ($null -eq $py) {
 
 & $py.Source -3.12 -m venv $venv
 $python = Join-Path $venv "Scripts\python.exe"
+& $python -c "import platform, struct, sys; assert sys.version_info[:2] == (3, 12); assert struct.calcsize('P') == 8; print(platform.platform())"
 & $python -m pip install --upgrade pip
 & $python -m pip install "." "pyinstaller>=6.10,<7"
 
@@ -72,6 +73,9 @@ if (-not $SkipInno) {
         throw "Inno Setup (ISCC.exe) is required to create the installer. Use -SkipInno for an onedir smoke build."
     }
     & $iscc.Source (Join-Path $root "packaging\windows\zhunt.iss")
+    $installer = Join-Path $root "dist\Zhunt-Setup-win-x64.exe"
+    (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant() | Set-Content `
+        -NoNewline ("${installer}.sha256")
 }
 
 Write-Host "Windows x64 build complete: $package"
