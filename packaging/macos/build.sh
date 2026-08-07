@@ -94,8 +94,8 @@ hdiutil create \
     -format UDZO \
     "$DMG" >/dev/null
 
-shasum -a 256 "$PKG" | awk '{print $1 "  " $2}' > "$PKG.sha256"
-shasum -a 256 "$DMG" | awk '{print $1 "  " $2}' > "$DMG.sha256"
+(cd "$OUTPUT" && shasum -a 256 "$(basename "$PKG")") > "$PKG.sha256"
+(cd "$OUTPUT" && shasum -a 256 "$(basename "$DMG")") > "$DMG.sha256"
 
 echo "Built macOS $ARCH packages:"
 echo "  $DMG"

@@ -21,6 +21,11 @@ class MacOSPackagingTests(unittest.TestCase):
         self.assertIn("--add-data \"$ROOT/models.yaml:zhunt\"", script)
         self.assertIn("--specpath \"$WORK\"", script)
 
+    def test_checksums_are_portable_for_downloaders(self) -> None:
+        script = (ROOT / "packaging/macos/build.sh").read_text(encoding="utf-8")
+        self.assertIn('(cd "$OUTPUT" && shasum -a 256 "$(basename "$PKG")")', script)
+        self.assertIn('(cd "$OUTPUT" && shasum -a 256 "$(basename "$DMG")")', script)
+
     def test_macos_readme_does_not_claim_universal_binary(self) -> None:
         readme = (ROOT / "packaging/macos/README.md").read_text(encoding="utf-8")
         self.assertIn("not yet a Universal 2 build", readme)
