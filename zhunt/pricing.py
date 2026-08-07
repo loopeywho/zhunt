@@ -82,8 +82,15 @@ def sync_registry(
             if not isinstance(pricing, Mapping):
                 unavailable.append(model_id)
                 continue
-            input_cost = _per_token_to_per_million(pricing.get("input"))
-            output_cost = _per_token_to_per_million(pricing.get("output"))
+            # OpenRouter's current catalog calls these ``prompt`` and
+            # ``completion``; accept the older input/output names too so
+            # ``zhunt sync`` keeps working across catalog revisions.
+            input_cost = _per_token_to_per_million(
+                pricing.get("input", pricing.get("prompt"))
+            )
+            output_cost = _per_token_to_per_million(
+                pricing.get("output", pricing.get("completion"))
+            )
             if input_cost is None or output_cost is None:
                 unavailable.append(model_id)
                 continue

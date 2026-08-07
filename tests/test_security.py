@@ -108,6 +108,25 @@ class DaemonSecurityTests(unittest.TestCase):
             telemetry_path=Path.home() / ".zhunt" / "telemetry.jsonl",
         )
 
+    def test_run_proxy_forwards_explicit_telemetry_path(self) -> None:
+        with TemporaryDirectory() as directory:
+            telemetry_path = Path(directory) / "evidence.jsonl"
+            with patch("uvicorn.run") as uvicorn_run, patch(
+                "zhunt.server.create_proxy_app", return_value=object()
+            ) as create_app:
+                run_proxy(
+                    host="127.0.0.1",
+                    port=4000,
+                    telemetry_path=telemetry_path,
+                )
+
+        uvicorn_run.assert_called_once()
+        create_app.assert_called_once_with(
+            registry_path=None,
+            validate_startup=True,
+            telemetry_path=telemetry_path,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

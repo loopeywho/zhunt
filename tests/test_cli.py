@@ -25,6 +25,25 @@ class ServeCommandTests(unittest.TestCase):
             port=4000,
             registry_path=None,
             allow_non_loopback=False,
+            telemetry_path=Path.home() / ".zhunt" / "telemetry.jsonl",
+        )
+
+    def test_serve_accepts_explicit_telemetry_path(self) -> None:
+        with TemporaryDirectory() as directory:
+            telemetry = Path(directory) / "evidence.jsonl"
+            with patch("zhunt.cli.run_proxy") as run_proxy:
+                result = self.runner.invoke(
+                    app,
+                    ["serve", "--telemetry", str(telemetry)],
+                )
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        run_proxy.assert_called_once_with(
+            host="127.0.0.1",
+            port=4000,
+            registry_path=None,
+            allow_non_loopback=False,
+            telemetry_path=telemetry,
         )
 
     def test_setup_refuses_non_loopback_host(self) -> None:

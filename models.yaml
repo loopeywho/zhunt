@@ -37,8 +37,8 @@ providers:
 tiers:
   chat:
     - model: openrouter/deepseek/deepseek-chat
-      in: 0.14
-      out: 0.28
+      in: 0.2574
+      out: 1.0287
     - model: custom/kimi/moonshot-v1-auto
       in: 0.20
       out: 0.60
@@ -52,5 +52,5 @@ tiers:
       out: 6.40
   reasoning:
     - model: openrouter/anthropic/claude-sonnet-5
-      in: 3.00
-      out: 15.00
+      in: 2.00
+      out: 10.00

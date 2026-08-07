@@ -49,6 +49,13 @@ def serve(
         "--allow-non-loopback",
         help="Explicitly allow binding beyond localhost.",
     ),
+    telemetry: Path = typer.Option(
+        Path.home() / ".zhunt" / "telemetry.jsonl",
+        "--telemetry",
+        exists=False,
+        dir_okay=False,
+        help="Local JSONL telemetry path.",
+    ),
 ) -> None:
     """Run the local LiteLLM-backed routing daemon."""
 
@@ -57,6 +64,7 @@ def serve(
         port=port,
         registry_path=registry,
         allow_non_loopback=allow_non_loopback,
+        telemetry_path=telemetry,
     )
 
 
@@ -247,6 +255,7 @@ def run_proxy(
     port: int,
     registry_path: Path | None,
     allow_non_loopback: bool = False,
+    telemetry_path: Path | None = None,
 ) -> None:
     from zhunt.server import run_proxy as start_proxy
 
@@ -255,6 +264,7 @@ def run_proxy(
         port=port,
         registry_path=registry_path,
         allow_non_loopback=allow_non_loopback,
+        telemetry_path=telemetry_path,
     )
 
 

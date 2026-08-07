@@ -479,6 +479,7 @@ def run_proxy(
     port: int,
     registry_path: Path | None = None,
     allow_non_loopback: bool = False,
+    telemetry_path: Path | None = None,
 ) -> None:
     if not allow_non_loopback and host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError(
@@ -490,7 +491,9 @@ def run_proxy(
         create_proxy_app(
             registry_path=registry_path,
             validate_startup=True,
-            telemetry_path=Path.home() / ".zhunt" / "telemetry.jsonl",
+            telemetry_path=(
+                telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl"
+            ),
         ),
         host=host,
         port=port,
