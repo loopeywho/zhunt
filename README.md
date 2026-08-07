@@ -58,6 +58,20 @@ prices. It makes no provider calls and does not measure response quality or
 real latency, so treat it as a routing/cost baseline rather than proof of
 production savings.
 
+## Windows x64 preview
+
+The native Windows x64 installer is built on a Windows CI runner; macOS cannot
+validate a native executable. Until the installer artifact has passed the Quill
+fresh-machine checklist, Windows users can install the Python wheel with Python
+3.12 x64. The packaging instructions and CI build are in
+`packaging/windows/README.md`.
+
+The release gate is a fresh Windows 11 x64 install from the produced artifact:
+`zhunt --help`, a daemon that stays running and returns 401 without its local
+key, loopback setup, provider validation, recipe install/uninstall with backup
+restore, and preservation of `%USERPROFILE%\\.zhunt` across uninstall. Do not
+describe the Windows installer as release-ready until that test passes on Quill.
+
 ## Local setup UI
 
 For browser-based setup, run:

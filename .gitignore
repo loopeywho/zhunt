@@ -6,5 +6,6 @@ __pycache__/
 .venv/
 AUDIT_ROUND_*.md
 HANDOFF.md
+CLAUDE_AUDIT_BRIEF.md
 AUDIT_REQUEST
 .audit_requested*
