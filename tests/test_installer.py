@@ -222,6 +222,14 @@ class InstallerTests(unittest.TestCase):
             any(f"{BASE_URL}/v1" in step for step in result.manual_instructions)
         )
 
+    def test_tier2_coverage_caveats_are_documented(self) -> None:
+        readme = (
+            Path(__file__).parent.parent / "README.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Cursor tab completion and inline edit stay", readme)
+        self.assertIn("VS Code code completions stay on Copilot", readme)
+        self.assertIn("setup is intentionally manual in the vendor UI", readme)
+
     def test_install_new_file_then_uninstall_removes_it(self) -> None:
         result = self.installer.install(
             "codex",

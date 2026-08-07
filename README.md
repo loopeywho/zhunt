@@ -118,5 +118,15 @@ native model IDs are classified by request content after they reach Zhunt, so
 the API recipe routes them through the registry rather than forwarding them
 unchanged.
 
+### Tier 2 coverage
+
+Cursor and VS Code are supported for their chat/agent panels through their
+OpenAI-compatible custom endpoints. Cursor tab completion and inline edit stay
+on Cursor's backend. VS Code code completions stay on Copilot; only the BYOK
+chat/agent traffic configured for the custom endpoint reaches Zhunt. Cursor's
+setup is intentionally manual in the vendor UI, while VS Code's custom
+endpoint is written by the recipe. Both paths remain subject to the same
+provider billing caveat and local wire-dialect telemetry labeling.
+
 Provider-backed one-token verification and real-provider streaming/tool-call
 fidelity tests remain pending until provider keys are available.
