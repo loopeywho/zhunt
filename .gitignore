@@ -5,6 +5,8 @@ __pycache__/
 *.egg-info/
 .venv/
 .windows-build/
+.macos-build/
+zhunt.spec
 AUDIT_ROUND_*.md
 HANDOFF.md
 CLAUDE_AUDIT_BRIEF.md
