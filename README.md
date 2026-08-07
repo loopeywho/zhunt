@@ -94,6 +94,17 @@ the macOS installers as release-ready until signing/notarization and this
 fresh-machine check are complete. Build instructions are in
 `packaging/macos/README.md`.
 
+## Linux x86_64 preview
+
+The Linux packaging path produces a portable x86_64 `.tar.gz` bundle. It is
+built on Linux in CI and does not yet provide distro-specific `.deb`/`.rpm`
+packages or an ARM64 build. The bundle includes its Python runtime, so no
+system Python installation is required. Build and smoke-test instructions are
+in `packaging/linux/README.md`.
+
+Do not publish the Linux bundle as release-ready until the Linux CI artifact has
+passed its real daemon startup and unauthenticated-401 smoke test.
+
 ## Local setup UI
 
 For browser-based setup, run:

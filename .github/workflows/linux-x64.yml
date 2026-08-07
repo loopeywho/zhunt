@@ -1,0 +1,34 @@
+name: Linux x64 package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - name: Install Linux build tools
+        run: sudo apt-get update && sudo apt-get install --yes curl
+      - name: Build Linux package
+        run: sh packaging/linux/build.sh
+      - name: Run Linux smoke verification
+        run: |
+          rm -rf /tmp/zhunt-linux-smoke
+          mkdir -p /tmp/zhunt-linux-smoke
+          tar -xzf dist/Zhunt-Setup-linux-x64.tar.gz -C /tmp/zhunt-linux-smoke
+          sh packaging/linux/verify.sh /tmp/zhunt-linux-smoke/zhunt
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhunt-linux-x64
+          path: |
+            dist/Zhunt-Setup-linux-x64.tar.gz
+            dist/Zhunt-Setup-linux-x64.tar.gz.sha256
