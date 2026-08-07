@@ -20,6 +20,13 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertIn("Expected HTTP 401", smoke)
         self.assertIn("icacls", smoke)
 
+    def test_windows_build_includes_dynamic_tiktoken_encoding(self) -> None:
+        build = (ROOT / "packaging/windows/build.ps1").read_text(encoding="utf-8")
+        self.assertIn("--collect-all tiktoken", build)
+        self.assertIn("--hidden-import tiktoken_ext.openai_public", build)
+        self.assertIn("--add-data", build)
+        self.assertIn('"models.yaml"', build)
+
     def test_windows_recipe_targets_are_under_user_home(self) -> None:
         cases = {
             "claude": Path(".claude/settings.json"),
