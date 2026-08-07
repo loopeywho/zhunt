@@ -20,6 +20,15 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertIn("Expected HTTP 401", smoke)
         self.assertIn("icacls", smoke)
 
+    def test_windows_ci_runs_installer_smoke_verifier(self) -> None:
+        workflow = (ROOT / ".github/workflows/windows-x64.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Install Windows package for smoke test", workflow)
+        self.assertIn("/VERYSILENT", workflow)
+        self.assertIn("Run Windows smoke verification", workflow)
+        self.assertIn("packaging\\windows\\verify.ps1", workflow)
+
     def test_windows_build_includes_dynamic_tiktoken_encoding(self) -> None:
         build = (ROOT / "packaging/windows/build.ps1").read_text(encoding="utf-8")
         self.assertIn("--collect-all tiktoken", build)

@@ -21,6 +21,18 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: .\packaging\windows\build.ps1
+      - name: Install Windows package for smoke test
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:GITHUB_WORKSPACE "dist\Zhunt-Setup-win-x64.exe"
+          $arguments = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-")
+          $process = Start-Process -Wait -PassThru -FilePath $installer -ArgumentList $arguments
+          if ($process.ExitCode -ne 0) {
+            throw "Windows installer exited with code $($process.ExitCode)"
+          }
+      - name: Run Windows smoke verification
+        shell: pwsh
+        run: .\packaging\windows\verify.ps1
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
