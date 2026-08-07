@@ -4,6 +4,7 @@ graphify-out/
 __pycache__/
 *.egg-info/
 .venv/
+.windows-build/
 AUDIT_ROUND_*.md
 HANDOFF.md
 CLAUDE_AUDIT_BRIEF.md
