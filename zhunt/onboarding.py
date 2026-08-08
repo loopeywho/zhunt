@@ -125,17 +125,18 @@ def _string(body: dict[str, Any], name: str) -> str:
 _HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Zhunt setup</title>
-<style>body{font:16px system-ui;max-width:680px;margin:3rem auto;padding:0 1rem;color:#202124}label{display:block;margin:1rem 0 .35rem;font-weight:600}select,input,button{font:inherit;padding:.65rem;border:1px solid #bbb;border-radius:.4rem;width:100%;box-sizing:border-box}button{margin-top:1.25rem;background:#222;color:white;cursor:pointer}.apps{display:grid;grid-template-columns:repeat(2,1fr);gap:.4rem}.apps label{font-weight:400;margin:0}.apps input{width:auto}.warning{padding:.8rem;background:#fff3cd;border:1px solid #e0b84c;border-radius:.4rem}.status{margin-top:1rem;min-height:1.5rem}</style></head>
+<style>body{font:16px system-ui;max-width:680px;margin:3rem auto;padding:0 1rem;color:#202124}label{display:block;margin:1rem 0 .35rem;font-weight:600}select,input,button{font:inherit;padding:.65rem;border:1px solid #bbb;border-radius:.4rem;width:100%;box-sizing:border-box}button{margin-top:1.25rem;background:#222;color:white;cursor:pointer}.actions{display:flex;gap:.6rem}.actions button{flex:1}.actions .secondary{background:white;color:#202124}.apps{display:grid;grid-template-columns:repeat(2,1fr);gap:.4rem}.apps label{font-weight:400;margin:0}.apps input{width:auto}.warning{padding:.8rem;background:#fff3cd;border:1px solid #e0b84c;border-radius:.4rem}.status{margin-top:1rem;min-height:1.5rem}.closed{max-width:680px;margin:3rem auto;padding:0 1rem}</style></head>
 <body><h1>Set up Zhunt</h1><p>Your key is sent only to this local setup page and saved in <code>~/.zhunt/env</code>.</p>
 <label for="provider">Provider</label><select id="provider"></select>
 <label for="key">API key</label><input id="key" type="password" autocomplete="off" placeholder="Paste your provider key">
 <p class="warning"><strong>Billing warning:</strong> selected apps use API mode and are billed per token. Claude Code traffic does not use Claude Max. Do not select Claude Code if you intend to stay on a flat-rate Claude Max plan.</p>
 <label>Apps to configure</label><div class="apps"><label><input type="checkbox" value="hermes"> Hermes</label><label><input type="checkbox" value="claude"> Claude Code</label><label><input type="checkbox" value="codex"> Codex</label><label><input type="checkbox" value="cursor"> Cursor</label><label><input type="checkbox" value="vscode"> VS Code</label></div>
-<button id="save">Validate key and configure</button><div class="status" id="status"></div>
+<div class="actions"><button id="save">Validate key and configure</button><button id="close" class="secondary" type="button">Close setup</button></div><div class="status" id="status"></div>
 <script>
 const token=new URLSearchParams(location.search).get('token')||'';
 const headers={'Content-Type':'application/json','X-Zhunt-Setup-Token':token};
 const status=document.getElementById('status');
 fetch('/api/providers').then(r=>r.json()).then(items=>{for(const p of items){const o=document.createElement('option');o.value=p.id;o.textContent=p.name;document.getElementById('provider').append(o)}});
+document.getElementById('close').onclick=()=>{document.body.innerHTML='<main class="closed"><h1>Setup closed</h1><p>You can close this tab. The local setup process remains in your terminal until you stop it.</p></main>';window.close()};
 document.getElementById('save').onclick=async()=>{const apps=[...document.querySelectorAll('.apps input:checked')].map(x=>x.value);if(apps.includes('claude')&&!confirm('Claude Code will use pay-per-token API billing and will not use Claude Max. Continue?'))return;status.textContent='Validating…';const body={provider:document.getElementById('provider').value,api_key:document.getElementById('key').value,apps,mode:'api'};const r=await fetch('/api/configure',{method:'POST',headers,body:JSON.stringify(body)});const d=await r.json();status.textContent=r.ok?`Configured ${d.apps.length} app(s); ${d.models} provider models available.`:(d.detail||'Setup failed')};
 </script></body></html>"""

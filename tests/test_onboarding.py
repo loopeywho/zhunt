@@ -19,6 +19,18 @@ class OnboardingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("will not use Claude Max", response.text)
 
+    def test_setup_page_has_close_control_without_shutdown_route(self) -> None:
+        with TemporaryDirectory() as directory:
+            app = create_onboarding_app(home=Path(directory), setup_token="setup-token")
+            with TestClient(app) as client:
+                response = client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="close"', response.text)
+        self.assertIn("window.close()", response.text)
+        self.assertIn("local setup process remains in your terminal", response.text)
+        self.assertNotIn("/api/shutdown", response.text)
+
     def test_provider_catalog_is_available_without_secret(self) -> None:
         with TemporaryDirectory() as directory:
             app = create_onboarding_app(
