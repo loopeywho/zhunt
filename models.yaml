@@ -39,17 +39,17 @@ tiers:
     - model: openrouter/deepseek/deepseek-chat
       in: 0.2574
       out: 1.0287
-    - model: custom/kimi/moonshot-v1-auto
-      in: 0.20
-      out: 0.60
+    - model: openrouter/moonshotai/kimi-k2-0905
+      in: 0.60
+      out: 2.50
   coding:
-    - model: custom/dashscope/qwen3.7-max
-      in: 1.60
-      out: 6.40
+    - model: openrouter/qwen/qwen3.7-max
+      in: 1.475
+      out: 4.425
   long-context:
-    - model: custom/dashscope/qwen3.7-max
-      in: 1.60
-      out: 6.40
+    - model: openrouter/qwen/qwen3.7-max
+      in: 1.475
+      out: 4.425
   reasoning:
     - model: openrouter/anthropic/claude-sonnet-5
       in: 2.00

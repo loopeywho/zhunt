@@ -27,6 +27,38 @@ class PricingSyncTests(unittest.TestCase):
              models["openrouter/anthropic/claude-sonnet-5"]["out"]),
             (2.0, 10.0),
         )
+        self.assertEqual(
+            (models["openrouter/qwen/qwen3.7-max"]["in"],
+             models["openrouter/qwen/qwen3.7-max"]["out"]),
+            (1.475, 4.425),
+        )
+        self.assertEqual(
+            (models["openrouter/moonshotai/kimi-k2-0905"]["in"],
+             models["openrouter/moonshotai/kimi-k2-0905"]["out"]),
+            (0.60, 2.50),
+        )
+
+    def test_default_tiers_only_contain_openrouter_routable_models(self) -> None:
+        # The top-level ``tiers:`` block is what a bare install (no configured
+        # provider profile, or ZHUNT_PROVIDER=openrouter) actually routes
+        # through — see ModelRegistry.from_data: a provider_id only swaps in a
+        # ``providers:<id>:`` profile when that key exists, and "openrouter"
+        # has no such profile, so it falls through to this block unchanged.
+        # A model here that isn't reachable via the OpenRouter account a user
+        # actually configured (e.g. a bare "custom/..." id with no api_base)
+        # fails every request classified into that tier with a hard 500 —
+        # this reproduced live 2026-08-08 for the coding/long-context tiers.
+        yaml = YAML()
+        document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
+
+        for tier_name, models_in_tier in document["tiers"].items():
+            for entry in models_in_tier:
+                self.assertTrue(
+                    entry["model"].startswith("openrouter/"),
+                    f"tier {tier_name!r} has non-OpenRouter-routable model "
+                    f"{entry['model']!r} in the default tiers block, where "
+                    "only OpenRouter is actually configured",
+                )
 
     def test_sync_updates_matching_models_and_reports_unavailable(self) -> None:
         registry_text = """\\
