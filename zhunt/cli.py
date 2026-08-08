@@ -13,6 +13,7 @@ from zhunt.benchmark import run_benchmark
 from zhunt.dashboard import create_dashboard_app
 from zhunt.installer import InstallationResult, Installer, InstallerError
 from zhunt.onboarding import create_onboarding_app
+from zhunt.ports import configured_port, resolve_daemon_port
 from zhunt.pricing import PricingSyncError, sync_registry
 from zhunt.registry import ModelRegistry
 from zhunt.telemetry import summarize_telemetry
@@ -37,7 +38,7 @@ def serve(
         "127.0.0.1",
         help="Address to bind. Defaults to localhost only.",
     ),
-    port: int = typer.Option(4000, min=1, max=65_535),
+    port: int | None = typer.Option(None, min=1, max=65_535),
     registry: Path | None = typer.Option(
         None,
         exists=True,
@@ -60,9 +61,21 @@ def serve(
 ) -> None:
     """Run the local LiteLLM-backed routing daemon."""
 
+    selected_port, fell_back = resolve_daemon_port(
+        requested=port,
+        persist=False,
+    )
+    if fell_back:
+        typer.echo(
+            f"Port {port or 4000} is in use; using localhost:{selected_port} instead."
+        )
+        typer.echo(
+            "App integrations were configured for the saved port; rerun `zhunt setup` "
+            "if you installed them before this port change."
+        )
     run_proxy(
         host=host,
-        port=port,
+        port=selected_port,
         registry_path=registry,
         allow_non_loopback=allow_non_loopback,
         telemetry_path=telemetry,
@@ -90,6 +103,11 @@ def setup(
             param_hint="host",
         )
     token = secrets.token_urlsafe(24)
+    daemon_port, fell_back = resolve_daemon_port(persist=True)
+    if fell_back:
+        typer.echo(
+            f"Port 4000 is in use; Zhunt will use localhost:{daemon_port} for app connections."
+        )
     url = f"http://{host}:{port}/?token={token}"
     typer.echo(f"Open Zhunt setup: {url}")
     if not no_browser:
@@ -97,7 +115,7 @@ def setup(
     import uvicorn
 
     uvicorn.run(
-        create_onboarding_app(setup_token=token),
+        create_onboarding_app(setup_token=token, daemon_port=daemon_port),
         host=host,
         port=port,
     )
@@ -146,6 +164,7 @@ def dashboard(
             "dashboard is local-only; use 127.0.0.1, localhost, or ::1",
             param_hint="host",
         )
+    daemon_port = configured_port() or daemon_port
     token = secrets.token_urlsafe(24)
     url = f"http://{host}:{port}/?token={token}"
     typer.echo(f"Open Zhunt dashboard: {url}")
@@ -198,6 +217,7 @@ def tray(
 
     from zhunt.tray import run_tray
 
+    daemon_port = configured_port() or daemon_port
     try:
         run_tray(
             daemon_host=daemon_host,
@@ -218,15 +238,26 @@ def install_app(
         InstallMode.PASSTHROUGH,
         help="API billing mode or registration-only passthrough mode.",
     ),
-    base_url: str = typer.Option(
-        "http://127.0.0.1:4000",
+    base_url: str | None = typer.Option(
+        None,
         help="Zhunt daemon base URL.",
     ),
 ) -> None:
     """Back up and configure an app to use Zhunt."""
 
     try:
-        result = create_installer().install(
+        installer = create_installer()
+        if base_url is None:
+            port, fell_back = resolve_daemon_port(
+                home=installer.home,
+                persist=True,
+            )
+            if fell_back:
+                typer.echo(
+                    f"Port 4000 is in use; configuring {app_name} for localhost:{port}."
+                )
+            base_url = f"http://127.0.0.1:{port}"
+        result = installer.install(
             app_name,
             mode=mode.value,
             base_url=base_url,

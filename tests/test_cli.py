@@ -46,6 +46,18 @@ class ServeCommandTests(unittest.TestCase):
             telemetry_path=telemetry,
         )
 
+    def test_serve_reports_safe_local_fallback(self) -> None:
+        with patch(
+            "zhunt.cli.resolve_daemon_port",
+            return_value=(4011, True),
+        ), patch("zhunt.cli.run_proxy") as run_proxy:
+            result = self.runner.invoke(app, ["serve"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("using localhost:4011 instead", result.output)
+        run_proxy.assert_called_once()
+        self.assertEqual(run_proxy.call_args.kwargs["port"], 4011)
+
     def test_setup_refuses_non_loopback_host(self) -> None:
         result = self.runner.invoke(
             app,

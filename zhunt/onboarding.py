@@ -18,6 +18,7 @@ def create_onboarding_app(
     *,
     home: Path | None = None,
     setup_token: str | None = None,
+    daemon_port: int = 4000,
     validator=validate_provider_key,
 ) -> FastAPI:
     """Create the local setup app; mutating routes require a one-time token."""
@@ -26,10 +27,11 @@ def create_onboarding_app(
     app.state.home = (home or Path.home()).expanduser().resolve()
     app.state.setup_token = setup_token or secrets.token_urlsafe(24)
     app.state.validator = validator
+    app.state.daemon_port = daemon_port
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
-        return _HTML
+        return _HTML.replace("__DAEMON_PORT__", str(app.state.daemon_port))
 
     @app.get("/api/providers")
     async def providers() -> list[dict[str, str]]:
@@ -79,13 +81,14 @@ def create_onboarding_app(
             model_count = app.state.validator(provider_id, api_key)
             env_path = app.state.home / ".zhunt" / "env"
             ensure_master_key(env_path)
+            save_env_value("ZHUNT_PORT", str(app.state.daemon_port), env_path)
             save_env_value("ZHUNT_PROVIDER", provider.id, env_path)
             save_env_value(provider.key_env, api_key.strip(), env_path)
             results = [
                 Installer(home=app.state.home).install(
                     app_name,
                     mode=mode,
-                    base_url="http://127.0.0.1:4000",
+                    base_url=f"http://127.0.0.1:{app.state.daemon_port}",
                 )
                 for app_name in apps
             ]
@@ -127,6 +130,7 @@ _HTML = """<!doctype html>
 <title>Zhunt setup</title>
 <style>body{font:16px system-ui;max-width:680px;margin:3rem auto;padding:0 1rem;color:#202124}label{display:block;margin:1rem 0 .35rem;font-weight:600}select,input,button{font:inherit;padding:.65rem;border:1px solid #bbb;border-radius:.4rem;width:100%;box-sizing:border-box}button{margin-top:1.25rem;background:#222;color:white;cursor:pointer}.actions{display:flex;gap:.6rem}.actions button{flex:1}.actions .secondary{background:white;color:#202124}.apps{display:grid;grid-template-columns:repeat(2,1fr);gap:.4rem}.apps label{font-weight:400;margin:0}.apps input{width:auto}.warning{padding:.8rem;background:#fff3cd;border:1px solid #e0b84c;border-radius:.4rem}.status{margin-top:1rem;min-height:1.5rem}.closed{max-width:680px;margin:3rem auto;padding:0 1rem}</style></head>
 <body><h1>Set up Zhunt</h1><p>Your key is sent only to this local setup page and saved in <code>~/.zhunt/env</code>.</p>
+<p>Apps configured here will use Zhunt at <code>127.0.0.1:__DAEMON_PORT__</code>. This stays on your computer.</p>
 <label for="provider">Provider</label><select id="provider"></select>
 <label for="key">API key</label><input id="key" type="password" autocomplete="off" placeholder="Paste your provider key">
 <p class="warning"><strong>Billing warning:</strong> selected apps use API mode and are billed per token. Claude Code traffic does not use Claude Max. Do not select Claude Code if you intend to stay on a flat-rate Claude Max plan.</p>

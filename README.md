@@ -140,6 +140,12 @@ recipes to configure. The key is written with restrictive permissions to
 `~/.zhunt/env`; the setup page uses a one-time local token and is not exposed by
 the inference daemon. Nous Portal uses its OpenAI-compatible endpoint and
 `PORTAL_API_KEY`; live provider responses still require a real account key.
+The daemon prefers localhost port 4000. If that port is already occupied,
+setup selects the next available localhost port, saves it in `~/.zhunt/env`,
+and uses it consistently for the app recipes configured on that page. Zhunt
+never falls back to a public network interface. If a later restart finds the
+saved port occupied, `zhunt serve` chooses another loopback port and prints a
+message to rerun setup so installed app endpoints are updated together.
 
 ## App wiring
 

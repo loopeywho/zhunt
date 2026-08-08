@@ -19,6 +19,19 @@ class OnboardingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("will not use Claude Max", response.text)
 
+    def test_setup_page_shows_selected_local_daemon_port(self) -> None:
+        with TemporaryDirectory() as directory:
+            app = create_onboarding_app(
+                home=Path(directory),
+                setup_token="setup-token",
+                daemon_port=4017,
+            )
+            with TestClient(app) as client:
+                response = client.get("/")
+
+        self.assertIn("127.0.0.1:4017", response.text)
+        self.assertNotIn("__DAEMON_PORT__", response.text)
+
     def test_setup_page_has_close_control_without_shutdown_route(self) -> None:
         with TemporaryDirectory() as directory:
             app = create_onboarding_app(home=Path(directory), setup_token="setup-token")
@@ -54,24 +67,40 @@ class OnboardingTests(unittest.TestCase):
                 app = create_onboarding_app(
                     home=home,
                     setup_token="setup-token",
+                    daemon_port=4017,
                     validator=lambda provider, key: 4,
                 )
                 with TestClient(app) as client:
                     denied = client.post(
                         "/api/configure",
-                        json={"provider": "nous-portal", "api_key": "sk-portal-test"},
+                        json={
+                            "provider": "nous-portal",
+                            "api_key": "sk-portal-test",
+                            "apps": ["hermes"],
+                            "mode": "api",
+                        },
                     )
                     configured = client.post(
                         "/api/configure",
                         headers={"X-Zhunt-Setup-Token": "setup-token"},
-                        json={"provider": "nous-portal", "api_key": "sk-portal-test"},
+                        json={
+                            "provider": "nous-portal",
+                            "api_key": "sk-portal-test",
+                            "apps": ["hermes"],
+                            "mode": "api",
+                        },
                     )
 
             env_text = (home / ".zhunt" / "env").read_text(encoding="utf-8")
+            hermes_config = (home / ".hermes" / "config.yaml").read_text(
+                encoding="utf-8"
+            )
 
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(configured.status_code, 200, configured.text)
         self.assertEqual(configured.json()["models"], 4)
+        self.assertIn("http://127.0.0.1:4017/v1", hermes_config)
+        self.assertIn('ZHUNT_PORT="4017"', env_text)
         self.assertIn('ZHUNT_PROVIDER="nous-portal"', env_text)
         self.assertIn('PORTAL_API_KEY="sk-portal-test"', env_text)
 
