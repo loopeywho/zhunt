@@ -63,6 +63,7 @@ def serve(
 
     selected_port, fell_back = resolve_daemon_port(
         requested=port,
+        host=host,
         persist=False,
     )
     if fell_back:

@@ -22,7 +22,7 @@ class PortSelectionTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             with patch(
                 "zhunt.ports.port_available",
-                side_effect=lambda port: port != 4000,
+                side_effect=lambda port, host: port != 4000,
             ):
                 selected, fell_back = resolve_daemon_port(
                     home=Path(directory),
@@ -33,20 +33,25 @@ class PortSelectionTests(unittest.TestCase):
             self.assertTrue(fell_back)
             self.assertEqual(configured_port(Path(directory)), 4001)
 
-    def test_fallback_never_probes_non_loopback(self) -> None:
+    def test_fallback_probes_requested_loopback_host(self) -> None:
         with TemporaryDirectory() as directory:
             with patch(
                 "zhunt.ports.port_available",
-                side_effect=lambda port: port == 4001,
+                side_effect=lambda port, host: port == 4001,
             ) as available:
                 selected, _ = resolve_daemon_port(
                     home=Path(directory),
+                    host="::1",
                     persist=False,
                 )
 
             self.assertEqual(selected, 4001)
-            available.assert_any_call(4000)
-            available.assert_any_call(4001)
+            available.assert_any_call(4000, host="::1")
+            available.assert_any_call(4001, host="::1")
+
+    def test_port_selection_rejects_non_loopback_host(self) -> None:
+        with self.assertRaises(ValueError):
+            resolve_daemon_port(host="0.0.0.0")
 
 
 if __name__ == "__main__":
