@@ -12,6 +12,11 @@ On Apple Silicon this produces `Zhunt-Setup-macos-arm64.dmg` and
 `/usr/local/bin/zhunt`; the daemon remains loopback-only by default and creates
 `~/.zhunt/env` on first run. No provider or master keys are bundled.
 
+To remove the macOS installation, run `/usr/local/bin/zhunt-uninstall`. It asks
+for confirmation, restores app configurations managed by Zhunt, removes the
+installed executable and package receipt, and retains `~/.zhunt` (keys and
+telemetry) unless you remove that directory separately.
+
 This is not yet a Universal 2 build. An Intel build must be produced separately
 on an x86_64 macOS runner and then combined and independently tested before the
 website can call the download “macOS Universal”. The packages are unsigned in

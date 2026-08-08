@@ -66,7 +66,7 @@ API requires a one-time local token; it never displays provider keys or prompt
 content. Savings are estimates based on the local registry, so run `zhunt sync`
 before using them in public material.
 
-The native installers include an optional menu-bar/system-tray indicator. Run
+The next native installers will include an optional menu-bar/system-tray indicator. Run
 `zhunt tray` to show a green **Zhunt Active** or red **Zhunt Offline** badge and
 open the dashboard from its menu. A Python installation can add the same
 support with `python -m pip install 'zhunt[desktop]'`. The indicator reports
@@ -160,7 +160,12 @@ zhunt install codex --mode passthrough
 zhunt install cursor
 zhunt install vscode
 zhunt uninstall codex
+zhunt uninstall --all
 ```
+
+On macOS, the packaged `/usr/local/bin/zhunt-uninstall` command also removes
+the installed binary and package receipt after restoring managed app files;
+it retains `~/.zhunt` unless you remove keys and telemetry separately.
 
 The Claude command is intentionally marked `--mode api`: Claude Code has no
 supported passthrough mode, so it moves all traffic from a flat-rate Claude Max

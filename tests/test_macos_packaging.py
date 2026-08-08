@@ -14,6 +14,13 @@ class MacOSPackagingTests(unittest.TestCase):
         self.assertIn("Zhunt-Setup-macos-$ARCH.pkg", script)
         self.assertIn("Zhunt-Setup-macos-$ARCH.dmg", script)
 
+    def test_macos_package_includes_confirmed_uninstaller(self) -> None:
+        script = (ROOT / "packaging/macos/build.sh").read_text(encoding="utf-8")
+        uninstaller = (ROOT / "packaging/macos/uninstall.sh").read_text(encoding="utf-8")
+        self.assertIn("zhunt-uninstall", script)
+        self.assertIn('"$BIN" uninstall --all', uninstaller)
+        self.assertIn("pkgutil --forget", uninstaller)
+
     def test_build_script_bundles_registry_and_tiktoken(self) -> None:
         script = (ROOT / "packaging/macos/build.sh").read_text(encoding="utf-8")
         self.assertIn("--collect-all tiktoken", script)

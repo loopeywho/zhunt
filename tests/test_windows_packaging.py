@@ -29,6 +29,10 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertIn("Run Windows smoke verification", workflow)
         self.assertIn("packaging\\windows\\verify.ps1", workflow)
 
+    def test_windows_uninstaller_restores_managed_app_configs(self) -> None:
+        installer = (ROOT / "packaging/windows/zhunt.iss").read_text(encoding="utf-8")
+        self.assertIn("uninstall --all", installer)
+
     def test_windows_build_includes_dynamic_tiktoken_encoding(self) -> None:
         build = (ROOT / "packaging/windows/build.ps1").read_text(encoding="utf-8")
         self.assertIn("--collect-all tiktoken", build)

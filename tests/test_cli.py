@@ -124,6 +124,26 @@ class ServeCommandTests(unittest.TestCase):
             self.assertEqual(restored.exit_code, 0, restored.output)
             self.assertEqual(target.read_bytes(), original)
 
+    def test_uninstall_all_restores_managed_apps(self) -> None:
+        with TemporaryDirectory() as directory:
+            home = Path(directory)
+            target = home / ".codex" / "config.toml"
+            original = b'model = "native"\n'
+            target.parent.mkdir(parents=True)
+            target.write_bytes(original)
+            installer = Installer(home=home, platform_name="darwin")
+            installer.install(
+                "codex",
+                mode="api",
+                base_url="http://127.0.0.1:4000",
+            )
+
+            with patch("zhunt.cli.create_installer", return_value=installer):
+                result = self.runner.invoke(app, ["uninstall", "--all"])
+
+            self.assertEqual(result.exit_code, 0, result.output)
+            self.assertEqual(target.read_bytes(), original)
+
     def test_cursor_install_prints_vendor_supported_manual_steps(self) -> None:
         with TemporaryDirectory() as directory:
             installer = Installer(

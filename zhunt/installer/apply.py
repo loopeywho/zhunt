@@ -149,6 +149,20 @@ class Installer:
         manifest_path.unlink()
         return InstallationResult(app=app, target=target, backup=backup)
 
+    def installed_apps(self) -> tuple[str, ...]:
+        """Return automatic app recipes currently managed by Zhunt."""
+
+        installs = self.home / ".zhunt" / "installs"
+        if not installs.is_dir():
+            return ()
+        return tuple(
+            sorted(
+                path.stem
+                for path in installs.glob("*.json")
+                if path.is_file() and path.stem in supported_apps()
+            )
+        )
+
     def _target(self, recipe: Mapping[str, Any]) -> Path:
         raw_targets = recipe.get("target")
         if not isinstance(raw_targets, Mapping):

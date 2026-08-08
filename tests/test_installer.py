@@ -241,6 +241,14 @@ class InstallerTests(unittest.TestCase):
         self.installer.uninstall("codex")
         self.assertFalse(result.target.exists())
 
+    def test_installed_apps_lists_managed_recipes(self) -> None:
+        self.installer.install(
+            "codex",
+            mode="api",
+            base_url=BASE_URL,
+        )
+        self.assertEqual(self.installer.installed_apps(), ("codex",))
+
     @staticmethod
     def _write(path: Path, content: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

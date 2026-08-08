@@ -270,12 +270,34 @@ def install_app(
 
 @app.command("uninstall")
 def uninstall_app(
-    app_name: str = typer.Argument(help="App recipe to restore."),
+    app_name: str | None = typer.Argument(
+        None,
+        help="App recipe to restore, or omit when using --all.",
+    ),
+    all_apps: bool = typer.Option(
+        False,
+        "--all",
+        help="Restore every app configuration managed by Zhunt.",
+    ),
 ) -> None:
-    """Restore the configuration saved before Zhunt installation."""
+    """Restore app configuration saved before Zhunt installation."""
 
     try:
-        result = create_installer().uninstall(app_name)
+        installer = create_installer()
+        if all_apps:
+            if app_name is not None:
+                raise InstallerError("do not provide an app name with --all")
+            apps = installer.installed_apps()
+            if not apps:
+                typer.echo("No Zhunt-managed app configurations found.")
+                return
+            for installed_app in apps:
+                result = installer.uninstall(installed_app)
+                typer.echo(f"Restored {installed_app}: {result.target}")
+            return
+        if app_name is None:
+            raise InstallerError("provide an app name or use --all")
+        result = installer.uninstall(app_name)
     except InstallerError as error:
         raise typer.BadParameter(str(error), param_hint="app_name") from error
     if result.manual:

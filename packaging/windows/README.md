@@ -24,8 +24,9 @@ entire generated onedir folder together when distributing it.
 The installer is written to `dist/Zhunt-Setup-win-x64.exe` with a matching
 `Zhunt-Setup-win-x64.exe.sha256` checksum. It installs per-user
 under `%LOCALAPPDATA%\Programs\Zhunt` and does not delete `%USERPROFILE%\.zhunt`
-on uninstall. Provider keys and the daemon master key are generated or entered
-at runtime; no secrets are bundled.
+on uninstall. Its uninstaller restores Zhunt-managed app configurations first.
+Provider keys and the daemon master key are generated or entered at runtime; no
+secrets are bundled.
 
 After installation, run the automated localhost smoke check from PowerShell:
 

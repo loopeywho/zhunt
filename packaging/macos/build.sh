@@ -70,6 +70,8 @@ cp "$ROOT/LICENSE" "$PACKAGE/LICENSE"
 PAYLOAD="$BUILD_ROOT/payload"
 mkdir -p "$PAYLOAD/usr/local/lib/zhunt" "$PAYLOAD/usr/local/bin"
 cp -R "$PACKAGE"/. "$PAYLOAD/usr/local/lib/zhunt/"
+cp "$ROOT/packaging/macos/uninstall.sh" "$PAYLOAD/usr/local/bin/zhunt-uninstall"
+chmod 755 "$PAYLOAD/usr/local/bin/zhunt-uninstall"
 cat > "$PAYLOAD/usr/local/bin/zhunt" <<'EOF'
 #!/bin/sh
 exec /usr/local/lib/zhunt/zhunt "$@"

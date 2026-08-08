@@ -31,5 +31,8 @@ Name: "{group}\Uninstall Zhunt"; Filename: "{uninstallexe}"
 [Run]
 Filename: "{app}\{#ExecutableName}"; Parameters: "--help"; Description: "Show Zhunt command help"; Flags: postinstall nowait skipifsilent
 
+[UninstallRun]
+Filename: "{app}\{#ExecutableName}"; Parameters: "uninstall --all"; Flags: runhidden waituntilterminated
+
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
