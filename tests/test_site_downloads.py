@@ -17,3 +17,13 @@ def test_download_cards_point_to_preview_release_assets():
     assert "Windows ARM64" not in html
     assert "Linux x86_64" in html
     assert "Coming soon" not in html
+
+
+def test_public_checkout_uses_usd_payment_link():
+    html = SITE.read_text(encoding="utf-8")
+
+    assert html.count("https://buy.stripe.com/28EdR883o8tSgfE2RncMM01") == 4
+    assert "$7/month" in html
+    assert "$7/mo" in html
+    assert "£" not in html
+    assert "eVqfZg5Vg25ubZo77DcMM00" not in html
