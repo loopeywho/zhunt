@@ -55,6 +55,36 @@ class ServeCommandTests(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("setup is local-only", result.output)
 
+    def test_dashboard_refuses_non_loopback_host(self) -> None:
+        result = self.runner.invoke(
+            app,
+            ["dashboard", "--host", "0.0.0.0", "--no-browser"],
+        )
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("dashboard is local-only", result.output)
+
+    def test_dashboard_runs_with_local_only_defaults(self) -> None:
+        with patch("uvicorn.run") as run_server:
+            result = self.runner.invoke(app, ["dashboard", "--no-browser"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        run_server.assert_called_once()
+        self.assertEqual(run_server.call_args.kwargs["host"], "127.0.0.1")
+        self.assertEqual(run_server.call_args.kwargs["port"], 8401)
+
+    def test_tray_explains_optional_dependency(self) -> None:
+        with patch(
+            "zhunt.tray.run_tray",
+            side_effect=RuntimeError(
+                "tray support is optional; install it with `pip install 'zhunt[desktop]'`"
+            ),
+        ):
+            result = self.runner.invoke(app, ["tray"])
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("zhunt[desktop]", result.output)
+
     def test_install_and_uninstall_codex_through_cli(self) -> None:
         with TemporaryDirectory() as directory:
             home = Path(directory)

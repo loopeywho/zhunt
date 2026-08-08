@@ -132,6 +132,15 @@ class ModelRegistry:
             for model in models
         )
 
+    def models_by_tier(self) -> tuple[tuple[Tier, Model], ...]:
+        """Return configured models with their routing tier for local status UIs."""
+
+        return tuple(
+            (tier, model)
+            for tier, models in self._tiers.items()
+            for model in models
+        )
+
     def projected_cost(
         self,
         model_id: str,

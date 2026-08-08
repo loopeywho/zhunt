@@ -26,7 +26,7 @@ PYTHON=${PYTHON:-python3.12}
 "$PYTHON" -m venv "$VENV"
 PY="$VENV/bin/python"
 "$PY" -m pip install --upgrade pip
-"$PY" -m pip install "$ROOT" "pyinstaller>=6.10,<7"
+"$PY" -m pip install "$ROOT[desktop]" "pyinstaller>=6.10,<7"
 
 "$PY" -m PyInstaller \
     --noconfirm \
@@ -37,6 +37,8 @@ PY="$VENV/bin/python"
     --workpath "$WORK" \
     --specpath "$WORK" \
     --collect-all zhunt \
+    --collect-all pystray \
+    --collect-all PIL \
     --collect-all litellm \
     --collect-all fastapi \
     --collect-all uvicorn \

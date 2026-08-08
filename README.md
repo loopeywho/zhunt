@@ -52,6 +52,27 @@ prices from OpenRouter's models API.
 No prompt or response content is written to telemetry, and Zhunt does not
 phone home.
 
+## Local dashboard and tray indicator
+
+Open the local status dashboard with:
+
+```console
+zhunt dashboard
+```
+
+It shows daemon reachability, the configured provider, registry model prices,
+request counts, and estimated savings. The dashboard is loopback-only and its
+API requires a one-time local token; it never displays provider keys or prompt
+content. Savings are estimates based on the local registry, so run `zhunt sync`
+before using them in public material.
+
+The native installers include an optional menu-bar/system-tray indicator. Run
+`zhunt tray` to show a green **Zhunt Active** or red **Zhunt Offline** badge and
+open the dashboard from its menu. A Python installation can add the same
+support with `python -m pip install 'zhunt[desktop]'`. The indicator reports
+daemon health and wire protocol activity; it does not guess which desktop app
+originated a request.
+
 Run the offline benchmark with:
 
 ```console

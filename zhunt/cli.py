@@ -10,6 +10,7 @@ import webbrowser
 import typer
 
 from zhunt.benchmark import run_benchmark
+from zhunt.dashboard import create_dashboard_app
 from zhunt.installer import InstallationResult, Installer, InstallerError
 from zhunt.onboarding import create_onboarding_app
 from zhunt.pricing import PricingSyncError, sync_registry
@@ -100,6 +101,114 @@ def setup(
         host=host,
         port=port,
     )
+
+
+@app.command()
+def dashboard(
+    host: str = typer.Option(
+        "127.0.0.1",
+        help="Address for the local dashboard. Non-loopback hosts are refused.",
+    ),
+    port: int = typer.Option(8401, min=1, max=65_535),
+    daemon_host: str = typer.Option(
+        "127.0.0.1",
+        help="Zhunt daemon host to monitor.",
+    ),
+    daemon_port: int = typer.Option(4000, min=1, max=65_535),
+    registry: Path | None = typer.Option(
+        None,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional models.yaml path; defaults to the packaged registry.",
+    ),
+    provider: str | None = typer.Option(
+        None,
+        help="Provider profile to display, such as nous-portal.",
+    ),
+    telemetry: Path = typer.Option(
+        Path.home() / ".zhunt" / "telemetry.jsonl",
+        "--telemetry",
+        exists=False,
+        dir_okay=False,
+        help="Local JSONL telemetry path.",
+    ),
+    no_browser: bool = typer.Option(
+        False,
+        "--no-browser",
+        help="Print the dashboard URL without opening a browser.",
+    ),
+) -> None:
+    """Open the local status, model, and savings dashboard."""
+
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise typer.BadParameter(
+            "dashboard is local-only; use 127.0.0.1, localhost, or ::1",
+            param_hint="host",
+        )
+    token = secrets.token_urlsafe(24)
+    url = f"http://{host}:{port}/?token={token}"
+    typer.echo(f"Open Zhunt dashboard: {url}")
+    if not no_browser:
+        webbrowser.open(url)
+    import uvicorn
+
+    uvicorn.run(
+        create_dashboard_app(
+            dashboard_token=token,
+            registry_path=registry,
+            provider_id=provider,
+            telemetry_path=telemetry,
+            daemon_host=daemon_host,
+            daemon_port=daemon_port,
+        ),
+        host=host,
+        port=port,
+    )
+
+
+@app.command()
+def tray(
+    daemon_host: str = typer.Option(
+        "127.0.0.1",
+        help="Zhunt daemon host to monitor.",
+    ),
+    daemon_port: int = typer.Option(4000, min=1, max=65_535),
+    dashboard_port: int = typer.Option(8402, min=1, max=65_535),
+    registry: Path | None = typer.Option(
+        None,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Optional models.yaml path; defaults to the packaged registry.",
+    ),
+    provider: str | None = typer.Option(
+        None,
+        help="Provider profile to display, such as nous-portal.",
+    ),
+    telemetry: Path = typer.Option(
+        Path.home() / ".zhunt" / "telemetry.jsonl",
+        "--telemetry",
+        exists=False,
+        dir_okay=False,
+        help="Local JSONL telemetry path.",
+    ),
+) -> None:
+    """Run the optional local menu-bar/system-tray indicator."""
+
+    from zhunt.tray import run_tray
+
+    try:
+        run_tray(
+            daemon_host=daemon_host,
+            daemon_port=daemon_port,
+            dashboard_port=dashboard_port,
+            telemetry_path=telemetry,
+            registry_path=registry,
+            provider_id=provider,
+        )
+    except (RuntimeError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
 
 
 @app.command("install")

@@ -28,7 +28,7 @@ if ($null -eq $py) {
 $python = Join-Path $venv "Scripts\python.exe"
 & $python -c "import platform, struct, sys; assert sys.version_info[:2] == (3, 12); assert struct.calcsize('P') == 8; print(platform.platform())"
 & $python -m pip install --upgrade pip
-& $python -m pip install "." "pyinstaller>=6.10,<7"
+& $python -m pip install ".[desktop]" "pyinstaller>=6.10,<7"
 
 & $python -m PyInstaller `
     --noconfirm `
@@ -38,6 +38,8 @@ $python = Join-Path $venv "Scripts\python.exe"
     --distpath $dist `
     --workpath $work `
     --collect-all zhunt `
+    --collect-all pystray `
+    --collect-all PIL `
     --collect-all litellm `
     --collect-all fastapi `
     --collect-all uvicorn `
