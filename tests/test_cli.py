@@ -16,7 +16,10 @@ class ServeCommandTests(unittest.TestCase):
         self.runner = CliRunner()
 
     def test_serve_defaults_to_localhost(self) -> None:
-        with patch("zhunt.cli.run_proxy") as run_proxy:
+        with patch(
+            "zhunt.cli.resolve_daemon_port",
+            return_value=(4000, False),
+        ), patch("zhunt.cli.run_proxy") as run_proxy:
             result = self.runner.invoke(app, ["serve"])
 
         self.assertEqual(result.exit_code, 0)
@@ -31,7 +34,10 @@ class ServeCommandTests(unittest.TestCase):
     def test_serve_accepts_explicit_telemetry_path(self) -> None:
         with TemporaryDirectory() as directory:
             telemetry = Path(directory) / "evidence.jsonl"
-            with patch("zhunt.cli.run_proxy") as run_proxy:
+            with patch(
+                "zhunt.cli.resolve_daemon_port",
+                return_value=(4000, False),
+            ), patch("zhunt.cli.run_proxy") as run_proxy:
                 result = self.runner.invoke(
                     app,
                     ["serve", "--telemetry", str(telemetry)],
@@ -151,6 +157,9 @@ class ServeCommandTests(unittest.TestCase):
                 platform_name="darwin",
             )
             with patch(
+                "zhunt.ports.port_available",
+                return_value=True,
+            ), patch(
                 "zhunt.cli.create_installer",
                 return_value=installer,
             ):

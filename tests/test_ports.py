@@ -9,10 +9,14 @@ from zhunt.ports import configured_port, resolve_daemon_port
 class PortSelectionTests(unittest.TestCase):
     def test_prefers_standard_port_when_available(self) -> None:
         with TemporaryDirectory() as directory:
-            selected, fell_back = resolve_daemon_port(
-                home=Path(directory),
-                persist=True,
-            )
+            with patch(
+                "zhunt.ports.port_available",
+                return_value=True,
+            ):
+                selected, fell_back = resolve_daemon_port(
+                    home=Path(directory),
+                    persist=True,
+                )
 
             self.assertEqual(selected, 4000)
             self.assertFalse(fell_back)
