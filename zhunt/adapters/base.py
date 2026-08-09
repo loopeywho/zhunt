@@ -163,18 +163,34 @@ def strip_thinking_blocks(items: list[Any]) -> list[Any]:
     Reproduced 2026-08-09 identically across Anthropic direct, Bedrock,
     Google, and Azure.
 
-    These blocks are response-side artifacts — they have no meaning in a
-    client request and can be safely stripped. Only ``text`` and
-    ``refusal`` content blocks are retained.
+    Handles two layers where reasoning artifacts appear:
+
+    1. **Nested content blocks** (Anthropic Messages / Chat Completions
+       wire): items with a ``content`` list containing blocks of type
+       ``thinking`` or ``redacted_thinking`` — these are stripped from
+       the content array.
+
+    2. **Top-level reasoning items** (OpenAI Responses wire): items whose
+       own ``type`` is ``\"reasoning\"`` — Responses API represents
+       reasoning as a distinct top-level item in the ``input`` array,
+       not nested inside a message's content. These are dropped entirely.
+
+    Both layers are response-side artifacts with no meaning in a client
+    request. Only ``text`` and ``refusal`` content blocks are retained.
     """
 
     THINKING_TYPES = {"thinking", "redacted_thinking"}
+    TOP_LEVEL_DROP = {"reasoning", "thinking"}
 
     out: list[Any] = []
     for item in items:
         if not isinstance(item, Mapping):
             out.append(item)
             continue
+        # Drop top-level reasoning/thinking items (Responses API shape)
+        if item.get("type") in TOP_LEVEL_DROP:
+            continue
+        # Strip thinking/redacted_thinking blocks nested inside content
         content = item.get("content")
         if not isinstance(content, list):
             out.append(item)

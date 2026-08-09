@@ -270,6 +270,60 @@ class StripThinkingBlocksTests(unittest.TestCase):
         self.assertEqual(original, items_copy)  # original unchanged
         self.assertNotEqual(result, original)   # result differs
 
+    def test_drops_top_level_reasoning(self) -> None:
+        """A top-level reasoning item (Responses API shape) is dropped."""
+        items = [
+            self._msg("user", [self._text_block("hello")]),
+            {"type": "reasoning", "signature": "sig-abc"},
+            self._msg("assistant", [self._text_block("hi")]),
+        ]
+        result = strip_thinking_blocks(items)
+        expected = [
+            self._msg("user", [self._text_block("hello")]),
+            self._msg("assistant", [self._text_block("hi")]),
+        ]
+        self.assertEqual(result, expected)
+
+    def test_drops_top_level_thinking(self) -> None:
+        """A top-level thinking item (Responses API shape) is dropped."""
+        items = [
+            self._msg("user", [self._text_block("hello")]),
+            {"type": "thinking", "signature": "sig-xyz"},
+        ]
+        result = strip_thinking_blocks(items)
+        expected = [
+            self._msg("user", [self._text_block("hello")]),
+        ]
+        self.assertEqual(result, expected)
+
+    def test_keeps_unknown_top_level_types(self) -> None:
+        """Top-level items with unknown types (e.g. message) pass through."""
+        items = [
+            {"type": "message", "role": "user", "content": "hello"},
+            {"type": "function_call_output", "call_id": "call-1", "output": "ok"},
+        ]
+        result = strip_thinking_blocks(items)
+        self.assertEqual(result, items)
+
+    def test_drops_reasoning_between_messages(self) -> None:
+        """Reasoning items in any position in the input array are dropped."""
+        items = [
+            self._msg("user", [self._text_block("q1")]),
+            {"type": "reasoning", "signature": "sig-1"},
+            self._msg("assistant", [self._text_block("a1")]),
+            self._msg("user", [self._text_block("q2")]),
+            {"type": "reasoning", "signature": "sig-2"},
+            self._msg("assistant", [self._text_block("a2")]),
+        ]
+        result = strip_thinking_blocks(items)
+        expected = [
+            self._msg("user", [self._text_block("q1")]),
+            self._msg("assistant", [self._text_block("a1")]),
+            self._msg("user", [self._text_block("q2")]),
+            self._msg("assistant", [self._text_block("a2")]),
+        ]
+        self.assertEqual(result, expected)
+
 
 if __name__ == "__main__":
     unittest.main()
