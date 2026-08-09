@@ -22,7 +22,7 @@ from zhunt.adapters import (
     OpenAIChatCompletionsAdapter,
     OpenAIResponsesAdapter,
 )
-from zhunt.adapters.base import AdapterError, WireAdapter
+from zhunt.adapters.base import AdapterError, WireAdapter, system_first
 from zhunt.auth import ensure_master_key
 from zhunt.health import (
     ModelHealth,
@@ -106,6 +106,21 @@ class ZhuntProxyHook(CustomLogger):
             return data
 
         payload, headers = _original_request(data)
+        # Some Anthropic-family backends reject a system/developer item that
+        # isn't the very first entry, even though both OpenAI-style dialects
+        # allow one anywhere (reproduced live 2026-08-09 against
+        # openrouter/anthropic/claude-sonnet-5 — identical failure across
+        # four backend infra providers, confirming it's a translation
+        # constraint, not one provider's quirk). Applied directly to `data`
+        # here, unconditionally, rather than via the adapter's
+        # apply_route()/upstream_payload: this hook already reconstructs
+        # `data["model"]` by hand instead of consuming upstream_payload, and
+        # this must also cover the retry path below, which has no `routed`
+        # object to draw from.
+        if isinstance(payload.get("input"), list):
+            data["input"] = system_first(payload["input"])
+        if isinstance(payload.get("messages"), list):
+            data["messages"] = system_first(payload["messages"])
         attempt_id = _header(headers, _ATTEMPT_HEADER.decode())
         retry_decision = self._take_retry(attempt_id)
         retry_attempt = retry_decision is not None

@@ -101,6 +101,60 @@ class OpenAIChatCompletionsAdapterTests(unittest.TestCase):
         self.assertEqual(routed.upstream_payload["model"], "provider/coding")
         self.assertEqual(self.payload["model"], "zhunt-auto")
 
+    def test_apply_route_moves_mid_conversation_system_items_to_the_front(
+        self,
+    ) -> None:
+        # Same fix as the Responses adapter, same root cause: Anthropic-family
+        # backends reject a system/developer message that isn't first, even
+        # though OpenAI's Chat Completions format allows it anywhere.
+        coordinator = RoutingCoordinator(
+            registry=ModelRegistry.from_data(
+                {
+                    "aliases": {"zhunt-auto": {"tier": "auto"}},
+                    "tiers": {
+                        "coding": [
+                            {"model": "provider/coding", "in": 1, "out": 2}
+                        ]
+                    },
+                }
+            ),
+            classifier=HeuristicClassifier(long_context_tokens=100_000),
+        )
+        payload = {
+            "model": "zhunt-auto",
+            "messages": [
+                {"role": "user", "content": "Start the task."},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "type": "function",
+                            "function": {"name": "shell", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call-1", "content": "failed"},
+                {"role": "system", "content": "Reminder: follow the style guide."},
+                {"role": "user", "content": "Try again."},
+            ],
+        }
+
+        routed = self.adapter.route(payload, coordinator)
+
+        self.assertEqual(
+            [message["role"] for message in routed.upstream_payload["messages"]],
+            ["system", "user", "assistant", "tool", "user"],
+        )
+        self.assertEqual(
+            routed.upstream_payload["messages"][1]["content"], "Start the task."
+        )
+        self.assertEqual(
+            routed.upstream_payload["messages"][4]["content"], "Try again."
+        )
+        self.assertEqual(payload["messages"][0]["role"], "user")
+
     def test_missing_messages_is_rejected(self) -> None:
         with self.assertRaisesRegex(AdapterError, "messages list"):
             self.adapter.normalize({"model": "zhunt-auto"})

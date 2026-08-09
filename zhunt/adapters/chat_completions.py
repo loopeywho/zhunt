@@ -12,12 +12,24 @@ from zhunt.adapters.base import (
     estimate_tokens,
     require_model,
     session_id_from_headers,
+    system_first,
     text_content,
 )
-from zhunt.router import RoutingRequest
+from zhunt.router import RoutingDecision, RoutingRequest
 
 
 class OpenAIChatCompletionsAdapter(WireAdapter):
+    def apply_route(
+        self,
+        payload: Mapping[str, Any],
+        decision: RoutingDecision,
+    ) -> dict[str, Any]:
+        routed = super().apply_route(payload, decision)
+        messages = routed.get("messages")
+        if isinstance(messages, list):
+            routed["messages"] = system_first(messages)
+        return routed
+
     def normalize(
         self,
         payload: Mapping[str, Any],

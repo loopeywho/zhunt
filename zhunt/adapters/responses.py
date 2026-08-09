@@ -12,12 +12,24 @@ from zhunt.adapters.base import (
     estimate_tokens,
     require_model,
     session_id_from_headers,
+    system_first,
     text_content,
 )
-from zhunt.router import RoutingRequest
+from zhunt.router import RoutingDecision, RoutingRequest
 
 
 class OpenAIResponsesAdapter(WireAdapter):
+    def apply_route(
+        self,
+        payload: Mapping[str, Any],
+        decision: RoutingDecision,
+    ) -> dict[str, Any]:
+        routed = super().apply_route(payload, decision)
+        input_value = routed.get("input")
+        if isinstance(input_value, list):
+            routed["input"] = system_first(input_value)
+        return routed
+
     def normalize(
         self,
         payload: Mapping[str, Any],

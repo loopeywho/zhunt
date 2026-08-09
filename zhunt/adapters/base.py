@@ -118,3 +118,31 @@ def contains_tool_content(content: Any) -> bool:
 def estimate_tokens(payload: Mapping[str, Any]) -> int:
     serialized = json.dumps(payload, separators=(",", ":"), default=str)
     return max(1, len(serialized) // 4)
+
+
+def system_first(items: list[Any]) -> list[Any]:
+    """Move system/developer-role items to the front, preserving relative order.
+
+    OpenAI-style wire formats (Chat Completions ``messages``, Responses
+    ``input``) allow a system/developer-role item anywhere in the array.
+    Anthropic-family backends do not: reproduced 2026-08-09 against
+    ``openrouter/anthropic/claude-sonnet-5`` — a system item at any position
+    other than the very start (or a directive-only empty-content item)
+    fails with "role 'system' must precede an 'assistant' message or end
+    the array", identically across four backend infra providers (Anthropic
+    direct, AWS Bedrock, Google, Azure), confirming it's a translation
+    constraint, not one provider's quirk. Reordering once here, at the
+    adapter boundary Zhunt owns, fixes it for every downstream provider
+    rather than depending on a LiteLLM-internal translation fix. A pure
+    reorder (no merging, no dropped content) is deliberately conservative —
+    every other role's relative order is untouched.
+    """
+
+    leading: list[Any] = []
+    rest: list[Any] = []
+    for item in items:
+        if isinstance(item, Mapping) and item.get("role") in {"system", "developer"}:
+            leading.append(item)
+        else:
+            rest.append(item)
+    return leading + rest

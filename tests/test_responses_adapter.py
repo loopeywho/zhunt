@@ -111,6 +111,74 @@ class OpenAIResponsesAdapterTests(unittest.TestCase):
         self.assertEqual(routed.upstream_payload["model"], "provider/coding")
         self.assertEqual(self.payload["model"], "zhunt-auto")
 
+    def test_apply_route_moves_mid_conversation_system_items_to_the_front(
+        self,
+    ) -> None:
+        # Anthropic-family backends reject a system/developer item that isn't
+        # first (reproduced live 2026-08-09 against
+        # openrouter/anthropic/claude-sonnet-5, identical failure across four
+        # backend infra providers) even though it's valid per the Responses
+        # API's own spec. apply_route is the boundary that must fix this,
+        # regardless of which model ends up routed to.
+        coordinator = RoutingCoordinator(
+            registry=ModelRegistry.from_data(
+                {
+                    "aliases": {"zhunt-auto": {"tier": "auto"}},
+                    "tiers": {
+                        "chat": [{"model": "provider/chat", "in": 1, "out": 2}]
+                    },
+                }
+            ),
+            classifier=HeuristicClassifier(),
+        )
+        payload = {
+            "model": "zhunt-auto",
+            "input": [
+                {"type": "message", "role": "user", "content": "Please help."},
+                {
+                    "type": "message",
+                    "role": "system",
+                    "content": "Reminder: follow the style guide.",
+                },
+                {"type": "message", "role": "user", "content": "Go ahead."},
+            ],
+        }
+
+        routed = self.adapter.route(payload, coordinator)
+
+        self.assertEqual(
+            [item["role"] for item in routed.upstream_payload["input"]],
+            ["system", "user", "user"],
+        )
+        # Relative order within each group is preserved, not just the split.
+        self.assertEqual(
+            routed.upstream_payload["input"][1]["content"], "Please help."
+        )
+        self.assertEqual(
+            routed.upstream_payload["input"][2]["content"], "Go ahead."
+        )
+        # The original payload passed in is untouched.
+        self.assertEqual(payload["input"][0]["role"], "user")
+
+    def test_apply_route_leaves_string_input_untouched(self) -> None:
+        coordinator = RoutingCoordinator(
+            registry=ModelRegistry.from_data(
+                {
+                    "aliases": {"zhunt-auto": {"tier": "auto"}},
+                    "tiers": {
+                        "chat": [{"model": "provider/chat", "in": 1, "out": 2}]
+                    },
+                }
+            ),
+            classifier=HeuristicClassifier(),
+        )
+
+        routed = self.adapter.route(
+            {"model": "zhunt-auto", "input": "Hello"}, coordinator
+        )
+
+        self.assertEqual(routed.upstream_payload["input"], "Hello")
+
     def test_invalid_input_is_rejected(self) -> None:
         with self.assertRaisesRegex(AdapterError, "string or list"):
             self.adapter.normalize({"model": "zhunt-auto", "input": 42})
