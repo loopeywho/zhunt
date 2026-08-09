@@ -22,7 +22,7 @@ from zhunt.adapters import (
     OpenAIChatCompletionsAdapter,
     OpenAIResponsesAdapter,
 )
-from zhunt.adapters.base import AdapterError, WireAdapter, system_first
+from zhunt.adapters.base import AdapterError, WireAdapter, strip_thinking_blocks, system_first
 from zhunt.auth import ensure_master_key
 from zhunt.health import (
     ModelHealth,
@@ -119,8 +119,10 @@ class ZhuntProxyHook(CustomLogger):
         # object to draw from.
         if isinstance(payload.get("input"), list):
             data["input"] = system_first(payload["input"])
+            data["input"] = strip_thinking_blocks(data["input"])
         if isinstance(payload.get("messages"), list):
             data["messages"] = system_first(payload["messages"])
+            data["messages"] = strip_thinking_blocks(data["messages"])
         attempt_id = _header(headers, _ATTEMPT_HEADER.decode())
         retry_decision = self._take_retry(attempt_id)
         retry_attempt = retry_decision is not None

@@ -1,6 +1,7 @@
 import unittest
 
 from zhunt.adapters import AdapterError, OpenAIResponsesAdapter
+from zhunt.adapters.base import strip_thinking_blocks
 from zhunt.brain import HeuristicClassifier, Tier
 from zhunt.registry import ModelRegistry
 from zhunt.router import RoutingCoordinator
@@ -192,6 +193,82 @@ class OpenAIResponsesAdapterTests(unittest.TestCase):
                     "max_output_tokens": "many",
                 }
             )
+
+
+class StripThinkingBlocksTests(unittest.TestCase):
+    """Direct unit tests for strip_thinking_blocks (no adapter/router)."""
+
+    def _msg(self, role: str, content: list) -> dict:
+        return {"type": "message", "role": role, "content": content}
+
+    def _text_block(self, text: str = "hello") -> dict:
+        return {"type": "text", "text": text}
+
+    def _thinking_block(self, signature: str = "sig1") -> dict:
+        return {"type": "thinking", "thinking": "...", "signature": signature}
+
+    def _redacted_block(self, data: str = "AAAA") -> dict:
+        return {"type": "redacted_thinking", "data": data}
+
+    def test_passthrough_string_content(self) -> None:
+        """Messages with string content pass through unchanged."""
+        items = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+        ]
+        result = strip_thinking_blocks(items)
+        self.assertEqual(result, items)
+
+    def test_passthrough_no_thinking(self) -> None:
+        """Messages with only text blocks pass through unchanged."""
+        items = [
+            self._msg("user", [self._text_block("hello")]),
+            self._msg("assistant", [self._text_block("world")]),
+        ]
+        result = strip_thinking_blocks(items)
+        self.assertEqual(result, items)
+
+    def test_strips_thinking_block(self) -> None:
+        """A thinking block is removed from assistant content."""
+        items = [
+            self._msg("assistant", [self._thinking_block()]),
+        ]
+        result = strip_thinking_blocks(items)
+        self.assertEqual(result, [self._msg("assistant", [])])
+
+    def test_strips_redacted_thinking_block(self) -> None:
+        """A redacted_thinking block is removed from assistant content."""
+        items = [
+            self._msg("assistant", [self._redacted_block()]),
+        ]
+        result = strip_thinking_blocks(items)
+        self.assertEqual(result, [self._msg("assistant", [])])
+
+    def test_keeps_text_alongside_thinking(self) -> None:
+        """Text blocks survive when thinking blocks are also present."""
+        items = [
+            self._msg("assistant", [
+                self._text_block("answer"),
+                self._thinking_block(),
+                self._text_block("more"),
+            ]),
+        ]
+        result = strip_thinking_blocks(items)
+        expected = [self._msg("assistant", [
+            self._text_block("answer"),
+            self._text_block("more"),
+        ])]
+        self.assertEqual(result, expected)
+
+    def test_does_not_mutate_input(self) -> None:
+        """The original list and its dicts are not mutated in place."""
+        original = [
+            self._msg("assistant", [self._text_block("a"), self._thinking_block()]),
+        ]
+        items_copy = [dict(m) for m in original]
+        result = strip_thinking_blocks(original)
+        self.assertEqual(original, items_copy)  # original unchanged
+        self.assertNotEqual(result, original)   # result differs
 
 
 if __name__ == "__main__":

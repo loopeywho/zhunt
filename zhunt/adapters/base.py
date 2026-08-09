@@ -146,3 +146,45 @@ def system_first(items: list[Any]) -> list[Any]:
         else:
             rest.append(item)
     return leading + rest
+
+
+def strip_thinking_blocks(items: list[Any]) -> list[Any]:
+    """Remove ``thinking`` and ``redacted_thinking`` content blocks from messages.
+
+    Anthropic's extended thinking produces ``thinking`` and
+    ``redacted_thinking`` content blocks in assistant messages. When Codex
+    (or any client using the OpenAI Responses API) includes a previous
+    assistant message in a follow-up request, these blocks are re-sent.
+    LiteLLM's wire-format conversion (OpenAI Responses → Anthropic
+    Messages) passes them through, but the ``data`` field on a
+    ``redacted_thinking`` block can carry stale or format-mismatched
+    payloads that Anthropic-family backends reject with:
+      ``Invalid 'data' in 'redacted_thinking' block``
+    Reproduced 2026-08-09 identically across Anthropic direct, Bedrock,
+    Google, and Azure.
+
+    These blocks are response-side artifacts — they have no meaning in a
+    client request and can be safely stripped. Only ``text`` and
+    ``refusal`` content blocks are retained.
+    """
+
+    THINKING_TYPES = {"thinking", "redacted_thinking"}
+
+    out: list[Any] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            out.append(item)
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            out.append(item)
+            continue
+        filtered = [
+            block
+            for block in content
+            if not (isinstance(block, Mapping) and block.get("type") in THINKING_TYPES)
+        ]
+        if len(filtered) != len(content):
+            item = {**item, "content": filtered}
+        out.append(item)
+    return out
