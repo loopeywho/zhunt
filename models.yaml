@@ -43,13 +43,13 @@ tiers:
       in: 0.60
       out: 2.50
   coding:
-    - model: openrouter/qwen/qwen3.7-max
-      in: 1.475
-      out: 4.425
+    - model: openrouter/deepseek/deepseek-v4-pro
+      in: 0.435
+      out: 0.87
   long-context:
-    - model: openrouter/qwen/qwen3.7-max
-      in: 1.475
-      out: 4.425
+    - model: openrouter/deepseek/deepseek-v4-pro
+      in: 0.435
+      out: 0.87
   reasoning:
     - model: openrouter/anthropic/claude-sonnet-5
       in: 2.00

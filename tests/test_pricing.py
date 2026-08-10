@@ -28,9 +28,9 @@ class PricingSyncTests(unittest.TestCase):
             (2.0, 10.0),
         )
         self.assertEqual(
-            (models["openrouter/qwen/qwen3.7-max"]["in"],
-             models["openrouter/qwen/qwen3.7-max"]["out"]),
-            (1.475, 4.425),
+            (models["openrouter/deepseek/deepseek-v4-pro"]["in"],
+             models["openrouter/deepseek/deepseek-v4-pro"]["out"]),
+            (0.435, 0.87),
         )
         self.assertEqual(
             (models["openrouter/moonshotai/kimi-k2-0905"]["in"],
