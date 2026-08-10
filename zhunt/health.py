@@ -51,8 +51,9 @@ class ModelHealth:
 
     def record_success(self, model: str) -> None:
         with self._lock:
-            if model not in self._unhealthy:
-                self._failures.pop(model, None)
+            if model in self._unhealthy:
+                self._unhealthy.discard(model)
+            self._failures.pop(model, None)
 
     def is_healthy(self, model: str) -> bool:
         with self._lock:

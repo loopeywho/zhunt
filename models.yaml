@@ -36,21 +36,18 @@ providers:
 
 tiers:
   chat:
-    - model: openai/portal/m2-25
-      in: 0.12
-      out: 0.59
-    - model: openai/portal/m2-25-fast
-      in: 0.70
-      out: 3.50
+    - model: openai/gpt-5.1
+      in: 1.25
+      out: 10.00
   coding:
-    - model: openai/portal/m2-25-fast
-      in: 0.70
-      out: 3.50
+    - model: openai/gpt-5.1
+      in: 1.25
+      out: 10.00
   long-context:
-    - model: openai/portal/m3-500k-fast
-      in: 2.80
-      out: 8.40
+    - model: openai/gpt-5.1
+      in: 1.25
+      out: 10.00
   reasoning:
-    - model: openai/portal/m3-55-xh-1m
-      in: 3.50
-      out: 21.00
+    - model: openai/o3
+      in: 10.00
+      out: 40.00

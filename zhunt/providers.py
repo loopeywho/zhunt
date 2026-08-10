@@ -41,6 +41,13 @@ PROVIDERS: dict[str, ProviderSpec] = {
         key_env="PORTAL_API_KEY",
         docs_url="https://platform.portal.ai/docs.html",
     ),
+    "openai": ProviderSpec(
+        id="openai",
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        key_env="OPENAI_API_KEY",
+        docs_url="https://platform.openai.com/docs",
+    ),
 }
 
 

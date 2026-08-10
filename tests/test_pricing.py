@@ -18,35 +18,25 @@ class PricingSyncTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            (models["openai/portal/m2-25"]["in"],
-             models["openai/portal/m2-25"]["out"]),
-            (0.12, 0.59),
+            (models["openai/gpt-5.1"]["in"],
+             models["openai/gpt-5.1"]["out"]),
+            (1.25, 10.00),
         )
         self.assertEqual(
-            (models["openai/portal/m2-25-fast"]["in"],
-             models["openai/portal/m2-25-fast"]["out"]),
-            (0.70, 3.50),
-        )
-        self.assertEqual(
-            (models["openai/portal/m3-500k-fast"]["in"],
-             models["openai/portal/m3-500k-fast"]["out"]),
-            (2.80, 8.40),
-        )
-        self.assertEqual(
-            (models["openai/portal/m3-55-xh-1m"]["in"],
-             models["openai/portal/m3-55-xh-1m"]["out"]),
-            (3.50, 21.00),
+            (models["openai/o3"]["in"],
+             models["openai/o3"]["out"]),
+            (10.00, 40.00),
         )
 
-    def test_default_tiers_only_contain_openai_portal_models(self) -> None:
+    def test_default_tiers_only_contain_openai_models(self) -> None:
         yaml = YAML()
         document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
 
         for tier_name, models_in_tier in document["tiers"].items():
             for entry in models_in_tier:
                 self.assertTrue(
-                    entry["model"].startswith("openai/portal/"),
-                    f"tier {tier_name!r} has non-Portal model "
+                    entry["model"].startswith("openai/"),
+                    f"tier {tier_name!r} has non-OpenAI model "
                     f"{entry['model']!r} in the default tiers block",
                 )
 
