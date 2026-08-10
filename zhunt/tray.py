@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 import socket
 import threading
@@ -23,12 +24,57 @@ def daemon_reachable(host: str = "127.0.0.1", port: int = 4000) -> bool:
         return False
 
 
-def tray_state(host: str = "127.0.0.1", port: int = 4000) -> tuple[str, str]:
-    """Return a display label and color for the tray indicator."""
+def _last_request_info(
+    telemetry_path: Path,
+) -> tuple[str | None, int, int, str | None]:
+    """Return (model, input_tokens, output_tokens, wire_dialect) for the most
+    recent successful request, or (None, 0, 0, None) if none found."""
 
-    if daemon_reachable(host, port):
-        return "Zhunt Active", "#16804b"
-    return "Zhunt Offline", "#b42318"
+    if not telemetry_path.is_file():
+        return None, 0, 0, None
+    for line in reversed(telemetry_path.read_text(encoding="utf-8").splitlines()):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("event") != "request" or not event.get("success"):
+            continue
+        model = event.get("model")
+        if not isinstance(model, str):
+            continue
+        inp = int(event.get("input_tokens", 0))
+        out = int(event.get("output_tokens", 0))
+        dialect = event.get("wire_dialect")
+        return model, inp, out, str(dialect) if dialect else None
+    return None, 0, 0, None
+
+
+def tray_state(
+    host: str = "127.0.0.1",
+    port: int = 4000,
+    *,
+    telemetry_path: Path | None = None,
+) -> tuple[str, str]:
+    """Return a display label and color for the tray indicator.
+
+    When the daemon is reachable, the tooltip includes the last-used model
+    name, input/output token counts, and wire dialect from local telemetry.
+    """
+
+    if not daemon_reachable(host, port):
+        return "Zhunt Offline", "#b42318"
+    if telemetry_path is None:
+        telemetry_path = Path.home() / ".zhunt" / "telemetry.jsonl"
+    model, inp, out, dialect = _last_request_info(telemetry_path)
+    if model is None:
+        return "Zhunt Active — no requests yet", "#16804b"
+    short_model = model.split("/")[-1]
+    label = f"Zhunt Active — {short_model}  |  {inp:,}→{out:,} tokens"
+    if dialect:
+        label += f"  |  {dialect}"
+    return label, "#16804b"
 
 
 def run_tray(
@@ -88,13 +134,20 @@ def run_tray(
         webbrowser.open(dashboard_url)
 
     def refresh(icon: Any) -> None:
+        label_path = telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl"
         while True:
-            label, color = tray_state(daemon_host, daemon_port)
+            label, color = tray_state(
+                daemon_host, daemon_port, telemetry_path=label_path,
+            )
             icon.icon = icon_image(color)
             icon.title = label
             time.sleep(5)
 
-    label, color = tray_state(daemon_host, daemon_port)
+    label, color = tray_state(
+        daemon_host,
+        daemon_port,
+        telemetry_path=telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl",
+    )
     icon = pystray.Icon(
         "zhunt",
         icon_image(color),
