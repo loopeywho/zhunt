@@ -48,6 +48,13 @@ PROVIDERS: dict[str, ProviderSpec] = {
         key_env="OPENAI_API_KEY",
         docs_url="https://platform.openai.com/docs",
     ),
+    "anthropic": ProviderSpec(
+        id="anthropic",
+        name="Anthropic",
+        base_url="https://api.anthropic.com/v1",
+        key_env="ANTHROPIC_API_KEY",
+        docs_url="https://platform.claude.com/docs",
+    ),
 }
 
 

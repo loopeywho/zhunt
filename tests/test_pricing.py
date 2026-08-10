@@ -8,37 +8,158 @@ from zhunt.pricing import sync_registry
 
 
 class PricingSyncTests(unittest.TestCase):
-    def test_shipped_prices_match_current_snapshot(self) -> None:
+    # -- base (ungated) tiers ------------------------------------------------
+
+    def test_base_tiers_snapshot(self) -> None:
         yaml = YAML()
         document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
-        models = {
-            item["model"]: item
-            for tier in document["tiers"].values()
-            for item in tier
-        }
+        tiers = document["tiers"]
 
+        # chat → luna
+        chat = {m["model"]: m for m in tiers["chat"]}
         self.assertEqual(
-            (models["openai/gpt-5.1"]["in"],
-             models["openai/gpt-5.1"]["out"]),
-            (1.25, 10.00),
+            (chat["openai/gpt-5.6-luna"]["in"],
+             chat["openai/gpt-5.6-luna"]["out"]),
+            (0.20, 1.20),
         )
+        # coding → terra (standard rate)
+        coding = {m["model"]: m for m in tiers["coding"]}
         self.assertEqual(
-            (models["openai/o3"]["in"],
-             models["openai/o3"]["out"]),
-            (10.00, 40.00),
+            (coding["openai/gpt-5.6-terra"]["in"],
+             coding["openai/gpt-5.6-terra"]["out"]),
+            (2.00, 12.00),
+        )
+        # long-context → terra (elevated rate)
+        long_ctx = {m["model"]: m for m in tiers["long-context"]}
+        self.assertEqual(
+            (long_ctx["openai/gpt-5.6-terra"]["in"],
+             long_ctx["openai/gpt-5.6-terra"]["out"]),
+            (4.00, 18.00),
+        )
+        # reasoning → sol
+        reasoning = {m["model"]: m for m in tiers["reasoning"]}
+        self.assertEqual(
+            (reasoning["openai/gpt-5.6-sol"]["in"],
+             reasoning["openai/gpt-5.6-sol"]["out"]),
+            (5.00, 30.00),
         )
 
-    def test_default_tiers_only_contain_openai_models(self) -> None:
+    def test_base_tiers_only_contain_openai_models(self) -> None:
         yaml = YAML()
         document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
-
         for tier_name, models_in_tier in document["tiers"].items():
             for entry in models_in_tier:
                 self.assertTrue(
                     entry["model"].startswith("openai/"),
-                    f"tier {tier_name!r} has non-OpenAI model "
-                    f"{entry['model']!r} in the default tiers block",
+                    f"base tier {tier_name!r} has non-OpenAI model {entry['model']!r}",
                 )
+
+    # -- gated provider profiles --------------------------------------------
+
+    def test_provider_profile_snapshot_anthropic(self) -> None:
+        yaml = YAML()
+        document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
+        p = document["providers"]["anthropic"]
+        models = {item["model"]: item for tier in p["tiers"].values() for item in tier}
+
+        self.assertEqual(
+            (models["anthropic/claude-haiku-4-5"]["in"],
+             models["anthropic/claude-haiku-4-5"]["out"]),
+            (1.00, 5.00),
+        )
+        self.assertEqual(
+            (models["anthropic/claude-sonnet-5"]["in"],
+             models["anthropic/claude-sonnet-5"]["out"]),
+            (2.00, 10.00),
+        )
+        self.assertEqual(
+            (models["anthropic/claude-opus-5"]["in"],
+             models["anthropic/claude-opus-5"]["out"]),
+            (5.00, 25.00),
+        )
+
+    def test_provider_profile_mutation_guard_anthropic(self) -> None:
+        yaml = YAML()
+        document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
+        p = document["providers"]["anthropic"]
+        for tier_name, models_in_tier in p["tiers"].items():
+            for entry in models_in_tier:
+                self.assertTrue(
+                    entry["model"].startswith("anthropic/"),
+                    f"anthropic tier {tier_name!r} has non-Anthropic model {entry['model']!r}",
+                )
+
+    def test_provider_profile_snapshot_openai(self) -> None:
+        yaml = YAML()
+        document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
+        tiers = document["providers"]["openai"]["tiers"]
+
+        # chat → luna
+        self.assertEqual(
+            ({m["model"]: m for m in tiers["chat"]}["openai/gpt-5.6-luna"]["in"],
+             {m["model"]: m for m in tiers["chat"]}["openai/gpt-5.6-luna"]["out"]),
+            (0.20, 1.20),
+        )
+        # coding → terra (standard rate)
+        coding = {m["model"]: m for m in tiers["coding"]}
+        self.assertEqual(
+            (coding["openai/gpt-5.6-terra"]["in"],
+             coding["openai/gpt-5.6-terra"]["out"]),
+            (2.00, 12.00),
+        )
+        # long-context → terra (elevated rate — must NOT match coding)
+        long_ctx = {m["model"]: m for m in tiers["long-context"]}
+        self.assertEqual(
+            (long_ctx["openai/gpt-5.6-terra"]["in"],
+             long_ctx["openai/gpt-5.6-terra"]["out"]),
+            (4.00, 18.00),
+        )
+        # reasoning → sol
+        self.assertEqual(
+            ({m["model"]: m for m in tiers["reasoning"]}["openai/gpt-5.6-sol"]["in"],
+             {m["model"]: m for m in tiers["reasoning"]}["openai/gpt-5.6-sol"]["out"]),
+            (5.00, 30.00),
+        )
+
+    def test_provider_profile_mutation_guard_openai(self) -> None:
+        yaml = YAML()
+        document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
+        p = document["providers"]["openai"]
+        for tier_name, models_in_tier in p["tiers"].items():
+            for entry in models_in_tier:
+                self.assertTrue(
+                    entry["model"].startswith("openai/"),
+                    f"openai tier {tier_name!r} has non-OpenAI model {entry['model']!r}",
+                )
+
+    # -- Terra long-context mutation test -----------------------------------
+
+    def test_terra_long_context_uses_elevated_not_standard_rate(self) -> None:
+        yaml = YAML()
+        document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
+        openai_tiers = document["providers"]["openai"]["tiers"]
+        coding = {m["model"]: m for m in openai_tiers["coding"]}
+        long_ctx = {m["model"]: m for m in openai_tiers["long-context"]}
+
+        self.assertEqual(coding["openai/gpt-5.6-terra"]["in"], 2.00)
+        self.assertEqual(coding["openai/gpt-5.6-terra"]["out"], 12.00)
+        self.assertEqual(long_ctx["openai/gpt-5.6-terra"]["in"], 4.00)
+        self.assertEqual(long_ctx["openai/gpt-5.6-terra"]["out"], 18.00)
+        self.assertNotEqual(
+            long_ctx["openai/gpt-5.6-terra"]["in"],
+            coding["openai/gpt-5.6-terra"]["in"],
+            "long-context terra must use the elevated rate, not the standard coding rate",
+        )
+
+    def test_terra_long_context_would_detect_rate_regression(self) -> None:
+        yaml = YAML()
+        document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
+        long_ctx = {m["model"]: m for m in document["providers"]["openai"]["tiers"]["long-context"]}
+        terra = long_ctx["openai/gpt-5.6-terra"]
+        self.assertGreater(terra["in"], 3.00, "long-context terra input price must be > $3/MTok")
+        self.assertGreater(terra["out"], 15.00, "long-context terra output price must be > $15/MTok")
+
+    # -- Sync tests (unchanged from prior rounds) ---------------------------
 
     def test_sync_updates_matching_models_and_reports_unavailable(self) -> None:
         registry_text = (

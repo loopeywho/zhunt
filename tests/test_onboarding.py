@@ -57,7 +57,7 @@ class OnboardingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             [item["id"] for item in response.json()],
-            ["openrouter", "nous-portal", "openai"],
+            ["openrouter", "nous-portal", "openai", "anthropic"],
         )
 
     def test_configuration_requires_token_and_persists_provider_key(self) -> None:
