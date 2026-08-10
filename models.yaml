@@ -36,21 +36,21 @@ providers:
 
 tiers:
   chat:
-    - model: openrouter/deepseek/deepseek-chat
-      in: 0.2574
-      out: 1.0287
-    - model: openrouter/moonshotai/kimi-k2-0905
-      in: 0.60
-      out: 2.50
+    - model: openai/portal/m2-25
+      in: 0.12
+      out: 0.59
+    - model: openai/portal/m2-25-fast
+      in: 0.70
+      out: 3.50
   coding:
-    - model: openrouter/deepseek/deepseek-v4-pro
-      in: 0.435
-      out: 0.87
+    - model: openai/portal/m2-25-fast
+      in: 0.70
+      out: 3.50
   long-context:
-    - model: openrouter/deepseek/deepseek-v4-pro
-      in: 0.435
-      out: 0.87
+    - model: openai/portal/m3-500k-fast
+      in: 2.80
+      out: 8.40
   reasoning:
-    - model: openrouter/anthropic/claude-sonnet-5
-      in: 2.00
-      out: 10.00
+    - model: openai/portal/m3-55-xh-1m
+      in: 3.50
+      out: 21.00

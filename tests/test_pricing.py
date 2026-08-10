@@ -8,7 +8,7 @@ from zhunt.pricing import sync_registry
 
 
 class PricingSyncTests(unittest.TestCase):
-    def test_shipped_openrouter_prices_match_current_snapshot(self) -> None:
+    def test_shipped_prices_match_current_snapshot(self) -> None:
         yaml = YAML()
         document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
         models = {
@@ -18,61 +18,51 @@ class PricingSyncTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            (models["openrouter/deepseek/deepseek-chat"]["in"],
-             models["openrouter/deepseek/deepseek-chat"]["out"]),
-            (0.2574, 1.0287),
+            (models["openai/portal/m2-25"]["in"],
+             models["openai/portal/m2-25"]["out"]),
+            (0.12, 0.59),
         )
         self.assertEqual(
-            (models["openrouter/anthropic/claude-sonnet-5"]["in"],
-             models["openrouter/anthropic/claude-sonnet-5"]["out"]),
-            (2.0, 10.0),
+            (models["openai/portal/m2-25-fast"]["in"],
+             models["openai/portal/m2-25-fast"]["out"]),
+            (0.70, 3.50),
         )
         self.assertEqual(
-            (models["openrouter/deepseek/deepseek-v4-pro"]["in"],
-             models["openrouter/deepseek/deepseek-v4-pro"]["out"]),
-            (0.435, 0.87),
+            (models["openai/portal/m3-500k-fast"]["in"],
+             models["openai/portal/m3-500k-fast"]["out"]),
+            (2.80, 8.40),
         )
         self.assertEqual(
-            (models["openrouter/moonshotai/kimi-k2-0905"]["in"],
-             models["openrouter/moonshotai/kimi-k2-0905"]["out"]),
-            (0.60, 2.50),
+            (models["openai/portal/m3-55-xh-1m"]["in"],
+             models["openai/portal/m3-55-xh-1m"]["out"]),
+            (3.50, 21.00),
         )
 
-    def test_default_tiers_only_contain_openrouter_routable_models(self) -> None:
-        # The top-level ``tiers:`` block is what a bare install (no configured
-        # provider profile, or ZHUNT_PROVIDER=openrouter) actually routes
-        # through — see ModelRegistry.from_data: a provider_id only swaps in a
-        # ``providers:<id>:`` profile when that key exists, and "openrouter"
-        # has no such profile, so it falls through to this block unchanged.
-        # A model here that isn't reachable via the OpenRouter account a user
-        # actually configured (e.g. a bare "custom/..." id with no api_base)
-        # fails every request classified into that tier with a hard 500 —
-        # this reproduced live 2026-08-08 for the coding/long-context tiers.
+    def test_default_tiers_only_contain_openai_portal_models(self) -> None:
         yaml = YAML()
         document = yaml.load((Path(__file__).parent.parent / "models.yaml").read_text())
 
         for tier_name, models_in_tier in document["tiers"].items():
             for entry in models_in_tier:
                 self.assertTrue(
-                    entry["model"].startswith("openrouter/"),
-                    f"tier {tier_name!r} has non-OpenRouter-routable model "
-                    f"{entry['model']!r} in the default tiers block, where "
-                    "only OpenRouter is actually configured",
+                    entry["model"].startswith("openai/portal/"),
+                    f"tier {tier_name!r} has non-Portal model "
+                    f"{entry['model']!r} in the default tiers block",
                 )
 
     def test_sync_updates_matching_models_and_reports_unavailable(self) -> None:
-        registry_text = """\\
-aliases:
-  zhunt-auto: {tier: auto}
-tiers:
-  chat:
-    - model: openrouter/provider/chat
-      in: 0.5
-      out: 1.0
-    - model: custom/provider/missing
-      in: 0.2
-      out: 0.4
-""".lstrip("\\")
+        registry_text = (
+            "aliases:\n"
+            "  zhunt-auto: {tier: auto}\n"
+            "tiers:\n"
+            "  chat:\n"
+            "    - model: openrouter/provider/chat\n"
+            "      in: 0.5\n"
+            "      out: 1.0\n"
+            "    - model: custom/provider/missing\n"
+            "      in: 0.2\n"
+            "      out: 0.4\n"
+        )
         remote = [
             {
                 "id": "provider/chat",
@@ -92,16 +82,16 @@ tiers:
         self.assertEqual(document["tiers"]["chat"][0]["in"], 0.1)
         self.assertEqual(document["tiers"]["chat"][0]["out"], 0.2)
 
-    def test_sync_accepts_current_openrouter_prompt_completion_pricing(self) -> None:
-        registry_text = """
-aliases:
-  zhunt-auto: {tier: auto}
-tiers:
-  chat:
-    - model: openrouter/deepseek/deepseek-chat
-      in: 0.14
-      out: 0.28
-""".lstrip()
+    def test_sync_accepts_current_provider_prompt_completion_pricing(self) -> None:
+        registry_text = (
+            "aliases:\n"
+            "  zhunt-auto: {tier: auto}\n"
+            "tiers:\n"
+            "  chat:\n"
+            "    - model: openrouter/deepseek/deepseek-chat\n"
+            "      in: 0.14\n"
+            "      out: 0.28\n"
+        )
         remote = [
             {
                 "id": "deepseek/deepseek-chat",
