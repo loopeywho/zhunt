@@ -10,6 +10,7 @@ import webbrowser
 import typer
 
 from zhunt.benchmark import run_benchmark
+from zhunt.connect_cli import register as register_connect_commands
 from zhunt.dashboard import create_dashboard_app
 from zhunt.installer import InstallationResult, Installer, InstallerError
 from zhunt.onboarding import create_onboarding_app
@@ -20,6 +21,7 @@ from zhunt.telemetry import summarize_telemetry
 
 
 app = typer.Typer(no_args_is_help=True)
+register_connect_commands(app)
 
 
 class InstallMode(str, Enum):
