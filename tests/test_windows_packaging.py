@@ -45,7 +45,6 @@ class WindowsPackagingTests(unittest.TestCase):
 
     def test_windows_recipe_targets_are_under_user_home(self) -> None:
         cases = {
-            "claude": Path(".claude/settings.json"),
             "codex": Path(".codex/config.toml"),
             "hermes": Path(".hermes/config.yaml"),
             "vscode": Path("AppData/Roaming/Code/User/chatLanguageModels.json"),

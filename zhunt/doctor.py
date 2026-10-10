@@ -234,7 +234,7 @@ def _app_checks(
                 f"run `zhunt launch {app}` (no config needed) or `zhunt install {app}` to rewrite it",
             )
         )
-    for app in ("claude", "hermes"):
+    for app in ("hermes",):
         for warning in preflight_warnings(app, home=home, cwd=cwd, environ=environ):
             checks.append(
                 Check(Status.WARN, f"launch {app}", warning, "remove the listed entries")
@@ -273,7 +273,7 @@ def app_drift(home: Path, app: str, *, base_url: str, master_key: str) -> list[D
     if not target.is_file():
         return [Drift("config file", str(target), "missing")]
     modes = recipe.get("modes", {})
-    # Passthrough operations are a subset of api ones, and claude has only api.
+    # Passthrough operations are a subset of api ones.
     passthrough = modes.get("passthrough", {})
     mode = "passthrough" if passthrough.get("supported", True) is True else "api"
     operations = _render(

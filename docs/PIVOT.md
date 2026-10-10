@@ -9,7 +9,7 @@ Status (2026-10-10): **milestones 1-5 built and tested** on branch
 | 1 Engine core | Done |
 | 2 Real providers | Wired and exercised with fake keys against the real APIs; **the live per-tier check with real keys is still pending** (`scripts/live_tier_check.py`) |
 | 3 Workspace | Backend API and frontend done; driven in the browser against the real daemon |
-| 4 Connect | `launch`/`doctor`/`open` done; Claude Code session verified, Codex from docs only (not installed here), Hermes not run live |
+| 4 Connect | `launch`/`doctor`/`open` done for Codex and Hermes; Codex from docs only (not installed here), Hermes not run live. Claude Code support (launcher and install recipe) removed 2026-10-11 at the owner's request |
 | 5 Remove v1 | Done; the public `site/` and native installers are still v1 and are not rebuilt |
 
 The text below is the original plan, kept for the reasoning.

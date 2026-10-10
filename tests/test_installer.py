@@ -24,43 +24,12 @@ class InstallerTests(unittest.TestCase):
     def test_all_target_apps_have_recipes(self) -> None:
         self.assertEqual(
             supported_apps(),
-            ("claude", "codex", "cursor", "hermes", "vscode"),
+            ("codex", "cursor", "hermes", "vscode"),
         )
 
-    def test_claude_install_and_uninstall_restore_original_bytes(self) -> None:
-        target = self.home / ".claude" / "settings.json"
-        original = b'{\n  "permissions": {"allow": ["Read"]}\n}\n'
-        self._write(target, original)
-
-        result = self.installer.install(
-            "claude",
-            mode="api",
-            base_url=BASE_URL,
-        )
-
-        installed = json.loads(target.read_text(encoding="utf-8"))
-        self.assertEqual(installed["env"]["ANTHROPIC_BASE_URL"], BASE_URL)
-        self.assertEqual(
-            installed["env"]["ANTHROPIC_AUTH_TOKEN"],
-            self._master_key(),
-        )
-        self.assertEqual(installed["permissions"], {"allow": ["Read"]})
-        self.assertIsNotNone(result.backup)
-        self.assertEqual(result.backup.read_bytes(), original)
-
-        self.installer.uninstall("claude")
-        self.assertEqual(target.read_bytes(), original)
-
-    def test_claude_passthrough_is_rejected_without_changes(self) -> None:
-        with self.assertRaisesRegex(
-            InstallerError,
-            "cannot register Zhunt",
-        ):
-            self.installer.install(
-                "claude",
-                mode="passthrough",
-                base_url=BASE_URL,
-            )
+    def test_claude_has_no_recipe(self) -> None:
+        with self.assertRaisesRegex(InstallerError, "unknown app: claude"):
+            self.installer.install("claude", mode="api", base_url=BASE_URL)
         self.assertFalse((self.home / ".claude").exists())
 
     def test_codex_api_mode_writes_user_provider_and_restores(self) -> None:

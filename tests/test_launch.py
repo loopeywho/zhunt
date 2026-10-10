@@ -1,4 +1,3 @@
-import json
 import os
 import signal
 import subprocess
@@ -26,23 +25,6 @@ from zhunt.launch import LaunchError, build_plan
 
 
 class PlanTests(unittest.TestCase):
-    def test_claude_plan_pins_endpoint_key_and_every_model_slot(self) -> None:
-        plan = build_plan("claude", port=4321, key=KEY, extra_args=("-p", "hi"))
-
-        self.assertEqual(plan.argv, ("claude", "-p", "hi"))
-        self.assertEqual(plan.env["ANTHROPIC_BASE_URL"], "http://127.0.0.1:4321")
-        self.assertEqual(plan.env["ANTHROPIC_AUTH_TOKEN"], KEY)
-        for name in (
-            "ANTHROPIC_MODEL",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "CLAUDE_CODE_SUBAGENT_MODEL",
-        ):
-            self.assertEqual(plan.env[name], "zhunt-auto", name)
-        self.assertIn("ANTHROPIC_API_KEY", plan.unset)
-        self.assertIn("CLAUDE_CODE_USE_BEDROCK", plan.unset)
-
     def test_codex_plan_uses_config_overrides_that_name_an_env_var(self) -> None:
         plan = build_plan("codex", port=4321, key=KEY, extra_args=("exec", "hi"))
 
@@ -69,7 +51,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan.env["OPENAI_API_KEY"], KEY)
 
     def test_no_plan_puts_the_key_on_the_command_line(self) -> None:
-        for name in ("claude", "codex", "hermes"):
+        for name in ("codex", "hermes"):
             plan = build_plan(name, port=4000, key=KEY)
             self.assertFalse(any(KEY in part for part in plan.argv), name)
 
@@ -84,7 +66,7 @@ class LaunchCommandTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.stubs = self.root / "stubs"
         self.stubs.mkdir()
-        for name in ("claude", "codex", "hermes"):
+        for name in ("codex", "hermes"):
             write_stub(self.stubs, name)
         self.out = self.root / "stub-out.json"
         self.cwd = self.root / "cwd"
@@ -106,7 +88,6 @@ class LaunchCommandTests(unittest.TestCase):
 
     def test_each_app_receives_endpoint_and_key_only_in_its_environment(self) -> None:
         expectations = {
-            "claude": ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"),
             "codex": ("ZHUNT_API_KEY", None),
             "hermes": ("OPENAI_API_KEY", "CUSTOM_BASE_URL"),
         }
@@ -125,21 +106,6 @@ class LaunchCommandTests(unittest.TestCase):
                     self.assertFalse(any(KEY in arg for arg in seen["argv"]))
                     self.assertNotIn(KEY, result.output)
 
-    def test_claude_drops_conflicting_ambient_credentials(self) -> None:
-        with fake_daemon() as port:
-            home = make_home(self.root, port=port)
-            result = self.invoke(
-                ["launch", "claude"],
-                home,
-                ANTHROPIC_API_KEY="sk-ant-real-key",
-                CLAUDE_CODE_USE_BEDROCK="1",
-            )
-
-        self.assertEqual(result.exit_code, 0, result.output)
-        env = read_stub_output(self.out)["env"]
-        self.assertNotIn("ANTHROPIC_API_KEY", env)
-        self.assertNotIn("CLAUDE_CODE_USE_BEDROCK", env)
-
     def test_codex_argv_carries_overrides_and_extra_args(self) -> None:
         with fake_daemon() as port:
             home = make_home(self.root, port=port)
@@ -153,23 +119,21 @@ class LaunchCommandTests(unittest.TestCase):
     def test_extra_args_pass_through_with_or_without_separator(self) -> None:
         with fake_daemon() as port:
             home = make_home(self.root, port=port)
-            self.invoke(["launch", "claude", "--", "-p", "hello", "--dry-run"], home)
-            self.assertEqual(read_stub_output(self.out)["argv"], ["-p", "hello", "--dry-run"])
-            self.invoke(["launch", "claude", "--model", "x"], home)
-            self.assertEqual(read_stub_output(self.out)["argv"], ["--model", "x"])
+            self.invoke(["launch", "hermes", "--", "-p", "hello", "--dry-run"], home)
+            self.assertEqual(read_stub_output(self.out)["argv"][-3:], ["-p", "hello", "--dry-run"])
+            self.invoke(["launch", "hermes", "--model", "x"], home)
+            self.assertEqual(read_stub_output(self.out)["argv"][-2:], ["--model", "x"])
 
     def test_launch_never_creates_or_modifies_any_file(self) -> None:
         with fake_daemon() as port:
             home = make_home(self.root, port=port)
             # Pre-existing app configs that v1 would have rewritten.
-            (home / ".claude").mkdir()
-            (home / ".claude" / "settings.json").write_text('{"theme": "dark"}\n')
             (home / ".codex").mkdir()
             (home / ".codex" / "config.toml").write_text('model = "gpt-x"\n')
             (home / ".hermes").mkdir()
             (home / ".hermes" / "config.yaml").write_text("model:\n  default: x\n")
             before = snapshot(home, self.cwd)
-            for name in ("claude", "codex", "hermes"):
+            for name in ("codex", "hermes"):
                 result = self.invoke(["launch", name], home)
                 self.assertEqual(result.exit_code, 0, result.output)
                 result = self.invoke(["launch", name, "--dry-run"], home)
@@ -180,7 +144,7 @@ class LaunchCommandTests(unittest.TestCase):
     def test_dry_run_hides_key_and_starts_nothing(self) -> None:
         with fake_daemon() as port:
             home = make_home(self.root, port=port)
-            for name in ("claude", "codex", "hermes"):
+            for name in ("codex", "hermes"):
                 with self.subTest(app=name):
                     result = self.invoke(["launch", name, "--dry-run"], home)
 
@@ -202,21 +166,21 @@ class LaunchCommandTests(unittest.TestCase):
     def test_child_exit_code_passes_through(self) -> None:
         with fake_daemon() as port:
             home = make_home(self.root, port=port)
-            result = self.invoke(["launch", "claude"], home, STUB_EXIT="7")
+            result = self.invoke(["launch", "hermes"], home, STUB_EXIT="7")
 
         self.assertEqual(result.exit_code, 7)
 
     def test_child_killed_by_signal_reports_shell_style_status(self) -> None:
         with fake_daemon() as port:
             home = make_home(self.root, port=port)
-            result = self.invoke(["launch", "claude"], home, STUB_MODE="selfkill")
+            result = self.invoke(["launch", "hermes"], home, STUB_MODE="selfkill")
 
         self.assertEqual(result.exit_code, 128 + signal.SIGKILL)
 
     def test_unreachable_daemon_fails_early_with_start_command(self) -> None:
         home = make_home(self.root, port=closed_port())
 
-        result = self.invoke(["launch", "claude"], home)
+        result = self.invoke(["launch", "hermes"], home)
 
         self.assertEqual(result.exit_code, 1)
         self.assertIn("zhunt serve", result.output)
@@ -228,7 +192,7 @@ class LaunchCommandTests(unittest.TestCase):
             home = make_home(self.root, port=port, key=None)
             before = snapshot(home)
 
-            result = self.invoke(["launch", "claude"], home)
+            result = self.invoke(["launch", "hermes"], home)
 
             self.assertEqual(result.exit_code, 1)
             self.assertIn("master key", result.output)
@@ -267,18 +231,11 @@ class LaunchCommandTests(unittest.TestCase):
     def test_v1_settings_that_would_override_the_endpoint_are_flagged(self) -> None:
         with fake_daemon() as port:
             home = make_home(self.root, port=port)
-            (home / ".claude").mkdir()
-            (home / ".claude" / "settings.json").write_text(
-                json.dumps({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:1"}})
-            )
             (home / ".hermes").mkdir()
             (home / ".hermes" / ".env").write_text("OPENAI_API_KEY=sk-someone-elses\n")
 
-            claude = self.invoke(["launch", "claude", "--dry-run"], home)
             hermes = self.invoke(["launch", "hermes", "--dry-run"], home)
 
-        self.assertIn("ANTHROPIC_BASE_URL", claude.output)
-        self.assertIn("will ignore", claude.output)
         self.assertIn("OPENAI_API_KEY", hermes.output)
         self.assertNotIn("sk-someone-elses", hermes.output)
 

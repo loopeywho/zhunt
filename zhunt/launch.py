@@ -9,7 +9,6 @@ app's own help output or documentation; see the notes on each builder.
 from __future__ import annotations
 
 import http.client
-import json
 import os
 import shlex
 import shutil
@@ -27,7 +26,7 @@ MODEL_ALIAS = "zhunt-auto"
 CODEX_KEY_ENV = "ZHUNT_API_KEY"
 REDACTED = "***"
 
-LAUNCHABLE_APPS = ("claude", "codex", "hermes")
+LAUNCHABLE_APPS = ("codex", "hermes")
 
 # Apps that can only be pointed at Zhunt through their own settings UI/files.
 MANUAL_APPS: dict[str, tuple[str, ...]] = {
@@ -48,16 +47,6 @@ MANUAL_APPS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# Env vars that make Claude Code bypass ANTHROPIC_BASE_URL for another route.
-_CLAUDE_ROUTE_OVERRIDES = (
-    "ANTHROPIC_API_KEY",
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_VERTEX",
-    "CLAUDE_CODE_USE_FOUNDRY",
-    "CLAUDE_CODE_USE_ANTHROPIC_AWS",
-)
-
-
 class LaunchError(RuntimeError):
     """A launch cannot proceed; the message is safe to show."""
 
@@ -68,7 +57,6 @@ class LaunchPlan:
     argv: tuple[str, ...]
     env: Mapping[str, str]
     secret_names: frozenset[str]
-    unset: tuple[str, ...] = ()
     warnings: tuple[str, ...] = field(default=())
 
     def render(self, key: str) -> str:
@@ -79,8 +67,6 @@ class LaunchPlan:
         for name in sorted(self.env):
             value = REDACTED if name in self.secret_names else self.env[name]
             lines.append(f"  {name}={value}")
-        for name in self.unset:
-            lines.append(f"  {name} removed")
         text = "\n".join(lines)
         # Defence in depth: whatever happens above, the key never prints.
         return text.replace(key, REDACTED) if key else text
@@ -96,33 +82,8 @@ def build_plan(
     if app not in LAUNCHABLE_APPS:
         raise LaunchError(f"unknown app: {app}")
     root = f"http://127.0.0.1:{port}"
-    builders = {"claude": _claude, "codex": _codex, "hermes": _hermes}
+    builders = {"codex": _codex, "hermes": _hermes}
     return builders[app](root, key, tuple(extra_args))
-
-
-def _claude(root: str, key: str, extra: tuple[str, ...]) -> LaunchPlan:
-    # Evidence: https://code.claude.com/docs/en/llm-gateway-connect (base URL is the
-    # gateway root; ANTHROPIC_AUTH_TOKEN is sent as `Authorization: Bearer` and takes
-    # precedence over a saved claude.ai login) and
-    # https://code.claude.com/docs/en/model-config (model env vars). The daemon
-    # rejects unknown model names, so every model slot is pinned to the alias.
-    env = {
-        "ANTHROPIC_BASE_URL": root,
-        "ANTHROPIC_AUTH_TOKEN": key,
-        "ANTHROPIC_MODEL": MODEL_ALIAS,
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": MODEL_ALIAS,
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": MODEL_ALIAS,
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": MODEL_ALIAS,
-        "ANTHROPIC_DEFAULT_FABLE_MODEL": MODEL_ALIAS,
-        "CLAUDE_CODE_SUBAGENT_MODEL": MODEL_ALIAS,
-    }
-    return LaunchPlan(
-        app="claude",
-        argv=("claude", *extra),
-        env=env,
-        secret_names=frozenset({"ANTHROPIC_AUTH_TOKEN"}),
-        unset=_CLAUDE_ROUTE_OVERRIDES,
-    )
 
 
 def _codex(root: str, key: str, extra: tuple[str, ...]) -> LaunchPlan:
@@ -188,22 +149,7 @@ def preflight_warnings(
     cwd = cwd or Path.cwd()
     environ = os.environ if environ is None else environ
     warnings: list[str] = []
-    if app == "claude":
-        candidates = [
-            home / ".claude" / "settings.json",
-            home / ".claude" / "settings.local.json",
-            cwd / ".claude" / "settings.json",
-            cwd / ".claude" / "settings.local.json",
-        ]
-        for path in candidates:
-            found = _json_env_names(path, {"ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN"})
-            if found:
-                warnings.append(
-                    f"{path} sets {', '.join(sorted(found))} in its env block; Claude Code "
-                    "applies settings-file env over the shell, so it will ignore the Zhunt "
-                    "endpoint. Remove those entries (`zhunt uninstall claude` restores v1 edits)."
-                )
-    elif app == "hermes":
+    if app == "hermes":
         hermes_home = Path(environ.get("HERMES_HOME") or home / ".hermes").expanduser()
         found = _dotenv_names(
             hermes_home / ".env",
@@ -241,8 +187,6 @@ def run_plan(plan: LaunchPlan, *, environ: Mapping[str, str] | None = None) -> i
     """
 
     child_env = dict(os.environ if environ is None else environ)
-    for name in plan.unset:
-        child_env.pop(name, None)
     child_env.update(plan.env)
     executable = shutil.which(plan.argv[0], path=child_env.get("PATH"))
     if executable is None:
@@ -285,15 +229,6 @@ def _stdin_is_tty() -> bool:
         return os.isatty(sys.stdin.fileno())
     except (OSError, ValueError, AttributeError):
         return False
-
-
-def _json_env_names(path: Path, wanted: set[str]) -> set[str]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return set()
-    env = data.get("env") if isinstance(data, dict) else None
-    return wanted & set(env) if isinstance(env, dict) else set()
 
 
 def _dotenv_names(path: Path, wanted: set[str]) -> set[str]:

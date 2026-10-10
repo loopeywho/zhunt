@@ -173,28 +173,23 @@ class DriftTests(DoctorTestCase):
 
     def test_matching_v1_configs_are_ok(self) -> None:
         home = make_home(self.root, port=4000)
-        for name in ("claude", "codex", "hermes", "vscode"):
+        for name in ("codex", "hermes", "vscode"):
             self.install(home, name, 4000)
 
         checks = self.checks(home, 4000, environ={"GROQ_API_KEY": "x"})
 
-        for name in ("claude", "codex", "hermes", "vscode"):
+        for name in ("codex", "hermes", "vscode"):
             self.assertEqual(checks[f"app {name}"].status, Status.OK, name)
 
     def test_port_change_is_reported_with_exact_values_for_every_app(self) -> None:
         home = make_home(self.root, port=4000)
-        for name in ("claude", "codex", "hermes", "vscode"):
+        for name in ("codex", "hermes", "vscode"):
             self.install(home, name, 4000)
 
         checks = self.checks(home, 4555, environ={"GROQ_API_KEY": "x"})
 
-        claude = checks["app claude"]
-        self.assertEqual(claude.status, Status.WARN)
-        self.assertIn(
-            "env.ANTHROPIC_BASE_URL: expected http://127.0.0.1:4555, found http://127.0.0.1:4000",
-            claude.message,
-        )
-        self.assertIn("zhunt launch claude", claude.fix)
+        self.assertEqual(checks["app codex"].status, Status.WARN)
+        self.assertIn("zhunt launch codex", checks["app codex"].fix)
         self.assertIn(
             "model_providers.zhunt.base_url: expected http://127.0.0.1:4555/v1, "
             "found http://127.0.0.1:4000/v1",
@@ -205,7 +200,7 @@ class DriftTests(DoctorTestCase):
 
     def test_rotated_master_key_is_drift_but_no_key_value_is_printed(self) -> None:
         home = make_home(self.root, port=4000, key=None)
-        self.install(home, "claude", 4000)  # creates a key in the temp home
+        self.install(home, "codex", 4000)  # creates a key in the temp home
         env_file = home / ".zhunt" / "env"
         old_key = [
             line.split("=", 1)[1].strip('"')
@@ -214,26 +209,26 @@ class DriftTests(DoctorTestCase):
         ][0]
         env_file.write_text(f'ZHUNT_MASTER_KEY="{KEY}"\n')
 
-        check = self.checks(home, 4000, environ={"GROQ_API_KEY": "x"})["app claude"]
+        check = self.checks(home, 4000, environ={"GROQ_API_KEY": "x"})["app codex"]
 
         self.assertEqual(check.status, Status.WARN)
-        self.assertIn("ANTHROPIC_AUTH_TOKEN", check.message)
+        self.assertIn("experimental_bearer_token", check.message)
         self.assertIn("a different value", check.message)
-        self.assertNotIn("ANTHROPIC_BASE_URL", check.message)
+        self.assertNotIn("base_url", check.message)
         for secret in (old_key, KEY):
             self.assertNotIn(secret, check.render())
 
     def test_missing_file_and_removed_entry_are_reported(self) -> None:
         home = make_home(self.root, port=4000)
-        installer = self.install(home, "claude", 4000)
+        installer = self.install(home, "codex", 4000)
         self.install(home, "hermes", 4000)
-        (home / ".claude" / "settings.json").unlink()
+        (home / ".codex" / "config.toml").unlink()
         (home / ".hermes" / "config.yaml").write_text("custom_providers: []\n")
 
         checks = self.checks(home, 4000, environ={"GROQ_API_KEY": "x"})
 
-        self.assertIn("missing", checks["app claude"].message)
-        self.assertIn("settings.json", checks["app claude"].message)
+        self.assertIn("missing", checks["app codex"].message)
+        self.assertIn("config.toml", checks["app codex"].message)
         self.assertIn("name=zhunt", checks["app hermes"].message)
         self.assertEqual(checks["app hermes"].status, Status.WARN)
         self.assertIsNotNone(installer)
@@ -247,15 +242,13 @@ class DriftTests(DoctorTestCase):
 
     def test_settings_that_override_launch_are_warned_even_without_a_v1_install(self) -> None:
         home = make_home(self.root, port=4000)
-        (home / ".claude").mkdir()
-        (home / ".claude" / "settings.json").write_text(
-            '{"env": {"ANTHROPIC_AUTH_TOKEN": "sk-other"}}'
-        )
+        (home / ".hermes").mkdir()
+        (home / ".hermes" / ".env").write_text("OPENAI_API_KEY=sk-other\n")
 
         checks = self.checks(home, 4000)
 
-        self.assertEqual(checks["launch claude"].status, Status.WARN)
-        self.assertNotIn("sk-other", checks["launch claude"].render())
+        self.assertEqual(checks["launch hermes"].status, Status.WARN)
+        self.assertNotIn("sk-other", checks["launch hermes"].render())
 
 
 class DoctorCommandTests(DoctorTestCase):

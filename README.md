@@ -3,7 +3,7 @@
 Zhunt (pronounced “shunt” with a z) is a local, open-source router that sends each
 prompt to the best *available* free-tier model and switches automatically when one
 runs out of quota or fails. Use it from its own tiling workspace, or as an endpoint
-for coding tools such as Claude Code, Codex and Hermes.
+for coding tools such as Codex and Hermes.
 
 > **Status: v2 pre-release.** The engine, daemon, workspace API and app launchers
 > are built and tested against simulated providers. Verification against the real
@@ -42,10 +42,9 @@ zhunt open                 # opens the workspace in your browser, already signed
 Run a tool through Zhunt for that one process only, with no config file edited:
 
 ```console
-zhunt launch claude        # Claude Code
 zhunt launch codex         # Codex CLI
 zhunt launch hermes        # Hermes
-zhunt launch claude --dry-run   # show exactly what would be set (keys shown as ***)
+zhunt launch codex --dry-run    # show exactly what would be set (keys shown as ***)
 zhunt doctor               # check the daemon, keys, policy flags and catalog age
 ```
 
@@ -78,7 +77,7 @@ publish are left unset and learned from 429 responses.
 - Request telemetry stays in `~/.zhunt/telemetry.jsonl` (no prompt or response
   content) and Zhunt does not phone home.
 - Routing through Zhunt uses your provider keys, not a flat-rate subscription such as
-  Claude Max or ChatGPT Pro, and the answering model is not the one the tool names.
+  ChatGPT Pro, and the answering model is not the one the tool names.
 
 ## Cursor and VS Code coverage
 
