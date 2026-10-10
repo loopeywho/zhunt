@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from pathlib import Path
-import secrets
-import webbrowser
 
 import typer
 
-from zhunt.benchmark import run_benchmark
 from zhunt.connect_cli import register as register_connect_commands
-from zhunt.dashboard import create_dashboard_app
-from zhunt.installer import InstallationResult, Installer, InstallerError
+from zhunt.installer import Installer, InstallerError
 from zhunt.keys_cli import keys_app
-from zhunt.onboarding import create_onboarding_app
-from zhunt.ports import configured_port, resolve_daemon_port
-from zhunt.pricing import PricingSyncError, sync_registry
-from zhunt.registry import ModelRegistry
-from zhunt.telemetry import summarize_telemetry
+from zhunt.ports import resolve_daemon_port
 
 
 app = typer.Typer(no_args_is_help=True)
@@ -26,14 +17,9 @@ register_connect_commands(app)
 app.add_typer(keys_app, name="keys")
 
 
-class InstallMode(str, Enum):
-    API = "api"
-    PASSTHROUGH = "passthrough"
-
-
 @app.callback()
 def main() -> None:
-    """Route LLM requests to the cheapest capable model."""
+    """Send each prompt to the best free-tier model, failing over automatically."""
 
 
 @app.command()
@@ -43,13 +29,6 @@ def serve(
         help="Address to bind. Defaults to localhost only.",
     ),
     port: int | None = typer.Option(None, min=1, max=65_535),
-    registry: Path | None = typer.Option(
-        None,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Path to models.yaml.",
-    ),
     allow_non_loopback: bool = typer.Option(
         False,
         "--allow-non-loopback",
@@ -62,21 +41,16 @@ def serve(
         dir_okay=False,
         help="Local JSONL telemetry path.",
     ),
-    free_tier: bool = typer.Option(
-        False,
-        "--free-tier",
-        help="Use the v2 free-tier engine instead of the v1 paid-model registry.",
-    ),
     catalog: Path | None = typer.Option(
         None,
         "--catalog",
         exists=True,
         dir_okay=False,
         readable=True,
-        help="Free-tier catalog YAML; defaults to the packaged catalog.",
+        help="Provider catalog YAML; defaults to the packaged catalog.",
     ),
 ) -> None:
-    """Run the local LiteLLM-backed routing daemon."""
+    """Run the local routing daemon and workspace."""
 
     selected_port, fell_back = resolve_daemon_port(
         requested=port,
@@ -88,205 +62,16 @@ def serve(
             f"Port {port or 4000} is in use; using localhost:{selected_port} instead."
         )
         typer.echo(
-            "App integrations were configured for the saved port; rerun `zhunt setup` "
-            "if you installed them before this port change."
+            "Apps started with `zhunt launch` and `zhunt open` pick up the saved "
+            "port; run `zhunt doctor` to check any app configured by an older Zhunt."
         )
-    if catalog is not None and not free_tier:
-        raise typer.BadParameter("--catalog requires --free-tier", param_hint="catalog")
-    engine_options = {"free_tier": True, "catalog_path": catalog} if free_tier else {}
     run_proxy(
         host=host,
         port=selected_port,
-        registry_path=registry,
         allow_non_loopback=allow_non_loopback,
         telemetry_path=telemetry,
-        **engine_options,
+        catalog_path=catalog,
     )
-
-
-@app.command()
-def setup(
-    host: str = typer.Option(
-        "127.0.0.1",
-        help="Address for the local setup page. Non-loopback hosts are refused.",
-    ),
-    port: int = typer.Option(8400, min=1, max=65_535),
-    no_browser: bool = typer.Option(
-        False,
-        "--no-browser",
-        help="Print the setup URL without opening a browser.",
-    ),
-) -> None:
-    """Open the local provider and app setup page."""
-
-    if host not in {"127.0.0.1", "localhost", "::1"}:
-        raise typer.BadParameter(
-            "setup is local-only; use 127.0.0.1, localhost, or ::1",
-            param_hint="host",
-        )
-    token = secrets.token_urlsafe(24)
-    daemon_port, fell_back = resolve_daemon_port(persist=True)
-    if fell_back:
-        typer.echo(
-            f"Port 4000 is in use; Zhunt will use localhost:{daemon_port} for app connections."
-        )
-    url = f"http://{host}:{port}/?token={token}"
-    typer.echo(f"Open Zhunt setup: {url}")
-    if not no_browser:
-        webbrowser.open(url)
-    import uvicorn
-
-    uvicorn.run(
-        create_onboarding_app(setup_token=token, daemon_port=daemon_port),
-        host=host,
-        port=port,
-    )
-
-
-@app.command()
-def dashboard(
-    host: str = typer.Option(
-        "127.0.0.1",
-        help="Address for the local dashboard. Non-loopback hosts are refused.",
-    ),
-    port: int = typer.Option(8401, min=1, max=65_535),
-    daemon_host: str = typer.Option(
-        "127.0.0.1",
-        help="Zhunt daemon host to monitor.",
-    ),
-    daemon_port: int = typer.Option(4000, min=1, max=65_535),
-    registry: Path | None = typer.Option(
-        None,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Optional models.yaml path; defaults to the packaged registry.",
-    ),
-    provider: str | None = typer.Option(
-        None,
-        help="Provider profile to display, such as nous-portal.",
-    ),
-    telemetry: Path = typer.Option(
-        Path.home() / ".zhunt" / "telemetry.jsonl",
-        "--telemetry",
-        exists=False,
-        dir_okay=False,
-        help="Local JSONL telemetry path.",
-    ),
-    no_browser: bool = typer.Option(
-        False,
-        "--no-browser",
-        help="Print the dashboard URL without opening a browser.",
-    ),
-) -> None:
-    """Open the local status, model, and savings dashboard."""
-
-    if host not in {"127.0.0.1", "localhost", "::1"}:
-        raise typer.BadParameter(
-            "dashboard is local-only; use 127.0.0.1, localhost, or ::1",
-            param_hint="host",
-        )
-    daemon_port = configured_port() or daemon_port
-    token = secrets.token_urlsafe(24)
-    url = f"http://{host}:{port}/?token={token}"
-    typer.echo(f"Open Zhunt dashboard: {url}")
-    if not no_browser:
-        webbrowser.open(url)
-    import uvicorn
-
-    uvicorn.run(
-        create_dashboard_app(
-            dashboard_token=token,
-            registry_path=registry,
-            provider_id=provider,
-            telemetry_path=telemetry,
-            daemon_host=daemon_host,
-            daemon_port=daemon_port,
-        ),
-        host=host,
-        port=port,
-    )
-
-
-@app.command()
-def tray(
-    daemon_host: str = typer.Option(
-        "127.0.0.1",
-        help="Zhunt daemon host to monitor.",
-    ),
-    daemon_port: int = typer.Option(4000, min=1, max=65_535),
-    dashboard_port: int = typer.Option(8402, min=1, max=65_535),
-    registry: Path | None = typer.Option(
-        None,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Optional models.yaml path; defaults to the packaged registry.",
-    ),
-    provider: str | None = typer.Option(
-        None,
-        help="Provider profile to display, such as nous-portal.",
-    ),
-    telemetry: Path = typer.Option(
-        Path.home() / ".zhunt" / "telemetry.jsonl",
-        "--telemetry",
-        exists=False,
-        dir_okay=False,
-        help="Local JSONL telemetry path.",
-    ),
-) -> None:
-    """Run the optional local menu-bar/system-tray indicator."""
-
-    from zhunt.tray import run_tray
-
-    daemon_port = configured_port() or daemon_port
-    try:
-        run_tray(
-            daemon_host=daemon_host,
-            daemon_port=daemon_port,
-            dashboard_port=dashboard_port,
-            telemetry_path=telemetry,
-            registry_path=registry,
-            provider_id=provider,
-        )
-    except (RuntimeError, ValueError) as error:
-        raise typer.BadParameter(str(error)) from error
-
-
-@app.command("install")
-def install_app(
-    app_name: str = typer.Argument(help="App recipe to install."),
-    mode: InstallMode = typer.Option(
-        InstallMode.PASSTHROUGH,
-        help="API billing mode or registration-only passthrough mode.",
-    ),
-    base_url: str | None = typer.Option(
-        None,
-        help="Zhunt daemon base URL.",
-    ),
-) -> None:
-    """Back up and configure an app to use Zhunt."""
-
-    try:
-        installer = create_installer()
-        if base_url is None:
-            port, fell_back = resolve_daemon_port(
-                home=installer.home,
-                persist=True,
-            )
-            if fell_back:
-                typer.echo(
-                    f"Port 4000 is in use; configuring {app_name} for localhost:{port}."
-                )
-            base_url = f"http://127.0.0.1:{port}"
-        result = installer.install(
-            app_name,
-            mode=mode.value,
-            base_url=base_url,
-        )
-    except InstallerError as error:
-        raise typer.BadParameter(str(error), param_hint="app_name") from error
-    _show_install_result(result)
 
 
 @app.command("uninstall")
@@ -301,7 +86,7 @@ def uninstall_app(
         help="Restore every app configuration managed by Zhunt.",
     ),
 ) -> None:
-    """Restore app configuration saved before Zhunt installation."""
+    """Restore app configuration saved by an older Zhunt's `install`."""
 
     try:
         installer = create_installer()
@@ -329,118 +114,12 @@ def uninstall_app(
     typer.echo(f"Restored {result.app}: {result.target}")
 
 
-@app.command()
-def status(
-    telemetry: Path = typer.Option(
-        Path.home() / ".zhunt" / "telemetry.jsonl",
-        exists=False,
-        dir_okay=False,
-        help="Local request telemetry JSONL path.",
-    ),
-) -> None:
-    """Show today's local spend and counterfactual spend by wire dialect."""
-
-    summary = summarize_telemetry(telemetry)
-    typer.echo(f"Date: {summary['day']}")
-    typer.echo(f"Requests: {summary['requests']}")
-    typer.echo(f"Actual spend: ${summary.get('actual_spend', 0.0):.6f}")
-    typer.echo(
-        "Counterfactual top-model spend: "
-        f"${summary.get('counterfactual_spend', 0.0):.6f}"
-    )
-    typer.echo(f"Savings: ${summary.get('savings', 0.0):.6f}")
-    for wire_dialect, dialect_summary in sorted(
-        summary["by_wire_dialect"].items()
-    ):
-        typer.echo(
-            f"{wire_dialect}: {dialect_summary['requests']} requests, "
-            f"${dialect_summary['actual_spend']:.6f} actual"
-        )
-
-
-@app.command()
-def benchmark(
-    provider: str | None = typer.Option(
-        None,
-        help="Provider profile to benchmark, such as nous-portal.",
-    ),
-    registry: Path | None = typer.Option(
-        None,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Optional models.yaml path; defaults to the packaged registry.",
-    ),
-    output: Path | None = typer.Option(
-        None,
-        help="Optional JSON output path.",
-    ),
-) -> None:
-    """Run the offline routing benchmark without provider calls."""
-
-    selected_registry = (
-        ModelRegistry.from_path(registry, provider_id=provider)
-        if registry is not None
-        else ModelRegistry.default(provider_id=provider)
-    )
-    result = run_benchmark(selected_registry)
-    if output is not None:
-        import json
-
-        output = output.expanduser()
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-        typer.echo(f"Wrote benchmark report: {output}")
-    typer.echo(f"Requests: {result['requests']}")
-    typer.echo(f"Projected Zhunt cost: ${result['actual_projected_cost']:.6f}")
-    typer.echo(
-        "Counterfactual top-model cost: "
-        f"${result['baseline_projected_cost']:.6f}"
-    )
-    typer.echo(
-        "Projected savings: "
-        f"${result['projected_savings']:.6f} "
-        f"({result['projected_savings_percent']:.1f}%)"
-    )
-    typer.echo("Quality measured: no (offline benchmark)")
-    typer.echo("Provider calls: no")
-    for turn in result["turns"]:
-        typer.echo(
-            f"- {turn['case']}/{turn['turn']}: "
-            f"{turn['tier']} -> {turn['model']}"
-        )
-
-
-@app.command()
-def sync(
-    registry: Path = typer.Option(
-        Path("models.yaml"),
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Registry file to refresh from OpenRouter.",
-    ),
-) -> None:
-    """Refresh matching model prices from OpenRouter's models API."""
-
-    try:
-        result = sync_registry(registry)
-    except PricingSyncError as error:
-        raise typer.BadParameter(str(error), param_hint="registry") from error
-    typer.echo(f"Updated: {len(result.updated)} models")
-    typer.echo(f"Unavailable: {len(result.unavailable)} models")
-    if result.cheaper_tiers:
-        typer.echo("Cheaper tier candidates: " + ", ".join(result.cheaper_tiers))
-
-
 def run_proxy(
     *,
     host: str,
     port: int,
-    registry_path: Path | None,
     allow_non_loopback: bool = False,
     telemetry_path: Path | None = None,
-    free_tier: bool = False,
     catalog_path: Path | None = None,
 ) -> None:
     from zhunt.server import run_proxy as start_proxy
@@ -448,24 +127,12 @@ def run_proxy(
     start_proxy(
         host=host,
         port=port,
-        registry_path=registry_path,
         allow_non_loopback=allow_non_loopback,
         telemetry_path=telemetry_path,
-        free_tier=free_tier,
+        free_tier=True,
         catalog_path=catalog_path,
     )
 
 
 def create_installer() -> Installer:
     return Installer()
-
-
-def _show_install_result(result: InstallationResult) -> None:
-    if result.manual:
-        typer.echo(f"Manual setup required for {result.app}:")
-        for instruction in result.manual_instructions:
-            typer.echo(f"- {instruction}")
-        return
-    typer.echo(f"Configured {result.app}: {result.target}")
-    if result.backup is not None:
-        typer.echo(f"Original backup: {result.backup}")
