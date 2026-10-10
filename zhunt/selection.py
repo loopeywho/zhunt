@@ -55,7 +55,8 @@ class Reliability:
     def _decayed(self, model_id: str) -> tuple[float, float, float]:
         successes, failures, stamp = self._counts.get(model_id, (0.0, 0.0, 0.0))
         if stamp:
-            factor = 0.5 ** ((self._clock() - stamp) / _HALF_LIFE_SECONDS)
+            elapsed = max(self._clock() - stamp, 0.0)  # a clock stepped back must not grow counts
+            factor = 0.5 ** (elapsed / _HALF_LIFE_SECONDS)
             successes, failures = successes * factor, failures * factor
         return successes, failures, stamp
 
@@ -124,12 +125,13 @@ class Selector:
         *,
         tokens: int = 1,
         requires_tools: bool = False,
+        exclude: frozenset[str] = frozenset(),
     ) -> list[Candidate]:
         """Allowed, un-benched candidates for one tier: free first, then paid."""
 
         found: list[Candidate] = []
         for model in self._catalog.models_for_tier(tier):
-            if not self._allowed(model, tokens, requires_tools):
+            if model.id in exclude or not self._allowed(model, tokens, requires_tools):
                 continue
             for key_id in self._keys.get(model.platform, ()):
                 slot = (model.id, key_id)
@@ -157,15 +159,35 @@ class Selector:
         *,
         tokens: int = 1,
         requires_tools: bool = False,
+        exclude: frozenset[str] = frozenset(),
     ) -> tuple[Candidate, Lease]:
-        """Reserve the best candidate with quota left, dropping a tier if needed."""
+        """Reserve the best candidate with quota left, dropping a tier if needed.
+
+        ``exclude`` is a preference (e.g. a model that just truncated): it is honoured
+        when another model qualifies and ignored when nothing else does.
+        """
+
+        if exclude:
+            try:
+                return self._acquire(tier, tokens, requires_tools, exclude)
+            except NoCandidateError:
+                pass
+        return self._acquire(tier, tokens, requires_tools, frozenset())
+
+    def _acquire(
+        self,
+        tier: Tier,
+        tokens: int,
+        requires_tools: bool,
+        exclude: frozenset[str],
+    ) -> tuple[Candidate, Lease]:
 
         lower_first = sorted(
             (t for t in Tier if t.rank <= tier.rank), key=lambda t: -t.rank
         )
         for attempt in lower_first:
             for candidate in self.ranked(
-                attempt, tokens=tokens, requires_tools=requires_tools
+                attempt, tokens=tokens, requires_tools=requires_tools, exclude=exclude
             ):
                 lease = self._quota.try_acquire(
                     candidate.slot, candidate.model.limits, tokens=tokens

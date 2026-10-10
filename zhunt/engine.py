@@ -63,6 +63,60 @@ _COMPARE_TIMEOUT_SECONDS = 60
 _ERROR_TEXT_LIMIT = 300
 _TRUTHY = {"1", "true", "yes", "on"}
 
+# Client-supplied fields that could redirect a call, pick another route or send
+# the provider key somewhere else. The engine alone decides these.
+_CLIENT_ROUTING_FIELDS = (
+    "api_base",
+    "base_url",
+    "api_version",
+    "custom_llm_provider",
+    "fallbacks",
+    "context_window_fallbacks",
+    "content_policy_fallbacks",
+    "models",
+    "deployment_id",
+    "user_config",
+    "extra_headers",
+    "num_retries",
+    "max_retries",
+)
+
+
+def _banned_request_params() -> frozenset[str]:
+    """Every field a client must not control: ours plus LiteLLM's own blocklist
+    (endpoints, credentials, cost overrides, observability hosts)."""
+
+    from litellm.proxy.auth import auth_utils
+
+    litellm_banned = getattr(auth_utils, "_BANNED_REQUEST_BODY_PARAMS", ())
+    return frozenset(_CLIENT_ROUTING_FIELDS) | frozenset(litellm_banned)
+
+
+def _enforce_engine_routing(data: dict[str, Any], call_type: str) -> None:
+    """Scrub every client-controlled routing field before the engine sets its own.
+
+    LiteLLM's request-body checks live in the auth path that Zhunt replaces, so
+    without this a caller holding the master key could send ``api_base`` (or a
+    ``fallbacks`` entry) and receive the provider key at a host of its choosing.
+    ``data`` also carries LiteLLM's own metadata at this point, so offending names
+    are dropped rather than rejected.
+    """
+
+    banned = _banned_request_params()
+    for field in banned:
+        data.pop(field, None)
+    for field in ("extra_body", "litellm_embedding_config"):
+        data.pop(field, None)
+    for key in ("metadata", "litellm_metadata"):
+        nested = data.get(key)
+        if isinstance(nested, dict):
+            for field in banned:
+                nested.pop(field, None)
+    if call_type in ("completion", "acompletion"):
+        # One engine lease must be one upstream request; failover is the engine's job.
+        data["max_retries"] = 0
+        data["num_retries"] = 0
+
 
 def keys_from_env(catalog: Catalog, env: Mapping[str, str]) -> dict[str, list[str]]:
     """Platforms whose API key is set. One key per platform; ids are not secrets."""
@@ -87,13 +141,14 @@ def registry_from_catalog(catalog: Catalog) -> ModelRegistry:
     The engine, not this registry, picks the model that is actually called.
     """
 
+    # Every tier must exist for the classifier, even in a catalog that lacks models
+    # for it; the names in this view are never called.
     tiers = {
         tier.value: [
             {"model": m.id, "in": str(m.input_cost), "out": str(m.output_cost)}
-            for m in catalog.models_for_tier(tier)
+            for m in (catalog.models_for_tier(tier) or catalog.models)
         ]
         for tier in Tier
-        if catalog.models_for_tier(tier)
     }
     aliases: dict[str, Any] = {"zhunt-auto": {"tier": "auto"}}
     aliases.update({f"zhunt-{name}": {"tier": name} for name in tiers})
@@ -122,15 +177,29 @@ def classify_failure(
     return ProviderFailure.SERVER, retry_after
 
 
+_MAX_RETRY_AFTER_SECONDS = 86_400.0
+
+
 def _retry_after(error: BaseException) -> float | None:
-    headers = getattr(getattr(error, "response", None), "headers", None)
-    if headers is None:
-        return None
-    try:
-        value = float(headers.get("retry-after"))
-    except (TypeError, ValueError):
-        return None
-    return value if value > 0 else None
+    """Provider ``retry-after`` in seconds, clamped to a day.
+
+    LiteLLM's mapped exceptions keep the real headers on ``litellm_response_headers``
+    (``.response`` is a synthetic empty one), so look there first.
+    """
+
+    for headers in (
+        getattr(error, "litellm_response_headers", None),
+        getattr(getattr(error, "response", None), "headers", None),
+    ):
+        if headers is None:
+            continue
+        try:
+            value = float(headers.get("retry-after"))
+        except (TypeError, ValueError):
+            continue
+        if value == value and value > 0:  # not NaN, positive
+            return min(value, _MAX_RETRY_AFTER_SECONDS)
+    return None
 
 
 @dataclass(frozen=True)
@@ -153,6 +222,7 @@ class _Retry:
     request: RoutingRequest
     attempts: int
     escalated: bool
+    exclude: frozenset[str] = frozenset()
 
 
 class EngineProxyHook(CustomLogger):
@@ -195,6 +265,7 @@ class EngineProxyHook(CustomLogger):
             return data
 
         payload, headers = _original_request(data)
+        _enforce_engine_routing(data, call_type)
         if isinstance(payload.get("input"), list):
             data["input"] = strip_thinking_blocks(system_first(payload["input"]))
         if isinstance(payload.get("messages"), list):
@@ -207,10 +278,11 @@ class EngineProxyHook(CustomLogger):
             except AdapterError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
             decision, request = routed.decision, routed.request
-            attempts, escalated = 1, False
+            attempts, escalated, exclude = 1, False, frozenset()
         else:
             decision, request = retry.decision, retry.request
             attempts, escalated = retry.attempts + 1, retry.escalated
+            exclude = retry.exclude
 
         tokens = (request.estimated_input_tokens or 1) + request.estimated_output_tokens
         try:
@@ -218,6 +290,7 @@ class EngineProxyHook(CustomLogger):
                 decision.tier,
                 tokens=tokens,
                 requires_tools=bool(payload.get("tools")),
+                exclude=exclude,
             )
         except NoCandidateError as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
@@ -297,7 +370,9 @@ class EngineProxyHook(CustomLogger):
                 failure = failure or _response_failure(chunk, request_data=request_data)
                 yield chunk
         except (asyncio.CancelledError, GeneratorExit):
-            self._pop_pending(request_data)
+            cancelled = self._pop_pending(request_data)
+            if cancelled is not None:
+                self.quota.settle(cancelled.lease, 0)
             raise
         except Exception as error:
             pending = self._pop_pending(request_data)
@@ -341,9 +416,19 @@ class EngineProxyHook(CustomLogger):
         if pending.escalated or pending.attempt_id is None:
             return  # one promotion per client request
         promoted = self.coordinator.escalate(pending.decision, failure)
-        self._queue_retry(pending, promoted, escalated=True)
+        if promoted.tier == pending.decision.tier:
+            return  # already at the top tier: a replay would only repeat the call
+        self._queue_retry(
+            pending,
+            promoted,
+            escalated=True,
+            exclude=frozenset({pending.candidate.model.id}),
+        )
 
     def _handle_error(self, pending: _Pending, error: BaseException) -> None:
+        # Nothing was generated, so the reserved tokens must not count against the
+        # per-minute/day budget (otherwise a few failures lock a model out locally).
+        self.quota.settle(pending.lease, 0)
         self._record_telemetry(pending, None, False, FailureKind.PROVIDER_ERROR)
         kind, retry_after = classify_failure(error)
         self._record_decision(
@@ -377,6 +462,7 @@ class EngineProxyHook(CustomLogger):
         decision: RoutingDecision,
         *,
         escalated: bool,
+        exclude: frozenset[str] = frozenset(),
     ) -> None:
         if pending.attempt_id is None or pending.attempts > self.max_replays:
             return
@@ -386,6 +472,7 @@ class EngineProxyHook(CustomLogger):
                 request=pending.request,
                 attempts=pending.attempts,
                 escalated=escalated,
+                exclude=exclude,
             )
 
     def _take_retry(self, attempt_id: str | None) -> _Retry | None:
@@ -545,8 +632,10 @@ class EngineProxyHook(CustomLogger):
                 messages=list(messages),
                 api_key=api_key,
                 timeout=_COMPARE_TIMEOUT_SECONDS,
+                max_retries=0,
             )
         except Exception as error:
+            self.quota.settle(lease, 0)
             kind, retry_after = classify_failure(error)
             if kind is not None:
                 for bench in self._benched_slots(model, key_id, error):

@@ -73,13 +73,14 @@ def test_settle_replaces_the_estimate_with_actual_usage() -> None:
     assert quota.try_acquire(SLOT, limits, tokens=80)
 
 
-def test_cooldown_escalates_and_blocks_until_it_expires() -> None:
+def test_cooldown_escalates_across_episodes_and_blocks_until_it_expires() -> None:
     clock = FakeClock()
     quota = QuotaTracker(clock=clock)
     limits = Limits()
     durations = []
     for _ in range(6):
         durations.append(quota.record_failure(SLOT, FailureKind.RATE_LIMIT))
+        clock.advance(durations[-1] + 1)  # each failure comes after the last cooldown
 
     assert durations == [120, 600, 3_600, 86_400, 86_400, 86_400]
 
@@ -93,15 +94,44 @@ def test_cooldown_escalates_and_blocks_until_it_expires() -> None:
     assert quota.try_acquire(SLOT, limits)
 
 
-def test_success_clears_cooldown_and_failure_streak() -> None:
-    quota = QuotaTracker(clock=FakeClock())
+def test_a_success_after_the_cooldown_clears_the_failure_streak() -> None:
+    clock = FakeClock()
+    quota = QuotaTracker(clock=clock)
     quota.record_failure(SLOT, FailureKind.SERVER)
-    quota.record_failure(SLOT, FailureKind.SERVER)
+    clock.advance(121)
+    quota.record_failure(SLOT, FailureKind.SERVER)  # second episode: 600 s
+    clock.advance(601)
 
     quota.record_success(SLOT)
 
     assert quota.cooldown_remaining(SLOT) == 0
     assert quota.record_failure(SLOT, FailureKind.SERVER) == 120
+
+
+def test_parallel_failures_in_one_burst_count_as_one_episode() -> None:
+    quota = QuotaTracker(clock=FakeClock())
+
+    burst = [quota.record_failure(SLOT, FailureKind.RATE_LIMIT) for _ in range(3)]
+
+    assert burst == [120, 120, 120]  # not 120 -> 600 -> 3600
+
+
+def test_a_later_short_failure_never_shortens_a_longer_cooldown() -> None:
+    quota = QuotaTracker(clock=FakeClock())
+    quota.record_failure(SLOT, FailureKind.CREDIT)  # 3600 s
+
+    quota.record_failure(SLOT, FailureKind.RATE_LIMIT, retry_after=5)
+
+    assert quota.cooldown_remaining(SLOT) == 3_600
+
+
+def test_an_in_flight_success_does_not_lift_a_fresh_cooldown() -> None:
+    quota = QuotaTracker(clock=FakeClock())
+    quota.record_failure(SLOT, FailureKind.SERVER)
+
+    quota.record_success(SLOT)  # an earlier request finishing late
+
+    assert quota.cooldown_remaining(SLOT) == 120
 
 
 def test_provider_retry_after_is_authoritative() -> None:
@@ -113,9 +143,13 @@ def test_provider_retry_after_is_authoritative() -> None:
 
 @pytest.mark.parametrize("kind", [FailureKind.AUTH, FailureKind.CREDIT])
 def test_auth_and_credit_failures_start_at_one_hour(kind: FailureKind) -> None:
-    quota = QuotaTracker(clock=FakeClock())
+    clock = FakeClock()
+    quota = QuotaTracker(clock=clock)
 
-    assert quota.record_failure(SLOT, kind) == 3_600
+    first = quota.record_failure(SLOT, kind)
+    clock.advance(first + 1)
+
+    assert first == 3_600
     assert quota.record_failure(SLOT, kind) == 86_400
 
 

@@ -123,27 +123,36 @@ class QuotaTracker:
     ) -> float:
         """Bench the slot and return the cooldown in seconds.
 
-        A provider-supplied ``retry_after`` is authoritative; otherwise the
-        cooldown escalates 2 min, 10 min, 1 h, 24 h with each consecutive failure.
+        A provider-supplied ``retry-after`` is authoritative; otherwise the
+        cooldown escalates 2 min, 10 min, 1 h, 24 h with each consecutive failure
+        *episode*. Failures reported while the slot is already benched (parallel
+        requests that were in flight together) belong to the same episode: they
+        never shorten the cooldown and never climb the ladder.
         """
 
         with self._lock:
             now = self._clock()
             state = self._state(slot, now)
-            state.failures += 1
+            new_episode = now >= state.cooldown_until
+            if new_episode:
+                state.failures += 1
             if retry_after is not None and retry_after > 0:
                 duration = float(retry_after)
             else:
-                step = state.failures - 1 + _STEP_OFFSET.get(kind, 0)
+                step = max(state.failures - 1, 0) + _STEP_OFFSET.get(kind, 0)
                 duration = _COOLDOWN_STEPS[min(step, len(_COOLDOWN_STEPS) - 1)]
-            state.cooldown_until = now + duration
-            return duration
+            state.cooldown_until = max(state.cooldown_until, now + duration)
+            return state.cooldown_until - now
 
     def record_success(self, slot: Slot) -> None:
+        """A request succeeded. While the slot is benched this is an earlier,
+        still-in-flight request finishing, so it must not lift the cooldown."""
+
         with self._lock:
-            state = self._state(slot, self._clock())
-            state.failures = 0
-            state.cooldown_until = 0.0
+            now = self._clock()
+            state = self._state(slot, now)
+            if state.cooldown_until <= now:
+                state.failures = 0
 
     def cooldown_remaining(self, slot: Slot) -> float:
         with self._lock:
