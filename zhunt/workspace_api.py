@@ -19,6 +19,7 @@ from zhunt.server import _authenticate_local_request
 
 MAX_LAYOUT_BYTES = 64 * 1024
 MAX_COMPARE_MODELS = 4
+MAX_COMPARE_BYTES = 1024 * 1024
 _NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
 
 
@@ -31,7 +32,46 @@ class WorkspaceDirs:
     static: Path = Path(__file__).parent / "workspace"
 
 
+# The workspace needs nothing but its own files and this daemon. Locking everything
+# else down also stops a downloaded user theme from beaconing out via url().
+_WORKSPACE_CSP = (
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+class _WorkspaceHeaders:
+    """Add the CSP and friends to /workspace responses.
+
+    Plain ASGI on purpose: Starlette's BaseHTTPMiddleware deadlocks with the replay
+    middleware that wraps this app and calls it more than once per client request.
+    """
+
+    _HEADERS = (
+        (b"content-security-policy", _WORKSPACE_CSP.encode()),
+        (b"x-content-type-options", b"nosniff"),
+        (b"referrer-policy", b"no-referrer"),
+    )
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith("/workspace"):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", []), *self._HEADERS]}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> None:
+    app.add_middleware(_WorkspaceHeaders)
     app.include_router(build_router(hook, dirs))
     if dirs.static.is_dir():  # the UI ships in a separate change
         app.mount(
@@ -59,7 +99,9 @@ def build_router(hook: EngineProxyHook, dirs: WorkspaceDirs) -> APIRouter:
 
     @router.post("/compare")
     async def compare(request: Request) -> dict[str, Any]:
-        messages, model_ids = _compare_request(await _json_body(request))
+        messages, model_ids = _compare_request(
+            await _json_body(request, limit=MAX_COMPARE_BYTES)
+        )
         known = {model.id for model in hook.catalog.models}
         unknown = [mid for mid in model_ids if mid not in known]
         if unknown:
@@ -74,6 +116,8 @@ def build_router(hook: EngineProxyHook, dirs: WorkspaceDirs) -> APIRouter:
     def get_layout(name: str) -> Any:
         path = _path(dirs.layouts, name, ".json")
         try:
+            if path.is_symlink():
+                raise FileNotFoundError(name)
             return json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             raise HTTPException(404, f"no layout named {name!r}") from None
@@ -112,8 +156,11 @@ def build_router(hook: EngineProxyHook, dirs: WorkspaceDirs) -> APIRouter:
     @router.get("/themes/{name}")
     def get_theme(name: str) -> PlainTextResponse:
         for folder in (dirs.themes, dirs.static / "css" / "themes"):
+            candidate = _path(folder, name, ".css")
             try:
-                css = _path(folder, name, ".css").read_text(encoding="utf-8")
+                if candidate.is_symlink():  # never follow a link out of the themes dir
+                    raise FileNotFoundError(name)
+                css = candidate.read_text(encoding="utf-8")
             except FileNotFoundError:
                 continue
             return PlainTextResponse(css, media_type="text/css")
@@ -155,7 +202,7 @@ async def _json_body(request: Request, *, limit: int | None = None) -> Any:
             raise HTTPException(413, f"body is larger than {limit} bytes")
     try:
         return json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: absurdly deep nesting
         raise HTTPException(400, "body must be valid JSON") from None
 
 
@@ -173,7 +220,10 @@ def _names(folder: Path, suffix: str) -> list[str]:
     return sorted(
         path.stem
         for path in folder.iterdir()
-        if path.suffix == suffix and _NAME.fullmatch(path.stem) and path.is_file()
+        if path.suffix == suffix
+        and _NAME.fullmatch(path.stem)
+        and path.is_file()
+        and not path.is_symlink()
     )
 
 

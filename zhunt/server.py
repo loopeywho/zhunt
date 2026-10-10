@@ -226,7 +226,11 @@ def _authenticate_local_request(request: Request) -> Any:
             or request.headers.get("x-api-key")
             or ""
         )
-    if not secrets.compare_digest(token, request.app.state.zhunt_master_key):
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str (a 500).
+    if not secrets.compare_digest(
+        token.encode("utf-8", "surrogateescape"),
+        request.app.state.zhunt_master_key.encode("utf-8"),
+    ):
         raise HTTPException(status_code=401, detail="invalid Zhunt master key")
     return UserAPIKeyAuth(api_key=token)
 

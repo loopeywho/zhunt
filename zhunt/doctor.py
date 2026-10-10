@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from ruamel.yaml.error import YAMLError as RuamelYAMLError
 
 from zhunt.auth import read_env_values, read_master_key
 from zhunt.catalog import Catalog
@@ -204,6 +205,18 @@ def _app_checks(
         name = f"app {app}"
         try:
             drift = app_drift(home, app, base_url=base_url, master_key=key or "")
+        except (yaml.YAMLError, RuamelYAMLError) as error:
+            # A parse error message quotes the offending lines of the user's config,
+            # which can hold a key: report only that it could not be parsed.
+            checks.append(
+                Check(
+                    Status.WARN,
+                    name,
+                    f"cannot parse the configuration ({type(error).__name__})",
+                    f"fix or restore the file, or run `zhunt launch {app}` instead",
+                )
+            )
+            continue
         except (InstallerError, OSError, ValueError, KeyError) as error:
             checks.append(
                 Check(Status.WARN, name, f"cannot read configuration: {error}", f"run `zhunt launch {app}` instead")

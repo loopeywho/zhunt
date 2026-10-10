@@ -4,7 +4,33 @@ from __future__ import annotations
 
 import os
 import secrets
+import tempfile
 from pathlib import Path
+
+
+def write_private_text(path: Path, text: str) -> None:
+    """Write ``text`` so the file is never readable by others, even briefly.
+
+    The directory is created 0700 and the content goes to a 0600 temp file that
+    replaces the target atomically, instead of writing with the default umask and
+    tightening the mode afterwards.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        path.parent.chmod(0o700)
+    except OSError:
+        pass
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-env-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        Path(temp).unlink(missing_ok=True)
+        raise
 
 
 def ensure_master_key(env_path: Path | None = None) -> str:
@@ -23,19 +49,10 @@ def ensure_master_key(env_path: Path | None = None) -> str:
                     break
     if key is None:
         key = f"sk-zhunt-{secrets.token_urlsafe(32)}"
-        path.parent.mkdir(parents=True, exist_ok=True)
         existing = path.read_text(encoding="utf-8") if path.exists() else ""
         if existing and not existing.endswith("\n"):
             existing += "\n"
-        path.write_text(
-            f"{existing}ZHUNT_MASTER_KEY={key}\n",
-            encoding="utf-8",
-        )
-    try:
-        path.chmod(0o600)
-        path.parent.chmod(0o700)
-    except OSError:
-        pass
+        write_private_text(path, f"{existing}ZHUNT_MASTER_KEY={key}\n")
     os.environ["ZHUNT_MASTER_KEY"] = key
     os.environ["LITELLM_MASTER_KEY"] = key
     return key
@@ -83,13 +100,7 @@ def save_env_value(name: str, value: str, env_path: Path | None = None) -> None:
             break
     else:
         lines.append(replacement)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
-    try:
-        path.chmod(0o600)
-        path.parent.chmod(0o700)
-    except OSError:
-        pass
+    write_private_text(path, "\n".join(lines).rstrip("\n") + "\n")
     os.environ[name] = value
 
 

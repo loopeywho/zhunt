@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from zhunt.auth import read_env_values, save_env_value
+from zhunt.auth import read_env_values, save_env_value, write_private_text
 from zhunt.catalog import Catalog, Provider, load_catalog
 
 keys_app = typer.Typer(
@@ -70,6 +70,5 @@ def remove_key(platform: str = typer.Argument(help="Provider, e.g. groq.")) -> N
     if len(kept) == len(lines):
         typer.echo(f"{provider.key_env} was not set in {path}")
         return
-    path.write_text("\n".join(kept).rstrip("\n") + "\n" if kept else "", encoding="utf-8")
-    path.chmod(0o600)
+    write_private_text(path, "\n".join(kept).rstrip("\n") + "\n" if kept else "")
     typer.echo(f"Removed {provider.key_env} from {path}")
