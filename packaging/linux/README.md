@@ -10,11 +10,12 @@ Build on a Linux x86_64 host with Python 3.12:
 sh packaging/linux/build.sh
 ```
 
-Extract the archive and run the local setup or daemon:
+Extract the archive, add a provider key, and run the daemon:
 
 ```sh
 tar -xzf dist/Zhunt-Setup-linux-x64.tar.gz
-./zhunt/zhunt setup
+./zhunt/zhunt keys add groq
+./zhunt/zhunt serve
 ```
 
 Verify the extracted package before distributing it:

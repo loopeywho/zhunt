@@ -42,8 +42,8 @@ or a pre-existing virtual environment:
 1. Run `zhunt --help`.
 2. Start `zhunt serve` and confirm it stays running for at least 20 seconds.
 3. Confirm an unauthenticated request receives HTTP 401.
-4. Open `zhunt setup`, configure a real provider key, and confirm the loopback UI.
-5. Install and uninstall each applicable recipe; verify backups and byte-for-byte restore.
+4. Run `zhunt keys add groq`, then `zhunt open`, and confirm the workspace loads and shows the key as set.
+5. Run `zhunt launch claude --dry-run` and confirm no config file changes; `zhunt uninstall --all` must restore any config an older Zhunt wrote, byte for byte.
 6. Confirm `%USERPROFILE%\.zhunt\env` and telemetry survive reinstall/uninstall.
 7. Check the env file ACL with `icacls`; it must not be readable by other users.
 

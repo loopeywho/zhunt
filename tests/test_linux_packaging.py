@@ -9,8 +9,8 @@ def test_linux_package_targets_x86_64_and_bundles_registry():
     workflow = (ROOT / ".github/workflows/linux-x64.yml").read_text(encoding="utf-8")
 
     assert "Zhunt-Setup-linux-x64.tar.gz" in build
-    assert 'pip install "$ROOT[desktop]"' in build
-    assert "--collect-all pystray" in build
+    assert 'pip install "$ROOT"' in build
+    assert "pystray" not in build  # the tray indicator was removed
     assert "--collect-all PIL" in build
     assert '--add-data "$ROOT/zhunt/catalog.yaml:zhunt"' in build
     assert '(cd "$OUTPUT" && sha256sum "$(basename "$ARCHIVE")")' in build

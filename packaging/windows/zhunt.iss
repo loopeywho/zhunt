@@ -24,7 +24,7 @@ Uninstallable=yes
 Source: "..\..\.windows-build\dist\zhunt\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Zhunt Setup"; Filename: "{app}\{#ExecutableName}"; Parameters: "setup"
+Name: "{group}\Zhunt Workspace"; Filename: "{app}\{#ExecutableName}"; Parameters: "open"
 Name: "{group}\Zhunt Daemon"; Filename: "{app}\{#ExecutableName}"; Parameters: "serve"
 Name: "{group}\Uninstall Zhunt"; Filename: "{uninstallexe}"
 

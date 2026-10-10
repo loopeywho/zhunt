@@ -39,8 +39,8 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertIn("--hidden-import tiktoken_ext.openai_public", build)
         self.assertIn("--add-data", build)
         self.assertIn('"zhunt\\catalog.yaml"', build)
-        self.assertIn('pip install ".[desktop]"', build)
-        self.assertIn("--collect-all pystray", build)
+        self.assertIn('pip install "."', build)
+        self.assertNotIn("pystray", build)  # the tray indicator was removed
         self.assertIn("--collect-all PIL", build)
 
     def test_windows_recipe_targets_are_under_user_home(self) -> None:

@@ -27,8 +27,8 @@ class MacOSPackagingTests(unittest.TestCase):
         self.assertIn("--hidden-import tiktoken_ext.openai_public", script)
         self.assertIn("--add-data \"$ROOT/zhunt/catalog.yaml:zhunt\"", script)
         self.assertIn("--specpath \"$WORK\"", script)
-        self.assertIn('pip install "$ROOT[desktop]"', script)
-        self.assertIn("--collect-all pystray", script)
+        self.assertIn('pip install "$ROOT"', script)
+        self.assertNotIn("pystray", script)  # the tray indicator was removed
         self.assertIn("--collect-all PIL", script)
 
     def test_checksums_are_portable_for_downloaders(self) -> None:
