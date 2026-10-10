@@ -1,194 +1,112 @@
 # Zhunt
 
-Zhunt (pronounced “shunt” with a z) shunts every LLM request to the cheapest
-capable model without requiring the calling app to change protocols.
+Zhunt (pronounced “shunt” with a z) is a local, open-source router that sends each
+prompt to the best *available* free-tier model and switches automatically when one
+runs out of quota or fails. Use it from its own tiling workspace, or as an endpoint
+for coding tools such as Claude Code, Codex and Hermes.
 
-The shared routing core includes request classification, a YAML-backed model
-registry, session-level model stickiness, health-aware failover, measured
-latency-aware selection, and failure escalation. Thin inbound adapters normalize
-Anthropic Messages, OpenAI Responses, and OpenAI Chat Completions requests into
-that shared contract.
+> **Status: v2 pre-release.** The engine, daemon, workspace API and app launchers
+> are built and tested against simulated providers. Verification against the real
+> Groq, Google AI Studio and Cerebras APIs with live keys is still pending, so
+> treat provider behaviour as unproven until that is done.
 
-## Billing warning
+## How it works
 
-Routing through Zhunt uses your provider API keys and is billed per token. It does
-not consume flat-rate Claude Max, ChatGPT Pro, Copilot, or Cursor Pro allowances,
-so it can cost more than using those subscriptions directly. For Claude Code,
-there is no supported passthrough mode: `zhunt install claude --mode api` routes
-all Claude traffic through pay-per-token API keys. Claude Max subscribers should
-not install that recipe unless they explicitly intend to create that bill.
+1. Each request is classified into a tier: chat, coding, long-context or reasoning.
+2. Zhunt ranks the models in that tier that are allowed and have quota left:
+   free models first, ordered by observed reliability, speed, capability and
+   remaining headroom. Paid models are used only if you turn them on.
+3. If a call fails, the model is benched and the request is retried on the next
+   candidate (up to three failovers). Cooldowns escalate: 2 minutes, 10 minutes,
+   1 hour, then 24 hours. A rejected key (401) or empty account (402) benches every
+   model from that provider; a provider's own `retry-after` is honoured.
+4. If every model in a tier is out, the request drops to the next tier down
+   instead of failing.
 
-## Development
+Three wire protocols are accepted, so existing tools need no changes: Anthropic
+Messages, OpenAI Responses and OpenAI Chat Completions.
+
+## Quick start
 
 Zhunt targets Python 3.12.
 
 ```console
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
-pytest
+
+zhunt keys add groq        # hidden prompt; stored in ~/.zhunt/env (mode 0600)
+zhunt serve                # starts the daemon on localhost:4000
+zhunt open                 # opens the workspace in your browser, already signed in
 ```
 
-An initial localhost-only LiteLLM daemon and routing hook are implemented. Run
-`zhunt serve --help` for its options. The daemon exposes only the four inference
-POST routes and creates a local master key in `~/.zhunt/env` on first run; the
-same key is used by the app installer recipes. Non-loopback binding requires
-`--allow-non-loopback`. Failed requests are retried once on the promoted route.
-Zhunt buffers the first streaming attempt so a truncated or refused response can
-be discarded before retrying; routine client-requested output limits do not
-escalate a session, while an uncapped provider truncation can promote one tier
-for that turn and never double-promotes its replay. Escalated routes decay after
-clean turns. Real-provider streaming and tool-call fidelity validation remains
-pending until provider keys are available.
-
-The daemon keeps request telemetry locally in `~/.zhunt/telemetry.jsonl`. Use
-`zhunt status` to view today's actual spend versus the counterfactual top-model
-spend, broken down by wire dialect. Zhunt does not claim to identify the
-originating desktop app unless a future integration supplies that identity;
-this avoids merging Cursor/VS Code traffic into another app's bucket. Use
-`zhunt serve --telemetry /path/to/evidence.jsonl` when an auditable run needs a
-retained telemetry file, and use `zhunt sync` to refresh matching registry
-prices from OpenRouter's models API.
-No prompt or response content is written to telemetry, and Zhunt does not
-phone home.
-
-## Local dashboard and tray indicator
-
-Open the local status dashboard with:
+Run a tool through Zhunt for that one process only, with no config file edited:
 
 ```console
-zhunt dashboard
+zhunt launch claude        # Claude Code
+zhunt launch codex         # Codex CLI
+zhunt launch hermes        # Hermes
+zhunt launch claude --dry-run   # show exactly what would be set (keys shown as ***)
+zhunt doctor               # check the daemon, keys, policy flags and catalog age
 ```
 
-It shows daemon reachability, the configured provider, registry model prices,
-request counts, and estimated savings. The dashboard is loopback-only and its
-API requires a one-time local token; it never displays provider keys or prompt
-content. Savings are estimates based on the local registry, so run `zhunt sync`
-before using them in public material.
+Cursor and VS Code have no environment or flag route for a custom endpoint, so
+`zhunt launch cursor` and `zhunt launch vscode` print the manual steps instead.
 
-The next native installers will include an optional menu-bar/system-tray indicator. Run
-`zhunt tray` to show a green **Zhunt Active** or red **Zhunt Offline** badge and
-open the dashboard from its menu. A Python installation can add the same
-support with `python -m pip install 'zhunt[desktop]'`. The indicator reports
-daemon health and wire protocol activity; it does not guess which desktop app
-originated a request.
+## Providers
 
-Run the offline benchmark with:
+The catalog is `zhunt/catalog.yaml`: Groq, Google AI Studio and Cerebras, each
+recorded from the provider's own documentation with a verification date. Free tiers
+change often, so re-check a row before relying on it. Limits a provider does not
+publish are left unset and learned from 429 responses.
 
-```console
-zhunt benchmark --output ~/.zhunt/benchmark.json
-```
+| Provider | Key variable | Prompt-training policy used by Zhunt |
+| --- | --- | --- |
+| Groq | `GROQ_API_KEY` | Not retained by default per Groq's docs |
+| Google AI Studio | `GEMINI_API_KEY` | Free tier may use content to improve Google products |
+| Cerebras | `CEREBRAS_API_KEY` | No statement found for API prompts; treated as possible |
 
-This uses representative, sanitized requests and the registry's projected
-prices. It makes no provider calls and does not measure response quality or
-real latency, so treat it as a routing/cost baseline rather than proof of
-production savings.
+## Privacy and cost
 
-## Windows x64 preview
+- **Providers that may train on your prompts are off by default.** Set
+  `ZHUNT_ALLOW_TRAINING=1` to allow them. Until you do, only providers marked as
+  not training are used.
+- **Paid models are off by default.** Set `ZHUNT_ALLOW_PAID=1` to allow them.
+- Keys are only ever read from `~/.zhunt/env` and the environment. The workspace and
+  its API show whether a key is set, never its value.
+- The master key that protects the local API is created on first run. `zhunt open`
+  passes it in the URL fragment, which the browser never sends to a server.
+- Request telemetry stays in `~/.zhunt/telemetry.jsonl` (no prompt or response
+  content) and Zhunt does not phone home.
+- Routing through Zhunt uses your provider keys, not a flat-rate subscription such as
+  Claude Max or ChatGPT Pro, and the answering model is not the one the tool names.
 
-The native Windows x64 installer is built on a Windows CI runner; macOS cannot
-validate a native executable. Until the installer artifact has passed the Quill
-fresh-machine checklist, Windows users can install the Python wheel with Python
-3.12 x64. The packaging instructions and CI build are in
-`packaging/windows/README.md`.
+## Moving from the earlier Zhunt
 
-The release gate is a fresh Windows 11 x64 install from the produced artifact:
-`zhunt --help`, a daemon that stays running and returns 401 without its local
-key, loopback setup, provider validation, recipe install/uninstall with backup
-restore, and preservation of `%USERPROFILE%\\.zhunt` across uninstall. Do not
-describe the Windows installer as release-ready until that test passes on Quill.
-
-## macOS arm64 preview
-
-The macOS packaging path currently produces Apple Silicon (`arm64`) `.dmg` and
-`.pkg` installers. It is not a Universal 2 build: an independently tested
-x86_64 build is still required before describing the download as macOS
-Universal. The packages are also unsigned; public distribution requires
-Developer ID signing and notarization, and Gatekeeper may reject the unsigned
-artifacts.
-
-The macOS release gate is a fresh Apple Silicon install from the produced
-artifact: verify the package checksum, run `zhunt --help`, keep `zhunt serve`
-running with an unauthenticated request returning 401, open the loopback setup
-UI, and confirm `~/.zhunt/env` is created with user-only access. Do not publish
-the macOS installers as release-ready until signing/notarization and this
-fresh-machine check are complete. Build instructions are in
-`packaging/macos/README.md`.
-
-## Linux x86_64 preview
-
-The Linux packaging path produces a portable x86_64 `.tar.gz` bundle. It is
-built on Linux in CI and does not yet provide distro-specific `.deb`/`.rpm`
-packages or an ARM64 build. The bundle includes its Python runtime, so no
-system Python installation is required. Build and smoke-test instructions are
-in `packaging/linux/README.md`.
-
-Do not publish the Linux bundle as release-ready until the Linux CI artifact has
-passed its real daemon startup and unauthenticated-401 smoke test.
-
-## Local setup UI
-
-For browser-based setup, run:
+The earlier version edited each app's config file, which broke whenever an app
+updated. If you used `zhunt install`, restore those files with:
 
 ```console
-zhunt setup
-```
-
-This opens a loopback-only setup page where you choose OpenRouter or Nous Portal,
-enter an API key, validate access to the provider's model list, and select app
-recipes to configure. The key is written with restrictive permissions to
-`~/.zhunt/env`; the setup page uses a one-time local token and is not exposed by
-the inference daemon. Nous Portal uses its OpenAI-compatible endpoint and
-`PORTAL_API_KEY`; live provider responses still require a real account key.
-The daemon prefers localhost port 4000. If that port is already occupied,
-setup selects the next available localhost port, saves it in `~/.zhunt/env`,
-and uses it consistently for the app recipes configured on that page. Zhunt
-never falls back to a public network interface. If a later restart finds the
-saved port occupied, `zhunt serve` chooses another loopback port and prints a
-message to rerun setup so installed app endpoints are updated together.
-
-## App wiring
-
-The installer backs up an existing configuration before merging a packaged YAML
-recipe. Where supported, `passthrough` registers Zhunt without replacing an
-app's native default; it is an installer behavior, not a daemon-side bypass.
-
-```console
-zhunt install hermes --mode api
-zhunt install claude --mode api
-zhunt install codex --mode passthrough
-zhunt install cursor
-zhunt install vscode
-zhunt uninstall codex
 zhunt uninstall --all
 ```
 
-On macOS, the packaged `/usr/local/bin/zhunt-uninstall` command also removes
-the installed binary and package receipt after restoring managed app files;
-it retains `~/.zhunt` unless you remove keys and telemetry separately.
+The OpenRouter and Nous Portal support, the setup page, the old dashboard, the tray
+indicator and `zhunt sync` were removed. The previous code is kept at the git tag
+`legacy-router-v1`.
 
-The Claude command is intentionally marked `--mode api`: Claude Code has no
-supported passthrough mode, so it moves all traffic from a flat-rate Claude Max
-subscription to pay-per-token API billing. Real Claude Code turns include tools,
-so Zhunt keeps those sessions in the coding tier; expect roughly 1.9×–2.3× savings
-versus Sonnet 4.5, not the much larger chat-tier multiple.
+## Development
 
-Hermes, Claude Code, Codex, and VS Code use automatic config merges. Cursor keeps
-its API key in UI-managed secure storage, so its recipe prints the supported
-manual steps instead of modifying undocumented internal state. Claude Code's
-native model IDs are classified by request content after they reach Zhunt, so
-the API recipe routes them through the registry rather than forwarding them
-unchanged.
+```console
+pytest
+```
 
-### Tier 2 coverage
+`docs/PIVOT.md` describes the design and milestones; `docs/WORKSPACE_API.md` is the
+contract between the daemon and the workspace.
 
-Cursor and VS Code are supported for their chat/agent panels through their
-OpenAI-compatible custom endpoints. Cursor tab completion and inline edit stay
-on Cursor's backend. VS Code code completions stay on Copilot; only the BYOK
-chat/agent traffic configured for the custom endpoint reaches Zhunt. Cursor's
-setup is intentionally manual in the vendor UI, while VS Code's custom
-endpoint is written by the recipe. Both paths remain subject to the same
-provider billing caveat and local wire-dialect telemetry labeling.
+The macOS, Windows and Linux installers under `packaging/` come from the earlier
+version and have not been rebuilt for v2; do not treat them as release-ready.
 
-Provider-backed one-token verification and real-provider streaming/tool-call
-fidelity tests remain pending until provider keys are available.
+## Credits
+
+The quota, cooldown and failover ideas follow
+[FreeLLMAPI](https://github.com/tashfeenahmed/freellmapi) (MIT); Zhunt's
+implementation is written from scratch in Python.
