@@ -41,6 +41,31 @@ def ensure_master_key(env_path: Path | None = None) -> str:
     return key
 
 
+def read_env_values(env_path: Path | None = None) -> dict[str, str]:
+    """Read KEY=value entries from the env file without touching os.environ."""
+
+    path = (env_path or Path.home() / ".zhunt" / "env").expanduser()
+    values: dict[str, str] = {}
+    if not path.is_file():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        name, separator, value = line.partition("=")
+        if not separator or not name or name.startswith("#"):
+            continue
+        values[name] = value.strip().strip('"').strip("'")
+    return values
+
+
+def read_master_key(env_path: Path | None = None) -> str | None:
+    """Return the saved master key, or None. Never creates or modifies files."""
+
+    values = read_env_values(env_path)
+    for name in ("ZHUNT_MASTER_KEY", "LITELLM_MASTER_KEY"):
+        if values.get(name):
+            return values[name]
+    return None
+
+
 def save_env_value(name: str, value: str, env_path: Path | None = None) -> None:
     """Persist one local configuration value without exposing it in logs."""
 
