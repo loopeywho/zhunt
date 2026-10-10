@@ -80,6 +80,15 @@ publish are left unset and learned from 429 responses.
 - Routing through Zhunt uses your provider keys, not a flat-rate subscription such as
   Claude Max or ChatGPT Pro, and the answering model is not the one the tool names.
 
+## Cursor and VS Code coverage
+
+Cursor and VS Code reach Zhunt only through their OpenAI-compatible custom
+endpoints, for their chat and agent panels. Cursor tab completion and inline edit stay
+on Cursor's backend, and VS Code code completions stay on Copilot. Cursor's
+setup is intentionally manual in the vendor UI (`zhunt launch cursor` prints the
+steps); Zhunt will not edit undocumented internal state. Both remain subject to the
+same provider-key billing and privacy settings described above.
+
 ## Moving from the earlier Zhunt
 
 The earlier version edited each app's config file, which broke whenever an app
@@ -102,8 +111,35 @@ pytest
 `docs/PIVOT.md` describes the design and milestones; `docs/WORKSPACE_API.md` is the
 contract between the daemon and the workspace.
 
+## Native installers (earlier version)
+
 The macOS, Windows and Linux installers under `packaging/` come from the earlier
-version and have not been rebuilt for v2; do not treat them as release-ready.
+version and have not been rebuilt for v2. Treat them as previews, not release-ready
+builds. Their notes are kept here so the claims stay honest.
+
+## macOS arm64 preview
+
+The macOS packaging path currently produces Apple Silicon (`arm64`) `.dmg` and
+`.pkg` installers. It is not a Universal 2 build: an independently tested
+x86_64 build is still required before describing the download as macOS
+Universal. The packages are also unsigned; public distribution requires
+Developer ID signing and notarization, and Gatekeeper may reject the unsigned
+artifacts. Do not publish the macOS installers as release-ready until signing,
+notarization and a fresh-machine check are complete. Build instructions are in
+`packaging/macos/README.md`.
+
+## Windows x64 preview
+
+The native Windows x64 installer is built on a Windows CI runner; macOS cannot
+validate a native executable. Do not describe it as release-ready until it has passed
+the fresh Windows 11 x64 checklist in `packaging/windows/README.md`.
+
+## Linux x86_64 preview
+
+The Linux packaging path produces a portable x86_64 `.tar.gz` bundle built in CI,
+with no distro packages or ARM64 build. Do not publish it as release-ready until
+the Linux CI artifact has passed its real daemon startup and unauthenticated-401
+smoke test. Details are in `packaging/linux/README.md`.
 
 ## Credits
 
