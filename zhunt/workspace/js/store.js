@@ -11,8 +11,9 @@ const TOPICS = {
 
 export function createStore() {
   const topics = {};
+  let stopped = false; // set once the daemon has rejected our key: no more polling, no more subscribers
   for (const [name, def] of Object.entries(TOPICS)) {
-    topics[name] = { def, subs: new Set(), data: null, error: null, at: 0, timer: null, busy: false };
+    topics[name] = { def, subs: new Set(), data: null, error: null, at: 0, timer: null, inflight: null };
   }
 
   function emit(t) {
@@ -22,29 +23,31 @@ export function createStore() {
   }
   const snapshot = (t) => ({ data: t.data, error: t.error, at: t.at });
 
-  async function refresh(name) {
+  // Returns the in-flight promise when a fetch is already running, so callers can always await a result.
+  function refresh(name) {
     const t = topics[name];
-    if (t.busy) return;
-    t.busy = true;
-    try {
-      const res = await t.def.fetch();
-      t.data = name === 'decisions' ? res.decisions || [] : res;
-      t.error = null;
-      t.at = Date.now();
-    } catch (err) {
-      if (err.status === 401) { t.busy = false; return; }
-      t.error = err;
-    } finally {
-      t.busy = false;
-    }
-    emit(t);
+    if (stopped) return Promise.resolve();
+    if (t.inflight) return t.inflight;
+    t.inflight = (async () => {
+      try {
+        const res = await t.def.fetch();
+        t.data = name === 'decisions' ? res.decisions || [] : res;
+        t.error = null;
+        t.at = Date.now();
+      } catch (err) {
+        if (err.status === 401) return;
+        t.error = err;
+      }
+      if (!stopped) emit(t);
+    })().finally(() => { t.inflight = null; });
+    return t.inflight;
   }
 
   function schedule(name) {
     const t = topics[name];
     clearTimeout(t.timer);
     t.timer = null;
-    if (!t.subs.size || document.hidden) return;
+    if (stopped || !t.subs.size || document.hidden) return;
     t.timer = setTimeout(async () => { await refresh(name); schedule(name); }, t.def.interval);
   }
 
@@ -57,10 +60,16 @@ export function createStore() {
 
   return {
     refresh,
+    // Access was denied (401): stop every poller and forget every subscriber.
+    stop() {
+      stopped = true;
+      for (const t of Object.values(topics)) { clearTimeout(t.timer); t.timer = null; t.subs.clear(); }
+    },
     get: (name) => snapshot(topics[name]),
     // fn receives {data, error, at}; called once immediately if data exists.
     subscribe(name, fn) {
       const t = topics[name];
+      if (stopped) return () => {};
       const first = t.subs.size === 0;
       t.subs.add(fn);
       if (t.data || t.error) fn(snapshot(t));

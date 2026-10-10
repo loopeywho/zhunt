@@ -23,6 +23,7 @@ export function chatTile(svc, state, ctx) {
   let controller = null;
   let lastSeenTs = 0;
   let destroyed = false;
+  let generation = 0; // bumped by clear/destroy: a send from an older generation must not touch history or DOM
 
   const selectId = uid('alias');
   const select = h('select', { id: selectId, class: 'ctl', 'aria-label': 'Model alias', title: 'Which Zhunt alias to request' },
@@ -56,7 +57,7 @@ export function chatTile(svc, state, ctx) {
   }
   input.addEventListener('input', autosize);
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!busy) send(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); if (!busy) send(); }
     else if (e.key === 'Escape') {
       e.preventDefault();
       if (busy) stop(); else el.closest('.pane')?.focus();
@@ -77,7 +78,8 @@ export function chatTile(svc, state, ctx) {
   }
 
   function reset() {
-    if (busy) stop();
+    generation += 1;
+    if (busy) { stop(); setBusy(false); controller = null; }
     history.length = 0;
     msgs.replaceChildren();
     paintEmpty();
@@ -91,6 +93,9 @@ export function chatTile(svc, state, ctx) {
     if (!content || busy) return;
     input.value = '';
     autosize();
+    const mine = generation;
+    const stale = () => mine !== generation;
+    let released = false;
     const user = addMsg('user');
     user.text.textContent = content;
     history.push({ role: 'user', content });
@@ -98,35 +103,47 @@ export function chatTile(svc, state, ctx) {
     reply.node.classList.add('pending');
     reply.text.textContent = 'routing...';
     setBusy(true);
-    controller = new AbortController();
+    const ctrl = new AbortController();
+    controller = ctrl;
     const prevTs = lastSeenTs;
     let acc = '';
     let raf = 0;
-    const paint = () => { raf = 0; const stick = nearBottom(); renderMarkdown(acc, reply.text); if (stick) scrollDown(); };
+    const paint = () => { raf = 0; if (stale()) return; const stick = nearBottom(); renderMarkdown(acc, reply.text); if (stick) scrollDown(); };
     try {
+      // the window must start on a user turn (some providers reject a leading assistant message)
+      const outgoing = history.slice(-MAX_HISTORY);
+      while (outgoing.length && outgoing[0].role !== 'user') outgoing.shift();
       const res = await streamChat({
-        model: alias, messages: history.slice(-MAX_HISTORY), session, signal: controller.signal,
-        onDelta: (d) => { acc += d; reply.node.classList.remove('pending'); if (!raf) raf = requestAnimationFrame(paint); },
+        model: alias, messages: outgoing, session, signal: ctrl.signal,
+        onDelta: (d) => { if (stale()) return; acc += d; reply.node.classList.remove('pending'); if (!raf) raf = requestAnimationFrame(paint); },
       });
       if (raf) cancelAnimationFrame(raf);
+      if (stale()) return;
       acc = res.text;
       if (!acc) acc = '(empty reply)';
       reply.node.classList.remove('pending');
       renderMarkdown(acc, reply.text);
       history.push({ role: 'assistant', content: res.text });
-      live.textContent = 'Reply complete';
+      if (res.truncated && res.text) reply.text.append(h('p', { class: 'dim' }, '(the stream ended without a finish signal: this reply may be cut short)'));
+      live.textContent = res.truncated ? 'Reply may be incomplete' : 'Reply complete';
+      // free the composer now: the routing-decision lookup below can take a couple of seconds
+      released = true;
+      setBusy(false);
+      controller = null;
       svc.store.refresh('decisions');
       await attachDecision(reply.meta, prevTs, res.model);
     } catch (err) {
       if (raf) cancelAnimationFrame(raf);
+      if (stale()) return; // cleared or closed while in flight: the new conversation is none of our business
       reply.node.classList.remove('pending');
       if (err.name === 'AbortError') {
-        if (acc) { renderMarkdown(acc, reply.text); history.push({ role: 'assistant', content: acc }); } else { history.pop(); reply.node.remove(); restoreInput(content); }
+        if (acc) { renderMarkdown(acc, reply.text); history.push({ role: 'assistant', content: acc }); } else { history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty(); }
         reply.meta.textContent = 'stopped';
       } else if (err instanceof ApiError && err.status === 401) {
-        history.pop(); reply.node.remove(); restoreInput(content);
+        history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty();
       } else {
         history.pop();
+        if (!acc) user.node.remove();
         restoreInput(content);
         if (acc) { renderMarkdown(acc, reply.text); } else { reply.text.replaceChildren(); }
         reply.node.classList.add('failed');
@@ -136,9 +153,8 @@ export function chatTile(svc, state, ctx) {
         attachDecision(reply.meta, prevTs, null, true);
       }
     } finally {
-      setBusy(false);
-      controller = null;
-      if (!destroyed) scrollDown();
+      if (!released && !stale()) { setBusy(false); controller = null; }
+      if (!destroyed && !stale()) scrollDown();
     }
   }
 
@@ -216,6 +232,6 @@ export function chatTile(svc, state, ctx) {
     header,
     getState: () => ({ alias }),
     focusPrimary: () => input.focus(),
-    destroy() { destroyed = true; controller?.abort(); },
+    destroy() { destroyed = true; generation += 1; controller?.abort(); },
   };
 }

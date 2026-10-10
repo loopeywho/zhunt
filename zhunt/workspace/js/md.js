@@ -54,6 +54,17 @@ export function renderMarkdown(src, target) {
   const fence = /^\s{0,3}(`{3,}|~{3,})\s*([\w+-]*)\s*$/;
   const bullet = /^\s{0,3}[-*+]\s+(.*)$/;
   const ordered = /^\s{0,3}\d{1,9}[.)]\s+(.*)$/;
+  // [^\n] rather than `.`: `.` stops at U+2028/U+2029, which made the paragraph guard below disagree with this match.
+  const heading = /^(#{1,6})[ \t]+([^\n]*)$/;
+  // Optional closing run of #s ("## Title ##") is stripped by hand: a regex over long whitespace runs backtracks quadratically.
+  const headingText = (raw) => {
+    const t = raw.trimEnd();
+    let j = t.length;
+    while (j > 0 && t[j - 1] === '#') j -= 1;
+    if (j === t.length) return t;
+    if (j === 0) return '';
+    return /[ \t]/.test(t[j - 1]) ? t.slice(0, j).trimEnd() : t;
+  };
 
   while (i < lines.length) {
     const line = lines[i];
@@ -75,11 +86,11 @@ export function renderMarkdown(src, target) {
       continue;
     }
 
-    m = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+    m = heading.exec(line);
     if (m) {
       const hd = document.createElement('p');
       hd.className = 'md-h md-h' + m[1].length;
-      renderInline(m[2], hd);
+      renderInline(headingText(m[2]), hd);
       frag.append(hd);
       i += 1;
       continue;
@@ -115,11 +126,13 @@ export function renderMarkdown(src, target) {
     }
 
     const para = [];
-    while (i < lines.length && !isBlank(lines[i]) && !fence.test(lines[i]) && !/^(#{1,6})\s/.test(lines[i])
+    while (i < lines.length && !isBlank(lines[i]) && !fence.test(lines[i]) && !heading.test(lines[i])
       && !bullet.test(lines[i]) && !ordered.test(lines[i]) && !/^\s{0,3}>/.test(lines[i])) {
       para.push(lines[i]);
       i += 1;
     }
+    // always consume at least one line, whatever the block guards above decided
+    if (!para.length) { para.push(lines[i]); i += 1; }
     const p = document.createElement('p');
     inlineLines(para, p);
     frag.append(p);

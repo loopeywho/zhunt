@@ -14,6 +14,8 @@ export function compareTile(svc, state, ctx) {
   let busy = false;
   let controller = null;
   let seeded = selected.length > 0;
+  const boxes = new Map(); // model id -> {cb, item, why}; declared before subscribe(), which paints synchronously
+  let pickerSig = '';
 
   const prompt = h('textarea', {
     class: 'composer-input', rows: '3', spellcheck: 'false', 'aria-label': 'Prompt to compare',
@@ -55,34 +57,60 @@ export function compareTile(svc, state, ctx) {
     return (status?.providers || []).flatMap((p) => (p.models || []).map((m) => ({ ...m, platform: p.platform, providerName: p.name })));
   }
 
-  function paintPicker() {
-    summary.textContent = `models ${selected.length}/${MAX_MODELS}` + (selected.length ? '  ' + selected.join(', ') : '');
+  // The checkbox list is rebuilt only when the model catalog itself changes. Everything else (selection,
+  // disabled state, "max 4" notes) is updated in place, so a status poll or a toggle never drops keyboard focus.
+
+  function buildPicker() {
+    const focusedModel = pickerBody.contains(document.activeElement) ? document.activeElement.dataset.model : null;
     pickerBody.replaceChildren();
-    if (statusError && !status) {
-      pickerBody.append(errorBox('Cannot load models', statusError.message));
-      return;
-    }
-    if (!status) { pickerBody.append(h('p', { class: 'dim' }, 'loading models...')); return; }
-    const full = selected.length >= MAX_MODELS;
+    boxes.clear();
     for (const p of status.providers || []) {
       const group = h('fieldset', { class: 'picker-group' }, h('legend', {}, p.name || p.platform));
       for (const m of p.models || []) {
-        const on = selected.includes(m.id);
         const id = uid('m');
-        const disabled = !m.allowed || (!on && full);
-        const cb = h('input', { type: 'checkbox', id, checked: on, disabled });
+        const cb = h('input', { type: 'checkbox', id });
+        cb.dataset.model = m.id;
         cb.addEventListener('change', () => {
           selected = cb.checked ? [...selected, m.id] : selected.filter((x) => x !== m.id);
           paintPicker();
           ctx.changed();
         });
-        const why = !m.allowed ? (m.blocked_reason || 'blocked') : (!on && full ? 'max ' + MAX_MODELS : '');
-        group.append(h('label', { class: 'picker-item' + (disabled ? ' off' : ''), for: id },
-          cb, modelLabel(m.id), why ? h('span', { class: 'picker-why' }, why) : null));
+        const item = h('label', { class: 'picker-item', for: id }, cb, modelLabel(m.id));
+        boxes.set(m.id, { cb, item, why: null, m });
+        group.append(item);
       }
       pickerBody.append(group);
     }
     if (!(status.providers || []).length) pickerBody.append(h('p', { class: 'dim' }, 'no providers in the catalog'));
+    if (focusedModel) boxes.get(focusedModel)?.cb.focus();
+  }
+
+  function paintPicker() {
+    summary.textContent = `models ${selected.length}/${MAX_MODELS}` + (selected.length ? '  ' + selected.join(', ') : '');
+    if (statusError && !status) {
+      pickerSig = '';
+      boxes.clear();
+      pickerBody.replaceChildren(errorBox('Cannot load models', statusError.message));
+      return;
+    }
+    if (!status) { pickerSig = ''; boxes.clear(); pickerBody.replaceChildren(h('p', { class: 'dim' }, 'loading models...')); return; }
+    const sig = JSON.stringify((status.providers || []).map((p) => [p.name || p.platform, (p.models || []).map((m) => m.id)]));
+    if (sig !== pickerSig) { pickerSig = sig; buildPicker(); }
+    const full = selected.length >= MAX_MODELS;
+    const current = new Map(allModels().map((x) => [x.id, x]));
+    for (const [id, entry] of boxes) {
+      const { cb, item } = entry;
+      const m = current.get(id) || entry.m;
+      const on = selected.includes(m.id);
+      const disabled = !m.allowed || (!on && full);
+      cb.checked = on;
+      cb.disabled = disabled;
+      item.classList.toggle('off', disabled);
+      const why = !m.allowed ? (m.blocked_reason || 'blocked') : (!on && full ? 'max ' + MAX_MODELS : '');
+      if (why && !entry.why) { entry.why = h('span', { class: 'picker-why' }, why); item.append(entry.why); }
+      else if (why) entry.why.textContent = why;
+      else if (entry.why) { entry.why.remove(); entry.why = null; }
+    }
   }
 
   async function run() {

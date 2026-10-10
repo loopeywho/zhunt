@@ -3,8 +3,14 @@
 
 const KEY_STORE = 'zhunt.key';
 
+// A key must be printable ASCII: anything else cannot go into an Authorization header (fetch would throw
+// and the UI would wrongly report the daemon as unreachable).
+const KEY_RE = /^[\x21-\x7e]+$/;
+
+// Returns true when the fragment carried a key that was rejected as malformed.
 export function captureKeyFromFragment() {
   const hash = location.hash || '';
+  let invalid = false;
   if (hash.length > 1) {
     // Parsed by hand: URLSearchParams would turn '+' into a space.
     for (const part of hash.slice(1).split('&')) {
@@ -12,12 +18,14 @@ export function captureKeyFromFragment() {
       if (eq > 0 && part.slice(0, eq) === 'key') {
         let value = part.slice(eq + 1);
         try { value = decodeURIComponent(value); } catch { /* keep raw */ }
-        if (value) { try { sessionStorage.setItem(KEY_STORE, value); } catch { /* storage blocked */ memoryKey = value; } }
+        if (value && !KEY_RE.test(value)) { invalid = true; clearKey(); }
+        else if (value) { try { sessionStorage.setItem(KEY_STORE, value); } catch { /* storage blocked */ memoryKey = value; } }
       }
     }
     // Drop the fragment (and with it the key) from the address bar and history entry.
     history.replaceState(null, '', location.pathname + location.search);
   }
+  return invalid;
 }
 
 let memoryKey = null;
@@ -58,7 +66,7 @@ async function readBody(res) {
   try { return JSON.parse(text); } catch { return text; }
 }
 
-async function request(path, { method = 'GET', json, headers = {}, signal, text = false } = {}) {
+async function request(path, { method = 'GET', json, headers = {}, signal, text = false, keepalive = false } = {}) {
   const h = { Accept: text ? 'text/css,*/*' : 'application/json', ...headers };
   const key = getKey();
   if (key) h.Authorization = 'Bearer ' + key;
@@ -66,7 +74,7 @@ async function request(path, { method = 'GET', json, headers = {}, signal, text 
   let res;
   try {
     res = await fetch(path, {
-      method, headers: h, signal, cache: 'no-store', credentials: 'omit',
+      method, headers: h, signal, cache: 'no-store', credentials: 'omit', keepalive,
       body: json !== undefined ? JSON.stringify(json) : undefined,
     });
   } catch (err) {
@@ -97,7 +105,8 @@ export const api = {
   layouts: {
     list: () => request('/zhunt/api/layouts'),
     get: (name) => request('/zhunt/api/layouts/' + encodeURIComponent(name)),
-    put: (name, doc) => request('/zhunt/api/layouts/' + encodeURIComponent(name), { method: 'PUT', json: doc }),
+    // keepalive lets the request outlive the page (used to flush the autosave on pagehide)
+    put: (name, doc, { keepalive = false } = {}) => request('/zhunt/api/layouts/' + encodeURIComponent(name), { method: 'PUT', json: doc, keepalive }),
     remove: (name) => request('/zhunt/api/layouts/' + encodeURIComponent(name), { method: 'DELETE' }),
   },
   themes: {
@@ -136,37 +145,45 @@ export async function streamChat({ model, messages, session, signal, onDelta }) 
     const body = await res.json();
     const text = body?.choices?.[0]?.message?.content ?? '';
     onDelta(text);
-    return { text, model: body?.model || null };
+    return { text, model: body?.model || null, truncated: false };
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
   let text = '';
   let answeredBy = null;
+  let finished = false; // saw [DONE] or a finish_reason; a stream that just stops may have been cut off
   const handle = (line) => {
     if (!line.startsWith('data:')) return false;
     const data = line.slice(5).trim();
     if (!data) return false;
-    if (data === '[DONE]') return true;
+    if (data === '[DONE]') { finished = true; return true; }
     let obj;
     try { obj = JSON.parse(data); } catch { return false; }
     if (obj.error) throw new ApiError(502, detailOf(obj, 'stream error'), obj);
     if (obj.model) answeredBy = obj.model;
+    if (obj.choices?.[0]?.finish_reason) finished = true;
     const delta = obj.choices?.[0]?.delta?.content;
     if (typeof delta === 'string' && delta) { text += delta; onDelta(delta); }
     return false;
   };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let nl;
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).replace(/\r$/, '');
-      buf = buf.slice(nl + 1);
-      if (handle(line)) { try { await reader.cancel(); } catch { /* ignore */ } return { text, model: answeredBy }; }
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).replace(/\r$/, '');
+        buf = buf.slice(nl + 1);
+        if (handle(line)) { try { await reader.cancel(); } catch { /* ignore */ } return { text, model: answeredBy, truncated: false }; }
+      }
     }
+    if (buf) handle(buf.trim());
+  } catch (err) {
+    // an {error} event (or an abort) mid-stream: release the connection instead of leaving it open
+    try { await reader.cancel(); } catch { /* ignore */ }
+    throw err;
   }
-  if (buf) handle(buf.trim());
-  return { text, model: answeredBy };
+  return { text, model: answeredBy, truncated: !finished };
 }
