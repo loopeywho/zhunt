@@ -99,7 +99,7 @@ def _daemon_check(port: int, probe: Callable[[int], bool]) -> Check:
         Status.FAIL,
         "daemon",
         f"nothing answering on 127.0.0.1:{port}",
-        "start it with `zhunt serve --free-tier`",
+        "start it with `zhunt serve`",
     )
 
 
@@ -110,7 +110,7 @@ def _key_check(key: str | None) -> Check:
         Status.FAIL,
         "master key",
         "no ZHUNT_MASTER_KEY in ~/.zhunt/env",
-        "run `zhunt serve --free-tier` once; it creates the key",
+        "run `zhunt serve` once; it creates the key",
     )
 
 

@@ -70,7 +70,7 @@ def launch(
     if key is None and not dry_run:
         typer.echo(
             "No Zhunt master key found in ~/.zhunt/env. Start the daemon once with "
-            "`zhunt serve --free-tier`; it creates the key.",
+            "`zhunt serve`; it creates the key.",
             err=True,
         )
         raise typer.Exit(EXIT_FAILURE)
@@ -86,7 +86,7 @@ def launch(
     if not reachable:
         typer.echo(
             f"The Zhunt daemon is not answering on 127.0.0.1:{selected_port}. "
-            "Start it with `zhunt serve --free-tier`, then run this again.",
+            "Start it with `zhunt serve`, then run this again.",
             err=True,
         )
         raise typer.Exit(EXIT_FAILURE)
@@ -149,14 +149,14 @@ def open_workspace(
     if key is None:
         typer.echo(
             "No Zhunt master key found in ~/.zhunt/env. Start the daemon once with "
-            "`zhunt serve --free-tier`; it creates the key.",
+            "`zhunt serve`; it creates the key.",
             err=True,
         )
         raise typer.Exit(EXIT_FAILURE)
     if not daemon_reachable(selected_port):
         typer.echo(
             f"warning: nothing is answering on 127.0.0.1:{selected_port}; "
-            "start the daemon with `zhunt serve --free-tier`.",
+            "start the daemon with `zhunt serve`.",
             err=True,
         )
     url = f"http://127.0.0.1:{selected_port}/workspace/#key={quote(key, safe='')}"

@@ -219,7 +219,7 @@ class LaunchCommandTests(unittest.TestCase):
         result = self.invoke(["launch", "claude"], home)
 
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("zhunt serve --free-tier", result.output)
+        self.assertIn("zhunt serve", result.output)
         self.assertFalse(self.out.exists())
         self.assertNotIn(KEY, result.output)
 

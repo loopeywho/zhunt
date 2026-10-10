@@ -77,7 +77,7 @@ class OpenCommandTests(unittest.TestCase):
         result = self.invoke([], home, opened)
 
         self.assertEqual(result.exit_code, 1)
-        self.assertIn("zhunt serve --free-tier", result.output)
+        self.assertIn("zhunt serve", result.output)
         self.assertEqual(opened, [])
         self.assertEqual(snapshot(home), before)
 

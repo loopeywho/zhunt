@@ -96,7 +96,7 @@ class HealthCheckTests(DoctorTestCase):
         }
 
         self.assertEqual(checks["daemon"].status, Status.FAIL)
-        self.assertIn("zhunt serve --free-tier", checks["daemon"].fix)
+        self.assertIn("zhunt serve", checks["daemon"].fix)
 
     def test_missing_master_key_fails(self) -> None:
         home = make_home(self.root, port=4000, key=None)
@@ -283,7 +283,7 @@ class DoctorCommandTests(DoctorTestCase):
         self.assertEqual(result.exit_code, 1)
         self.assertIn("FAIL  daemon", result.output)
         self.assertIn("FAIL  master key", result.output)
-        self.assertIn("fix: start it with `zhunt serve --free-tier`", result.output)
+        self.assertIn("fix: start it with `zhunt serve`", result.output)
 
     def test_warnings_alone_do_not_fail(self) -> None:
         with fake_daemon() as port:
