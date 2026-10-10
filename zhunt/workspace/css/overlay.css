@@ -1,0 +1,39 @@
+/* Palette, prompt, help, auth screen */
+.overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.backdrop { position: absolute; inset: 0; background: var(--scrim); }
+.dialog {
+  position: relative; width: min(680px, 94vw); max-height: 76vh; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.pal-label { padding: 6px 12px 0; color: var(--text-dim); font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.08em; }
+.pal-input {
+  width: 100%; padding: 10px 12px; font-size: 15px; background: transparent; color: var(--text); border: 0;
+  border-bottom: 1px solid var(--border-strong); outline: none;
+}
+.pal-input:focus-visible { outline: none; border-bottom-color: var(--accent); }
+.pal-list { list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; min-height: 0; }
+.pal-item { display: flex; align-items: baseline; gap: 10px; padding: 4px 12px; cursor: pointer; border-left: 3px solid transparent; }
+.pal-item.sel { background: var(--accent-soft); border-left-color: var(--accent); }
+.pal-group { flex: none; min-width: 11ch; color: var(--text-faint); font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.05em; }
+.pal-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-hint { color: var(--text-dim); font-size: var(--fs-small); }
+.pal-item kbd { flex: none; }
+.pal-empty { padding: 10px 12px; color: var(--text-dim); }
+.pal-foot { padding: 4px 12px 6px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: var(--fs-small); }
+.pal-foot.bad { color: var(--err); }
+
+.help { overflow: hidden; }
+.help:focus-visible { outline: none; }
+.help-body { overflow: auto; padding: 6px 14px 12px; columns: 2 280px; column-gap: 28px; }
+.help-group { break-inside: avoid; margin-bottom: 10px; }
+.help-group h3 { margin: 8px 0 4px; font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+.help-group dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; align-items: baseline; }
+.help-group dt { white-space: nowrap; }
+.help-group dd { margin: 0; color: var(--text-dim); }
+
+.auth { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: var(--bg); padding: 16px; }
+.auth-card { width: min(560px, 100%); border: 1px solid var(--accent); background: var(--surface); padding: 20px 22px; border-radius: var(--radius); }
+.auth-card h1 { margin: 0 0 10px; font-size: 18px; }
+.auth-card p { margin: 8px 0; font-family: var(--font-prose); }
+.auth-cmd { margin: 8px 0; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border-strong); font-size: 16px; }
+.auth-cmd code { background: none; padding: 0; }

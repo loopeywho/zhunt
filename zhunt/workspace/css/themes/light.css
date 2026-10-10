@@ -1,0 +1,34 @@
+/* zhunt theme: light (warm paper). Same variable set as dark.css. */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #e4dfd2;
+  --surface: #faf8f2;
+  --surface-2: #efebe0;
+  --surface-3: #e5e0d1;
+  --border: #d3cdbb;
+  --border-strong: #a9a28d;
+
+  --text: #1d1b16;
+  --text-dim: #575245;
+  --text-faint: #6f6a5b;
+
+  --accent: #8f4700;
+  --accent-fg: #fffaf0;
+  --accent-soft: rgba(143, 71, 0, 0.11);
+  --focus: #8f4700;
+
+  --ok: #1f6b2e;
+  --warn: #7a5200;
+  --err: #b3261e;
+  --info: #0b6174;
+
+  --tier-chat: #0b6174;
+  --tier-coding: #2a6a14;
+  --tier-long-context: #6b3fa8;
+  --tier-reasoning: #a31e63;
+
+  --selection: rgba(143, 71, 0, 0.22);
+  --scrim: rgba(40, 34, 20, 0.42);
+  --shadow: 0 18px 44px rgba(60, 48, 20, 0.28);
+}
