@@ -1,0 +1,36 @@
+/* zhunt theme: dark. A theme is just custom properties; copy this file to
+   ~/.zhunt/themes/<name>.css, rename the selector and change values. User themes may also
+   override the font and spacing variables (see base.css for the full list). */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b0d10;            /* window behind the tiles */
+  --surface: #12161b;       /* tile body */
+  --surface-2: #181d23;     /* tile header, status bar, inputs */
+  --surface-3: #212830;     /* hover */
+  --border: #252c34;
+  --border-strong: #3a4552;
+
+  --text: #d4dae1;
+  --text-dim: #97a1ad;
+  --text-faint: #7d8793;
+
+  --accent: #f2a93b;        /* focus, leader, primary action */
+  --accent-fg: #1a1203;     /* text on an accent background */
+  --accent-soft: rgba(242, 169, 59, 0.14);
+  --focus: #f2a93b;
+
+  --ok: #74c17d;
+  --warn: #e3b341;
+  --err: #f07167;
+  --info: #62b6cb;
+
+  --tier-chat: #62b6cb;
+  --tier-coding: #86c26b;
+  --tier-long-context: #b794e8;
+  --tier-reasoning: #e888b6;
+
+  --selection: rgba(242, 169, 59, 0.28);
+  --scrim: rgba(3, 5, 7, 0.62);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}

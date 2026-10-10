@@ -1,0 +1,74 @@
+/* Tiling: absolutely positioned panes inside #stage, thin gaps, accent border on the focused pane. */
+#stage-wrap { padding: var(--gap); min-height: 0; min-width: 0; }
+#stage { position: relative; width: 100%; height: 100%; }
+
+.pane {
+  position: absolute; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.pane.is-focused { border-color: var(--accent); }
+.pane.hidden-by-zoom { visibility: hidden; pointer-events: none; }
+#stage.anim .pane, #stage.anim .divider { transition: left 0.14s ease, top 0.14s ease, width 0.14s ease, height 0.14s ease; }
+.pane.no-anim { transition: none !important; }
+
+.pane-head {
+  flex: none; height: var(--head-h); display: flex; align-items: center; gap: 6px; padding: 0 4px 0 0;
+  background: var(--surface-2); border-bottom: 1px solid var(--border); font-size: 12px; overflow: hidden;
+}
+.pane-idx {
+  align-self: stretch; display: grid; place-items: center; min-width: 22px; padding: 0 4px;
+  background: var(--border-strong); color: var(--text); font-weight: 700;
+}
+.pane.is-focused .pane-idx { background: var(--accent); color: var(--accent-fg); }
+.pane-kind { color: var(--text); font-weight: 600; }
+.pane-extra { flex: 1; min-width: 0; display: flex; justify-content: flex-end; overflow: hidden; }
+.pane-extra .row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pane-btn {
+  flex: none; min-width: 20px; height: 20px; padding: 0 4px; background: transparent; border: 1px solid transparent;
+  border-radius: var(--radius); color: var(--text-dim); cursor: pointer; font-size: 12px;
+}
+.pane-btn.wide { padding: 0 7px; border-color: var(--border-strong); }
+.pane-btn:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+.pane-btn:disabled { opacity: 0.35; cursor: default; }
+.pane-btn.is-live { color: var(--ok); }
+.pane-body { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.pane-body > * { flex: 1; min-height: 0; }
+
+/* dividers sit in the gap; the pseudo-element widens the hit area, ::after draws the handle */
+.divider { position: absolute; z-index: 2; touch-action: none; }
+.divider::before { content: ""; position: absolute; inset: -4px; }
+.divider[data-dir="row"] { cursor: col-resize; }
+.divider[data-dir="col"] { cursor: row-resize; }
+.divider::after { content: ""; position: absolute; background: transparent; }
+.divider[data-dir="row"]::after { left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; }
+.divider[data-dir="col"]::after { top: 50%; left: 0; right: 0; height: 2px; margin-top: -1px; }
+.divider:hover::after, .divider.active::after, .divider:focus-visible::after { background: var(--accent); }
+.divider:focus-visible { outline: none; }
+#stage.resizing { user-select: none; }
+#stage.resizing .pane { pointer-events: none; }
+
+/* status bar */
+#statusbar {
+  display: flex; align-items: center; gap: 12px; padding: 0 8px 0 0; background: var(--surface-2);
+  border-top: 1px solid var(--border); font-size: 12px; white-space: nowrap; overflow: hidden; min-width: 0;
+}
+.sb-mode { align-self: stretch; display: grid; place-items: center; padding: 0 10px; font-weight: 700; letter-spacing: 0.06em; background: var(--border-strong); color: var(--text); }
+.sb-mode.insert { background: var(--ok); color: var(--surface); }
+.sb-mode.leader { background: var(--accent); color: var(--accent-fg); }
+.sb-where { color: var(--text); flex: none; }
+.sb-mid { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); }
+.sb-hints { display: inline-flex; gap: 14px; }
+.sb-hints .hint { color: var(--text-dim); }
+#statusbar.leader .sb-hints .hint { color: var(--text); }
+.sb-toast { color: var(--text); }
+.sb-toast.err { color: var(--err); }
+.sb-quota, .sb-theme { flex: none; color: var(--text-dim); }
+.sb-conn { flex: none; }
+.sb-conn.ok { color: var(--ok); }
+.sb-conn.bad { color: var(--err); font-weight: 700; }
+.sb-conn::before { content: "\25CF  "; }
+
+@media (max-width: 640px) {
+  .sb-quota, .sb-theme, .sb-hints .hint:nth-child(n+2) { display: none; }
+  #statusbar { gap: 8px; }
+}
