@@ -128,3 +128,22 @@ Same name rule as layouts.
 
 Missing/wrong key → 401 `{"detail": "invalid Zhunt master key"}` (same as the
 inference endpoints).
+
+## Implementation notes (where the contract was silent)
+
+Decided while building the backend; the code and tests treat these as the contract.
+
+- `PUT /layouts/{name}`: body over 64 KB -> 413; body that is not a JSON object -> 400.
+  `PUT` and `DELETE` return `{"name": name}`.
+- `GET /themes`: a user theme that overrides a built-in is listed with `builtin: false`.
+- `POST /compare`: repeated model ids are de-duplicated. 400/404 are returned before
+  any model runs. Compare calls are not added to the decision log (they bypass routing).
+  Output reserves 512 tokens against token quotas; provider timeout is 60 s.
+- Compare error texts: `blocked: no key`, `blocked: may train on prompts`,
+  `blocked: paid`, `blocked: over quota`, `blocked: cooling down for Ns`; a provider
+  error is `<status>: <message>` with the key redacted, capped at 300 characters.
+- Decision `failure` is one of `rate-limit`, `server`, `auth`, `credit`,
+  `client-error`, `truncation`, `refusal`.
+- Decision `session` is the `x-session-id` header, or `fallback:<hash>` without one.
+  For streamed replies `latency_ms` is the time to the end of the stream.
+- `GET /decisions?limit=` outside 1-200 -> 422 (FastAPI validation).
