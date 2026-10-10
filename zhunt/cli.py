@@ -129,7 +129,6 @@ def run_proxy(
         port=port,
         allow_non_loopback=allow_non_loopback,
         telemetry_path=telemetry_path,
-        free_tier=True,
         catalog_path=catalog_path,
     )
 

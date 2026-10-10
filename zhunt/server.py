@@ -24,14 +24,6 @@ from zhunt.adapters import (
 )
 from zhunt.adapters.base import AdapterError, WireAdapter, strip_thinking_blocks, system_first
 from zhunt.auth import ensure_master_key
-from zhunt.health import (
-    ModelHealth,
-    litellm_model_available,
-    validate_registry_models,
-)
-from zhunt.latency import LatencyTracker
-from zhunt.providers import ProviderSpec, configured_provider
-from zhunt.registry import ModelRegistry
 from zhunt.router import (
     FailureKind,
     RoutingCoordinator,
@@ -59,321 +51,6 @@ _RETRYABLE_PATHS = {
     "/v1/responses",
 }
 _ATTEMPT_HEADER = b"x-zhunt-attempt-id"
-
-
-@dataclass(frozen=True)
-class _PendingRoute:
-    decision: RoutingDecision
-    request: RoutingRequest
-    attempt_id: str | None
-    started_at: float
-    wire_dialect: str
-    retry_attempt: bool = False
-
-
-@dataclass(frozen=True)
-class _RetryRoute:
-    decision: RoutingDecision
-    request: RoutingRequest
-
-
-class ZhuntProxyHook(CustomLogger):
-    """Route supported LiteLLM proxy calls before their provider request."""
-
-    def __init__(
-        self,
-        coordinator: RoutingCoordinator,
-        health: ModelHealth | None = None,
-        latency_tracker: LatencyTracker | None = None,
-        telemetry: TelemetryLogger | None = None,
-        provider: ProviderSpec | None = None,
-    ) -> None:
-        self.coordinator = coordinator
-        self.health = health or ModelHealth(coordinator.registry.model_ids())
-        self.latency_tracker = latency_tracker or LatencyTracker()
-        self.telemetry = telemetry
-        self.provider = provider
-        self._pending: dict[str, _PendingRoute] = {}
-        self._retry_routes: dict[str, _RetryRoute] = {}
-        self._lock = RLock()
-
-    async def async_pre_call_hook(
-        self,
-        user_api_key_dict: Any,
-        cache: Any,
-        data: dict[str, Any],
-        call_type: str,
-    ) -> dict[str, Any]:
-        adapter = _ADAPTERS.get(call_type)
-        if adapter is None:
-            return data
-
-        payload, headers = _original_request(data)
-        # Some Anthropic-family backends reject a system/developer item that
-        # isn't the very first entry, even though both OpenAI-style dialects
-        # allow one anywhere (reproduced live 2026-08-09 against
-        # openrouter/anthropic/claude-sonnet-5 — identical failure across
-        # four backend infra providers, confirming it's a translation
-        # constraint, not one provider's quirk). Applied directly to `data`
-        # here, unconditionally, rather than via the adapter's
-        # apply_route()/upstream_payload: this hook already reconstructs
-        # `data["model"]` by hand instead of consuming upstream_payload, and
-        # this must also cover the retry path below, which has no `routed`
-        # object to draw from.
-        if isinstance(payload.get("input"), list):
-            data["input"] = system_first(payload["input"])
-            data["input"] = strip_thinking_blocks(data["input"])
-        if isinstance(payload.get("messages"), list):
-            data["messages"] = system_first(payload["messages"])
-            data["messages"] = strip_thinking_blocks(data["messages"])
-        attempt_id = _header(headers, _ATTEMPT_HEADER.decode())
-        retry_decision = self._take_retry(attempt_id)
-        retry_attempt = retry_decision is not None
-        if retry_decision is None:
-            try:
-                routed = adapter.route(
-                    payload,
-                    self.coordinator,
-                    headers=headers,
-                    healthy_models=self.health.healthy_models(),
-                    latency_metrics=self.latency_tracker.snapshot(),
-                )
-                decision = routed.decision
-                request = routed.request
-            except AdapterError as error:
-                raise HTTPException(status_code=400, detail=str(error)) from error
-        else:
-            decision = retry_decision.decision
-            request = retry_decision.request
-        if self.provider is not None:
-            if self.provider.id == "nous-portal":
-                api_key = os.environ.get(self.provider.key_env)
-                if not api_key:
-                    raise HTTPException(
-                        status_code=503,
-                        detail=f"{self.provider.key_env} is not configured",
-                    )
-                data["api_base"] = self.provider.base_url
-                data["api_key"] = api_key
-                data["model"] = decision.model
-            else:
-                data["model"] = decision.model
-        else:
-            data["model"] = decision.model
-        call_id = _call_id(data)
-        with self._lock:
-            self._pending[call_id] = _PendingRoute(
-                decision=decision,
-                request=request,
-                attempt_id=attempt_id,
-                started_at=time.perf_counter(),
-                wire_dialect=_telemetry_wire_dialect(call_type),
-                retry_attempt=retry_attempt,
-            )
-
-        metadata = data.get("metadata")
-        if not isinstance(metadata, dict):
-            metadata = {}
-            data["metadata"] = metadata
-        metadata["zhunt"] = {
-            "requested_alias": decision.requested_alias,
-            "session_key": decision.session_key,
-            "tier": decision.tier.value,
-            "model": decision.model,
-            "upstream_model": decision.model,
-            "reused_session_route": decision.reused_session_route,
-            "escalation_count": decision.escalation_count,
-        }
-        return data
-
-    async def async_post_call_success_hook(
-        self,
-        data: dict[str, Any],
-        user_api_key_dict: Any,
-        response: Any,
-    ) -> None:
-        pending = self._pop_pending(data)
-        if pending is None:
-            return
-        failure = _response_failure(response, request_data=data)
-        self._record_telemetry(
-            pending,
-            response=response,
-            success=failure is None,
-            failure=failure,
-        )
-        if failure is None:
-            self.latency_tracker.observe(
-                pending.decision.model,
-                (time.perf_counter() - pending.started_at) * 1000,
-            )
-            self.health.record_success(pending.decision.model)
-            self.coordinator.record_success(pending.decision)
-        else:
-            self._escalate(pending, failure)
-
-    async def async_post_call_failure_hook(
-        self,
-        request_data: dict[str, Any],
-        original_exception: Exception,
-        user_api_key_dict: Any,
-        traceback_str: str | None = None,
-    ) -> None:
-        pending = self._pop_pending(request_data)
-        if pending is not None:
-            self._record_telemetry(
-                pending,
-                response=None,
-                success=False,
-                failure=FailureKind.PROVIDER_ERROR,
-            )
-            self._escalate(pending, FailureKind.PROVIDER_ERROR)
-
-    async def async_post_call_streaming_iterator_hook(
-        self,
-        user_api_key_dict: Any,
-        response: Any,
-        request_data: dict[str, Any],
-    ) -> Any:
-        failure: FailureKind | None = None
-        first_chunk_at: float | None = None
-        last_chunk: Any = None
-        try:
-            async for chunk in response:
-                last_chunk = chunk
-                if first_chunk_at is None:
-                    first_chunk_at = time.perf_counter()
-                failure = failure or _response_failure(
-                    chunk,
-                    request_data=request_data,
-                )
-                yield chunk
-        except (asyncio.CancelledError, GeneratorExit):
-            self._pop_pending(request_data)
-            raise
-        except Exception:
-            pending = self._pop_pending(request_data)
-            if pending is not None:
-                self._escalate(pending, FailureKind.PROVIDER_ERROR)
-            raise
-        else:
-            pending = self._pop_pending(request_data)
-            if pending is None:
-                return
-            self._record_telemetry(
-                pending,
-                response=last_chunk,
-                success=failure is None,
-                failure=failure,
-            )
-            if failure is None:
-                observed_at = first_chunk_at or time.perf_counter()
-                self.latency_tracker.observe(
-                    pending.decision.model,
-                    (observed_at - pending.started_at) * 1000,
-                )
-                self.health.record_success(pending.decision.model)
-                self.coordinator.record_success(pending.decision)
-            else:
-                self._escalate(pending, failure)
-
-    def has_retry(self, attempt_id: str) -> bool:
-        with self._lock:
-            return attempt_id in self._retry_routes
-
-    def discard_retry(self, attempt_id: str) -> None:
-        with self._lock:
-            self._retry_routes.pop(attempt_id, None)
-
-    def _escalate(
-        self,
-        pending: _PendingRoute,
-        failure: FailureKind,
-    ) -> None:
-        if failure == FailureKind.PROVIDER_ERROR:
-            self.health.record_failure(pending.decision.model)
-        if pending.retry_attempt:
-            # One original request gets at most one promotion. A failed replay
-            # must not consume the next strike in the same turn.
-            return
-        if failure == FailureKind.PROVIDER_ERROR:
-            try:
-                sideways = self.coordinator.reroute_same_tier(
-                    pending.decision,
-                    pending.request,
-                    healthy_models=self.health.healthy_models(
-                        exclude={pending.decision.model}
-                    ),
-                    failure=failure,
-                    latency_metrics=self.latency_tracker.snapshot(),
-                )
-            except Exception:
-                sideways = None
-            if sideways is not None and sideways.model != pending.decision.model:
-                if pending.attempt_id is not None:
-                    with self._lock:
-                        self._retry_routes[pending.attempt_id] = _RetryRoute(
-                            decision=sideways,
-                            request=pending.request,
-                        )
-                return
-            if not self.health.is_healthy(pending.decision.model):
-                return
-        promoted = self.coordinator.escalate(
-            pending.decision,
-            failure,
-            healthy_models=self.health.healthy_models(),
-            latency_metrics=self.latency_tracker.snapshot(),
-        )
-        if pending.attempt_id is not None:
-            with self._lock:
-                self._retry_routes[pending.attempt_id] = _RetryRoute(
-                    decision=promoted,
-                    request=pending.request,
-                )
-
-    def _take_retry(
-        self,
-        attempt_id: str | None,
-    ) -> _RetryRoute | None:
-        if attempt_id is None:
-            return None
-        with self._lock:
-            return self._retry_routes.pop(attempt_id, None)
-
-    def _pop_pending(
-        self,
-        data: Mapping[str, Any],
-    ) -> _PendingRoute | None:
-        call_id = data.get("litellm_call_id")
-        if not isinstance(call_id, str):
-            return None
-        with self._lock:
-            return self._pending.pop(call_id, None)
-
-    def _record_telemetry(
-        self,
-        pending: _PendingRoute,
-        *,
-        response: Any,
-        success: bool,
-        failure: FailureKind | None,
-    ) -> None:
-        if self.telemetry is None:
-            return
-        input_tokens, output_tokens = _usage_tokens(response)
-        if input_tokens is None:
-            input_tokens = pending.request.estimated_input_tokens or 1
-        if output_tokens is None:
-            output_tokens = pending.request.estimated_output_tokens
-        self.telemetry.record_request(
-            wire_dialect=pending.wire_dialect,
-            decision=pending.decision,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            success=success,
-            failure=failure.value if failure is not None else None,
-        )
 
 
 class RetryMiddleware:
@@ -445,14 +122,8 @@ class RetryMiddleware:
 
 def create_proxy_app(
     *,
-    registry_path: Path | None = None,
     env_path: Path | None = None,
-    validate_startup: bool = False,
-    availability_checker: Callable[[str], bool] | None = None,
-    health_failure_threshold: int = 2,
-    latency_weight: float = 0.5,
     telemetry_path: Path | None = None,
-    free_tier: bool = False,
     catalog_path: Path | None = None,
     workspace_dirs: WorkspaceDirs | None = None,
 ) -> Any:
@@ -461,77 +132,28 @@ def create_proxy_app(
     import litellm
     from litellm.proxy import proxy_server
 
-    master_key = ensure_master_key(env_path)
-    proxy_server.master_key = master_key
-    if free_tier:
-        from zhunt.engine import build_engine_hook
+    from zhunt.engine import build_engine_hook
+    from zhunt.workspace_api import WorkspaceDirs, mount_workspace
 
-        engine_hook = build_engine_hook(
-            catalog_path=catalog_path,
-            telemetry_path=telemetry_path,
-        )
-        litellm.callbacks = [engine_hook]
-        proxy_server.save_worker_config(
-            model="*",
-            telemetry=False,
-            drop_params=True,
-        )
-        from zhunt.workspace_api import WorkspaceDirs, mount_workspace
-
-        app = _inference_app(proxy_server)
-        mount_workspace(app, engine_hook, workspace_dirs or WorkspaceDirs())
-        return RetryMiddleware(app, engine_hook)
-    provider = configured_provider()
-    registry = (
-        ModelRegistry.from_path(
-            registry_path,
-            provider_id=provider.id if provider is not None else None,
-        )
-        if registry_path is not None
-        else ModelRegistry.default(
-            provider_id=provider.id if provider is not None else None,
-        )
-    )
-    if validate_startup:
-        validate_registry_models(
-            registry,
-            availability_checker or litellm_model_available,
-        )
-    health = ModelHealth(
-        registry.model_ids(),
-        failure_threshold=health_failure_threshold,
-    )
-    hook = ZhuntProxyHook(
-        RoutingCoordinator(
-            registry=registry,
-            latency_weight=latency_weight,
-        ),
-        health=health,
-        latency_tracker=LatencyTracker(),
-        telemetry=(
-            TelemetryLogger(telemetry_path, registry)
-            if telemetry_path is not None
-            else None
-        ),
-        provider=provider,
-    )
+    proxy_server.master_key = ensure_master_key(env_path)
+    hook = build_engine_hook(catalog_path=catalog_path, telemetry_path=telemetry_path)
     litellm.callbacks = [hook]
     proxy_server.save_worker_config(
         model="*",
         telemetry=False,
         drop_params=True,
     )
-    return RetryMiddleware(_inference_app(proxy_server), hook)
+    app = _inference_app(proxy_server)
+    mount_workspace(app, hook, workspace_dirs or WorkspaceDirs())
+    return RetryMiddleware(app, hook)
 
 
 def run_proxy(
     *,
     host: str,
     port: int,
-    registry_path: Path | None = None,
     allow_non_loopback: bool = False,
     telemetry_path: Path | None = None,
-    free_tier: bool = False,
     catalog_path: Path | None = None,
 ) -> None:
     if not allow_non_loopback and host not in {"127.0.0.1", "localhost", "::1"}:
@@ -540,19 +162,12 @@ def run_proxy(
         )
     import uvicorn
 
-    # The v1 call stays exactly as it was; engine options are only passed when used.
-    engine_options: dict[str, Any] = (
-        {"free_tier": True, "catalog_path": catalog_path} if free_tier else {}
-    )
     app = create_proxy_app(
-        registry_path=registry_path,
-        validate_startup=not free_tier,
-        telemetry_path=(telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl"),
-        **engine_options,
+        telemetry_path=telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl",
+        catalog_path=catalog_path,
     )
-    if free_tier:
-        for line in app.hook.summary:
-            print(line)
+    for line in app.hook.summary:
+        print(line)
     uvicorn.run(app, host=host, port=port)
 
 

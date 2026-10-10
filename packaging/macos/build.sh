@@ -47,7 +47,7 @@ PY="$VENV/bin/python"
     --collect-all yaml \
     --collect-all tiktoken \
     --hidden-import tiktoken_ext.openai_public \
-    --add-data "$ROOT/models.yaml:zhunt" \
+    --add-data "$ROOT/zhunt/catalog.yaml:zhunt" \
     --hidden-import uvicorn.logging \
     --hidden-import uvicorn.loops.auto \
     --hidden-import uvicorn.protocols.http.auto \
@@ -59,8 +59,8 @@ if [ ! -x "$PACKAGE/zhunt" ]; then
     echo "PyInstaller did not produce the zhunt executable." >&2
     exit 1
 fi
-if [ ! -f "$PACKAGE/_internal/zhunt/models.yaml" ] && [ ! -f "$PACKAGE/zhunt/models.yaml" ]; then
-    echo "PyInstaller output is missing zhunt/models.yaml." >&2
+if [ ! -f "$PACKAGE/_internal/zhunt/catalog.yaml" ] && [ ! -f "$PACKAGE/zhunt/catalog.yaml" ]; then
+    echo "PyInstaller output is missing zhunt/catalog.yaml." >&2
     exit 1
 fi
 

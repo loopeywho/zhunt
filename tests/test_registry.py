@@ -94,32 +94,6 @@ class ModelRegistryTests(unittest.TestCase):
                 }
             )
 
-    def test_default_registry_loads_all_core_tiers(self) -> None:
-        registry = ModelRegistry.default()
-
-        for tier in Tier:
-            self.assertIsNotNone(registry.select_model(tier))
-
-    def test_nous_portal_profile_uses_real_upstream_prices(self) -> None:
-        registry = ModelRegistry.default(provider_id="nous-portal")
-
-        self.assertEqual(
-            registry.select_model(Tier.CHAT).model,
-            "openai/portal/m2-25",
-        )
-        self.assertEqual(
-            registry.select_model(Tier.CODING).model,
-            "openai/portal/m2-25-fast",
-        )
-        self.assertEqual(
-            registry.select_model(Tier.LONG_CONTEXT).model,
-            "openai/portal/m3-500k-fast",
-        )
-        self.assertEqual(
-            registry.select_model(Tier.REASONING).model,
-            "openai/portal/m3-55-xh-1m",
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

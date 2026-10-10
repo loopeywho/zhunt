@@ -64,13 +64,19 @@ class ServeCommandTests(unittest.TestCase):
         run_proxy.assert_called_once()
         self.assertEqual(run_proxy.call_args.kwargs["port"], 4011)
 
-    def test_run_proxy_always_starts_the_free_tier_engine(self) -> None:
+    def test_run_proxy_forwards_options_to_the_server(self) -> None:
         from zhunt.cli import run_proxy
 
         with patch("zhunt.server.run_proxy") as start:
-            run_proxy(host="127.0.0.1", port=4000)
+            run_proxy(host="127.0.0.1", port=4000, catalog_path=Path("c.yaml"))
 
-        self.assertTrue(start.call_args.kwargs["free_tier"])
+        start.assert_called_once_with(
+            host="127.0.0.1",
+            port=4000,
+            allow_non_loopback=False,
+            telemetry_path=None,
+            catalog_path=Path("c.yaml"),
+        )
 
 
 class CommandSetTests(unittest.TestCase):

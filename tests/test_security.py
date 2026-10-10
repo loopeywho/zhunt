@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from zhunt.server import create_proxy_app, run_proxy
@@ -10,28 +10,28 @@ from zhunt.server import create_proxy_app, run_proxy
 class DaemonSecurityTests(unittest.TestCase):
     def test_surface_requires_key_and_excludes_admin_routes_and_cors(self) -> None:
         with TemporaryDirectory() as directory:
-            registry = Path(directory) / "models.yaml"
-            registry.write_text(
-                "aliases: {}\ntiers:\n  chat:\n    - model: provider/test\n      in: 0.1\n      out: 0.2\n",
-                encoding="utf-8",
-            )
-            app = create_proxy_app(
-                registry_path=registry,
-                env_path=Path(directory) / "env",
-            )
+            app = create_proxy_app(env_path=Path(directory) / "env")
             paths = {
                 route.path
                 for route in app.app.routes
                 if hasattr(route, "path")
             }
-            self.assertEqual(
-                paths,
-                {
-                    "/v1/chat/completions",
-                    "/v1/responses",
-                    "/v1/messages",
-                    "/v1/messages/count_tokens",
-                },
+            inference = {
+                "/v1/chat/completions",
+                "/v1/responses",
+                "/v1/messages",
+                "/v1/messages/count_tokens",
+            }
+            self.assertTrue(inference <= paths)
+            # Everything else is the workspace: its static files or its
+            # authenticated API. No admin UI, docs or health routes are exposed.
+            extra = paths - inference
+            self.assertTrue(
+                all(
+                    path == "/workspace" or path.startswith("/zhunt/api/")
+                    for path in extra
+                ),
+                sorted(extra),
             )
             with TestClient(app) as client:
                 route_payloads = (
@@ -98,21 +98,21 @@ class DaemonSecurityTests(unittest.TestCase):
             run_proxy(host="0.0.0.0", port=4000)
 
         with patch("uvicorn.run") as uvicorn_run, patch(
-            "zhunt.server.create_proxy_app", return_value=object()
+            "zhunt.server.create_proxy_app", return_value=MagicMock(hook=MagicMock(summary=()))
         ) as create_app:
             run_proxy(host="0.0.0.0", port=4000, allow_non_loopback=True)
         uvicorn_run.assert_called_once()
         create_app.assert_called_once_with(
-            registry_path=None,
-            validate_startup=True,
             telemetry_path=Path.home() / ".zhunt" / "telemetry.jsonl",
+            catalog_path=None,
         )
 
     def test_run_proxy_forwards_explicit_telemetry_path(self) -> None:
         with TemporaryDirectory() as directory:
             telemetry_path = Path(directory) / "evidence.jsonl"
             with patch("uvicorn.run") as uvicorn_run, patch(
-                "zhunt.server.create_proxy_app", return_value=object()
+                "zhunt.server.create_proxy_app",
+                return_value=MagicMock(hook=MagicMock(summary=())),
             ) as create_app:
                 run_proxy(
                     host="127.0.0.1",
@@ -122,9 +122,8 @@ class DaemonSecurityTests(unittest.TestCase):
 
         uvicorn_run.assert_called_once()
         create_app.assert_called_once_with(
-            registry_path=None,
-            validate_startup=True,
             telemetry_path=telemetry_path,
+            catalog_path=None,
         )
 
 

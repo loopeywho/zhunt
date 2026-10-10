@@ -84,7 +84,6 @@ def daemon(provider_call: AsyncMock, *, env: dict[str, str], catalog=None):
             "litellm.acompletion", provider_call
         ):
             app = create_proxy_app(
-                free_tier=True,
                 catalog_path=catalog_path if catalog is not False else None,
                 env_path=Path(directory) / "zhunt.env",
             )

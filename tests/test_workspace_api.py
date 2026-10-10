@@ -80,7 +80,6 @@ def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None,
             "litellm.acompletion", call
         ):
             app = create_proxy_app(
-                free_tier=True,
                 catalog_path=root / "catalog.yaml",
                 env_path=root / "zhunt.env",
                 workspace_dirs=dirs,
@@ -163,19 +162,6 @@ def test_without_a_packaged_workspace_directory_only_the_static_mount_is_missing
         assert client.get("/workspace/").status_code == 404
         assert client.get("/zhunt/api/status", headers=headers()).status_code == 200
         assert client.get("/zhunt/api/themes", headers=headers()).json() == {"themes": []}
-
-
-def test_v1_mode_has_no_workspace_routes() -> None:
-    with TemporaryDirectory() as directory:
-        app = create_proxy_app(env_path=Path(directory) / "zhunt.env")
-        with TestClient(app) as client:
-            for method, path in ROUTES:
-                response = client.request(method, path, headers=headers(), json={})
-                assert response.status_code == 404, path
-            assert client.get("/workspace/").status_code == 404
-
-
-# -- status ----------------------------------------------------------------
 
 
 def status_models(client: TestClient) -> dict[str, dict]:

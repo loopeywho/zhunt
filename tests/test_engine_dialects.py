@@ -1,7 +1,7 @@
 """Regression coverage for the three wire dialects on the free-tier engine.
 
 Ported from the v1 server tests. Every scenario runs through the real app
-(``create_proxy_app(free_tier=True)``) or the real ``EngineProxyHook`` with the
+(``create_proxy_app()``) or the real ``EngineProxyHook`` with the
 provider call patched, and asserts on what the provider was asked (model,
 api_key), on HTTP status/body, and on call counts.
 
@@ -185,7 +185,6 @@ def daemon(
             if mock is not None:
                 stack.enter_context(patch(target, mock))
         app = create_proxy_app(
-            free_tier=True,
             catalog_path=catalog_path,
             env_path=Path(directory) / "zhunt.env",
             telemetry_path=telemetry_path,

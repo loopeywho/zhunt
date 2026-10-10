@@ -48,7 +48,7 @@ $python = Join-Path $venv "Scripts\python.exe"
     --collect-all yaml `
     --collect-all tiktoken `
     --hidden-import tiktoken_ext.openai_public `
-    --add-data ((Join-Path $root "models.yaml") + ";zhunt") `
+    --add-data ((Join-Path $root "zhunt\catalog.yaml") + ";zhunt") `
     --hidden-import uvicorn.logging `
     --hidden-import uvicorn.loops.auto `
     --hidden-import uvicorn.protocols.http.auto `

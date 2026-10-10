@@ -25,7 +25,7 @@ class MacOSPackagingTests(unittest.TestCase):
         script = (ROOT / "packaging/macos/build.sh").read_text(encoding="utf-8")
         self.assertIn("--collect-all tiktoken", script)
         self.assertIn("--hidden-import tiktoken_ext.openai_public", script)
-        self.assertIn("--add-data \"$ROOT/models.yaml:zhunt\"", script)
+        self.assertIn("--add-data \"$ROOT/zhunt/catalog.yaml:zhunt\"", script)
         self.assertIn("--specpath \"$WORK\"", script)
         self.assertIn('pip install "$ROOT[desktop]"', script)
         self.assertIn("--collect-all pystray", script)
