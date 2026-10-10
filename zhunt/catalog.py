@@ -35,6 +35,8 @@ class Provider:
     base_url: str
     key_env: str
     verified_on: date
+    # LiteLLM's name for this provider when it differs from the platform id.
+    litellm_provider: str
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,11 @@ class Catalog:
                 base_url=_string(raw, "base_url", platform),
                 key_env=_string(raw, "key_env", platform),
                 verified_on=_date(raw.get("verified_on"), platform),
+                litellm_provider=(
+                    _string(raw, "litellm_provider", platform)
+                    if "litellm_provider" in raw
+                    else platform
+                ),
             )
             raw_models = raw.get("models")
             if not isinstance(raw_models, list) or not raw_models:

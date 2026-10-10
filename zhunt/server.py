@@ -414,20 +414,30 @@ class RetryMiddleware:
             await _send_messages(first_response, send)
             return
 
-        second_response: list[dict[str, Any]] = []
-        replay = deque(recorded_request)
+        # v1 replays once; the free-tier hook allows several failovers.
+        replayed: list[dict[str, Any]] = []
+        for _ in range(getattr(self.hook, "max_replays", 1)):
+            replayed = []
+            replay = deque(recorded_request)
 
-        async def replay_receive() -> dict[str, Any]:
-            if replay:
-                return replay.popleft()
-            return await receive()
+            async def replay_receive(
+                replay: deque[dict[str, Any]] = replay,
+            ) -> dict[str, Any]:
+                if replay:
+                    return replay.popleft()
+                return await receive()
 
-        async def capture_second(message: dict[str, Any]) -> None:
-            second_response.append(message)
+            async def capture_replay(
+                message: dict[str, Any],
+                replayed: list[dict[str, Any]] = replayed,
+            ) -> None:
+                replayed.append(message)
 
-        await self.app(retry_scope, replay_receive, capture_second)
+            await self.app(retry_scope, replay_receive, capture_replay)
+            if not self.hook.has_retry(attempt_id):
+                break
         self.hook.discard_retry(attempt_id)
-        await _send_messages(second_response, send)
+        await _send_messages(replayed, send)
 
 
 def create_proxy_app(
@@ -439,6 +449,8 @@ def create_proxy_app(
     health_failure_threshold: int = 2,
     latency_weight: float = 0.5,
     telemetry_path: Path | None = None,
+    free_tier: bool = False,
+    catalog_path: Path | None = None,
 ) -> Any:
     """Configure LiteLLM behind a small, authenticated inference surface."""
 
@@ -447,6 +459,20 @@ def create_proxy_app(
 
     master_key = ensure_master_key(env_path)
     proxy_server.master_key = master_key
+    if free_tier:
+        from zhunt.engine import build_engine_hook
+
+        engine_hook = build_engine_hook(
+            catalog_path=catalog_path,
+            telemetry_path=telemetry_path,
+        )
+        litellm.callbacks = [engine_hook]
+        proxy_server.save_worker_config(
+            model="*",
+            telemetry=False,
+            drop_params=True,
+        )
+        return RetryMiddleware(_inference_app(proxy_server), engine_hook)
     provider = configured_provider()
     registry = (
         ModelRegistry.from_path(
@@ -497,6 +523,8 @@ def run_proxy(
     registry_path: Path | None = None,
     allow_non_loopback: bool = False,
     telemetry_path: Path | None = None,
+    free_tier: bool = False,
+    catalog_path: Path | None = None,
 ) -> None:
     if not allow_non_loopback and host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError(
@@ -504,17 +532,20 @@ def run_proxy(
         )
     import uvicorn
 
-    uvicorn.run(
-        create_proxy_app(
-            registry_path=registry_path,
-            validate_startup=True,
-            telemetry_path=(
-                telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl"
-            ),
-        ),
-        host=host,
-        port=port,
+    # The v1 call stays exactly as it was; engine options are only passed when used.
+    engine_options: dict[str, Any] = (
+        {"free_tier": True, "catalog_path": catalog_path} if free_tier else {}
     )
+    app = create_proxy_app(
+        registry_path=registry_path,
+        validate_startup=not free_tier,
+        telemetry_path=(telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl"),
+        **engine_options,
+    )
+    if free_tier:
+        for line in app.hook.summary:
+            print(line)
+    uvicorn.run(app, host=host, port=port)
 
 
 def _inference_app(proxy_server: Any) -> FastAPI:

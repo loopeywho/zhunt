@@ -1,0 +1,137 @@
+# Zhunt free-tier catalog.
+#
+# Everything here was read from each provider's own documentation on the
+# `verified_on` date. Free tiers change often: re-check before relying on a row.
+#
+# - `limits` lists only caps the provider publishes for the free tier. A missing
+#   cap means "not published", not "unlimited"; the engine learns the rest from
+#   429 responses and cools the key down.
+# - `intelligence` and `speed` are hand-assigned 1-100 rankings of these models
+#   against each other. They are judgements, not benchmark results.
+# - Tier assignments are likewise judgements about what each model is good for.
+# - `may_train_on_prompts: true` means the provider says it may use prompts on
+#   this tier, or we could not confirm that it does not. The privacy gate keeps
+#   those models off unless the user opts in.
+
+providers:
+  groq:
+    name: Groq
+    base_url: https://api.groq.com/openai/v1
+    key_env: GROQ_API_KEY
+    verified_on: 2026-10-10
+    # Free-plan limits are not on Groq's public rate-limits page (it shows the
+    # Developer plan), so none are listed.
+    # Training: Groq docs say customer data is not retained for inference by
+    # default (console.groq.com/docs/your-data).
+    models:
+      - id: llama-3.1-8b-instant
+        tiers: [chat]
+        intelligence: 25
+        speed: 95
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: openai/gpt-oss-20b
+        tiers: [chat, coding]
+        intelligence: 50
+        speed: 90
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: llama-3.3-70b-versatile
+        tiers: [chat, coding]
+        intelligence: 60
+        speed: 80
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: openai/gpt-oss-120b
+        tiers: [chat, coding, reasoning]
+        intelligence: 75
+        speed: 70
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: qwen/qwen3.8-27b  # preview
+        tiers: [chat, coding]
+        intelligence: 60
+        speed: 70
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: minimaxai/minimax-m2.7  # preview
+        tiers: [coding, long-context]
+        intelligence: 70
+        speed: 60
+        context_window: 196608
+        supports_tools: true
+        may_train_on_prompts: false
+
+  google:
+    name: Google AI Studio (Gemini API)
+    litellm_provider: gemini
+    base_url: https://generativelanguage.googleapis.com
+    key_env: GEMINI_API_KEY
+    verified_on: 2026-10-10
+    # Google publishes no per-model free-tier numbers; they are shown per
+    # project in AI Studio (aistudio.google.com/rate-limit), so none are listed.
+    # Training: Google's pricing page says free-tier content is used to improve
+    # Google products.
+    models:
+      - id: gemini-3.8-flash
+        tiers: [chat, coding, long-context, reasoning]
+        intelligence: 85
+        speed: 70
+        context_window: 1048576
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: gemini-3.6-flash
+        tiers: [chat, coding, long-context]
+        intelligence: 80
+        speed: 75
+        context_window: 1048576
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: gemini-3.5-flash-lite
+        tiers: [chat, long-context]
+        intelligence: 55
+        speed: 90
+        context_window: 1048576
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: gemini-3.1-flash-lite
+        tiers: [chat, long-context]
+        intelligence: 45
+        speed: 92
+        context_window: 1048576
+        supports_tools: true
+        may_train_on_prompts: true
+
+  cerebras:
+    name: Cerebras
+    base_url: https://api.cerebras.ai/v1
+    key_env: CEREBRAS_API_KEY
+    verified_on: 2026-10-10
+    # Free-tier caps from inference-docs.cerebras.ai/support/rate-limits:
+    # 5 requests/min, 30K uncached tokens/min (90K total), 1M tokens/day.
+    # We apply the stricter 30K figure to every token. The page also lists
+    # 1M tokens/hour, which the daily cap already covers.
+    # Free-tier context is 65k (gpt-oss-120b) and 64k (qwen); we use 64000.
+    # Training: no statement about API prompts found, so treated as possible.
+    models:
+      - id: gpt-oss-120b
+        tiers: [chat, coding]
+        limits: {rpm: 5, tpm: 30000, tpd: 1000000}
+        intelligence: 75
+        speed: 99
+        context_window: 64000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: qwen-3.8-27b
+        tiers: [chat, coding]
+        limits: {rpm: 5, tpm: 30000, tpd: 1000000}
+        intelligence: 60
+        speed: 99
+        context_window: 64000
+        supports_tools: true
+        may_train_on_prompts: true

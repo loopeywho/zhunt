@@ -163,7 +163,10 @@ class Selector:
                         ),
                         lease,
                     )
-        raise NoCandidateError(f"no allowed model has quota for tier {tier.value!r}")
+        raise NoCandidateError(
+            f"no allowed model is available for tier {tier.value!r} (missing key, "
+            "over quota, benched after errors, or blocked by privacy/paid settings)"
+        )
 
     def _allowed(self, model: CatalogModel, tokens: int, requires_tools: bool) -> bool:
         if not model.free and not self._policy.allow_paid:

@@ -58,6 +58,19 @@ def serve(
         dir_okay=False,
         help="Local JSONL telemetry path.",
     ),
+    free_tier: bool = typer.Option(
+        False,
+        "--free-tier",
+        help="Use the v2 free-tier engine instead of the v1 paid-model registry.",
+    ),
+    catalog: Path | None = typer.Option(
+        None,
+        "--catalog",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Free-tier catalog YAML; defaults to the packaged catalog.",
+    ),
 ) -> None:
     """Run the local LiteLLM-backed routing daemon."""
 
@@ -74,12 +87,16 @@ def serve(
             "App integrations were configured for the saved port; rerun `zhunt setup` "
             "if you installed them before this port change."
         )
+    if catalog is not None and not free_tier:
+        raise typer.BadParameter("--catalog requires --free-tier", param_hint="catalog")
+    engine_options = {"free_tier": True, "catalog_path": catalog} if free_tier else {}
     run_proxy(
         host=host,
         port=selected_port,
         registry_path=registry,
         allow_non_loopback=allow_non_loopback,
         telemetry_path=telemetry,
+        **engine_options,
     )
 
 
@@ -419,6 +436,8 @@ def run_proxy(
     registry_path: Path | None,
     allow_non_loopback: bool = False,
     telemetry_path: Path | None = None,
+    free_tier: bool = False,
+    catalog_path: Path | None = None,
 ) -> None:
     from zhunt.server import run_proxy as start_proxy
 
@@ -428,6 +447,8 @@ def run_proxy(
         registry_path=registry_path,
         allow_non_loopback=allow_non_loopback,
         telemetry_path=telemetry_path,
+        free_tier=free_tier,
+        catalog_path=catalog_path,
     )
 
 
