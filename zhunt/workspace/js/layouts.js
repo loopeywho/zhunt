@@ -46,6 +46,8 @@ export function createLayouts({ workspace, toast }) {
   let currentName = null;
   let saveTimer = null;
   let apiDownUntil = 0;
+  let dirty = false; // an autosave is owed to the daemon
+  let changeSeq = 0; // bumped on every change, so a save that finishes late cannot clear a newer change
   const listeners = new Set();
 
   const makeDoc = () => {
@@ -60,6 +62,31 @@ export function createLayouts({ workspace, toast }) {
   }
 
   const isOffline = (err) => err instanceof ApiError && (err.status === 0 || err.status >= 500);
+
+  // Save the working layout to the daemon. While the daemon is marked down we wait out the window and retry,
+  // so a transient outage does not leave the last change unsaved until the next edit.
+  async function flushAutosave() {
+    if (!dirty) return;
+    const wait = apiDownUntil - Date.now();
+    if (wait > 0) { clearTimeout(saveTimer); saveTimer = setTimeout(flushAutosave, wait + 50); return; }
+    const mine = changeSeq;
+    try {
+      await api.layouts.put(LAST, makeDoc());
+      if (changeSeq === mine) dirty = false;
+    } catch (err) {
+      if (err.status === 401) return;
+      apiDownUntil = Date.now() + 30000;
+      if (isOffline(err)) { clearTimeout(saveTimer); saveTimer = setTimeout(flushAutosave, 30050); }
+    }
+  }
+
+  // Closing the tab inside the 700 ms debounce would lose the change on the daemon: send it with keepalive.
+  const flushOnLeave = () => {
+    if (!dirty) return;
+    clearTimeout(saveTimer);
+    try { api.layouts.put(LAST, makeDoc(), { keepalive: true }).catch(() => {}); } catch { /* page is going away */ }
+  };
+  window.addEventListener('pagehide', flushOnLeave);
 
   const mgr = {
     get currentName() { return currentName; },
@@ -125,21 +152,20 @@ export function createLayouts({ workspace, toast }) {
     // Debounced; called on every structural or state change.
     queueAutosave() {
       lsSet(LS_LAST, makeDoc()); // cheap and synchronous: survives a reload right after a change
+      dirty = true;
+      changeSeq += 1;
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(async () => {
-        const doc = makeDoc();
-        if (Date.now() < apiDownUntil) return;
-        try { await api.layouts.put(LAST, doc); } catch (err) {
-          if (err.status !== 401) apiDownUntil = Date.now() + 30000;
-        }
-      }, 700);
+      saveTimer = setTimeout(flushAutosave, 700);
     },
 
-    // Last working layout: daemon copy first, then this browser's copy, then the default preset.
+    // Last working layout: the newer of the daemon copy and this browser's copy (by saved_at), then the
+    // default preset. A daemon copy can be stale (daemon was down, or the tab closed before the save landed).
     async restore() {
       const candidates = [];
       try { candidates.push(['daemon', await api.layouts.get(LAST)]); } catch (err) { if (err.status === 401) throw err; }
       candidates.push(['browser', lsGet(LS_LAST)]);
+      const stamp = (doc) => { const t = Date.parse(doc && doc.saved_at); return Number.isFinite(t) ? t : -1; };
+      candidates.sort((x, y) => stamp(y[1]) - stamp(x[1])); // stable: ties (incl. no stamps) keep daemon first
       for (const [, doc] of candidates) {
         if (!doc) continue;
         try { apply(parseDoc(doc), null); return true; } catch (err) { console.warn('layout restore skipped:', err.message); }

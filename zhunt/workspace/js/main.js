@@ -11,23 +11,31 @@ import { createKeys } from './keys.js';
 import { buildCommands, leaderLabel } from './commands.js';
 import { leaves } from './tree.js';
 
+let authShown = false; // module scope: the fatal-error handler at the bottom must know whether the auth screen is up
+let store = null;
+
 async function boot() {
-  captureKeyFromFragment(); // key -> sessionStorage, fragment removed from the address bar
+  const badKey = captureKeyFromFragment(); // key -> sessionStorage, fragment removed from the address bar
   // `zhunt open` pointed at an already-open tab only changes the fragment: pick the new key up.
   window.addEventListener('hashchange', () => {
     if (location.hash.includes('key=')) { captureKeyFromFragment(); location.reload(); }
   });
 
-  let authShown = false;
-  const denied = (reason) => { if (!authShown) { authShown = true; clearKey(); showAuthScreen(reason); } };
+  const denied = (reason) => {
+    if (authShown) return;
+    authShown = true;
+    clearKey();
+    store?.stop(); // no more unauthenticated status/decisions polling behind the auth screen
+    showAuthScreen(reason);
+  };
   onUnauthorized(() => denied('rejected'));
-  if (!getKey()) { denied('missing'); return; }
+  if (!getKey()) { denied(badKey ? 'invalid' : 'missing'); return; }
 
   const stage = document.getElementById('stage');
   const bar = document.getElementById('statusbar');
   const overlayRoot = document.getElementById('overlay-root');
 
-  const store = createStore();
+  store = createStore();
   const statusbar = createStatusbar(bar, { store });
   const toast = (text, isError) => statusbar.toast(text, isError);
   const overlays = createOverlays(overlayRoot);
@@ -86,7 +94,7 @@ async function boot() {
       title: 'Basics',
       rows: [
         ['Ctrl+Space  (or Ctrl+\\)', 'Leader key: press, then one key from the groups below. Esc cancels.'],
-        ['Ctrl+K', 'Command palette: every action, searchable'],
+        ['Ctrl+K  (or Cmd+K)', 'Command palette: every action, searchable'],
         ['Esc', 'Leave a text field; focus returns to the tile (normal mode)'],
         ['h j k l / arrows', 'Normal mode (tile focused, not typing): move focus. H J K L swaps. i or Enter types. z zooms.'],
         ['Drag a divider', 'Resize. Double-click resets it. With a divider focused, arrows resize too.'],
@@ -105,6 +113,7 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
+  if (authShown) return; // the auth screen is already the explanation
   const msg = document.createElement('pre');
   msg.className = 'fatal';
   msg.textContent = 'zhunt workspace failed to start: ' + (err && err.message ? err.message : String(err));

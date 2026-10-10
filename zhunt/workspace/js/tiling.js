@@ -239,7 +239,12 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
   ws.split = (dir, kind) => {
     const current = T.findTile(root, focusedId);
     const res = T.splitTile(root, focusedId, dir, kind || (current.kind === 'chat' ? 'routing' : 'chat'));
-    if (!res) { toast?.('cannot split further (limit ' + T.MAX_TILES + ' tiles)'); return; }
+    if (!res) {
+      toast?.(T.leaves(root).length >= T.MAX_TILES
+        ? 'cannot split further (limit ' + T.MAX_TILES + ' tiles)'
+        : 'cannot split this tile further (nesting depth limit ' + T.MAX_DEPTH + ')');
+      return;
+    }
     root = res.root;
     zoomId = null;
     sync();

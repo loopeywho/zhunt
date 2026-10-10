@@ -19,10 +19,19 @@ export function createKeys({ ws, getCommands, overlays, openPalette, openHelp, s
   let leader = false;
   let timer = null;
 
-  // Letters are normalised so Shift+j is "J" even if a synthetic event reports key "j" + shiftKey.
+  // The letter a key stands for, independent of Caps Lock (which flips e.key's case). Falls back to the
+  // physical key (e.code KeyA..KeyZ) when the layout produces a non-Latin character. Null for non-letters.
+  const letterOf = (e) => {
+    if (/^[a-zA-Z]$/.test(e.key)) return e.key.toLowerCase();
+    const m = /^Key([A-Z])$/.exec(e.code || '');
+    return m ? m[1].toLowerCase() : null;
+  };
+
+  // Letters are normalised from the letter plus shiftKey, so Shift+j is "J" and Caps Lock + j is still "j".
   const token = (e) => {
     if (e.key.startsWith('Arrow') && e.shiftKey) return 'Shift+' + e.key;
-    if (e.shiftKey && /^[a-z]$/.test(e.key)) return e.key.toUpperCase();
+    const l = letterOf(e);
+    if (l) return e.shiftKey ? l.toUpperCase() : l;
     return e.key;
   };
 
@@ -47,6 +56,7 @@ export function createKeys({ ws, getCommands, overlays, openPalette, openHelp, s
 
   function onLeaderKey(e) {
     if (MOD_KEYS.has(e.key)) return;
+    if (e.ctrlKey || e.metaKey) return; // Cmd+R, Ctrl+W ... still belong to the browser
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape' || e.key === ' ') { setLeader(false); return; }
@@ -58,15 +68,20 @@ export function createKeys({ ws, getCommands, overlays, openPalette, openHelp, s
   }
 
   function onKeyDown(e) {
-    if (e.isComposing) return;
+    if (e.isComposing || e.keyCode === 229) return;
     const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
 
-    if (ctrlOnly && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    // Ctrl+K or Cmd+K (Ctrl+Space can collide with IME / input-source switching; Ctrl+\ stays as the fallback)
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       if (overlays.isOpen && overlays.kind === 'palette') overlays.close(); else { setLeader(false); openPalette(); }
       return;
     }
-    if (overlays.isOpen) return;
+    if (overlays.isOpen) {
+      // focus can still end up on <body> (e.g. after a click outside the dialog): Escape must close regardless
+      if (e.key === 'Escape') { e.preventDefault(); overlays.close(); }
+      return;
+    }
 
     if (ctrlOnly && (e.code === 'Space' || e.key === ' ' || e.key === '\\')) {
       e.preventDefault();
@@ -77,10 +92,13 @@ export function createKeys({ ws, getCommands, overlays, openPalette, openHelp, s
 
     if (e.altKey && !e.ctrlKey && !e.metaKey) {
       const dir = DIR_BY_CODE[e.code];
-      if (dir) { e.preventDefault(); if (e.shiftKey) ws.swap(dir); else ws.focusDir(dir); return; }
+      // In a text field Option/Alt+Arrow/letter/digit is word movement or a typed character: leave it alone.
+      // (Alt+Enter has no text meaning, so it keeps zooming; chat no longer sends on it.)
+      const editing = isEditable(e.target);
+      if (dir && !editing) { e.preventDefault(); if (e.shiftKey) ws.swap(dir); else ws.focusDir(dir); return; }
       if (e.code === 'Enter') { e.preventDefault(); ws.toggleZoom(); return; }
       const digit = /^Digit([1-9])$/.exec(e.code);
-      if (digit) { e.preventDefault(); ws.focusIndex(Number(digit[1]) - 1); return; }
+      if (digit && !editing) { e.preventDefault(); ws.focusIndex(Number(digit[1]) - 1); return; }
       return;
     }
 
@@ -88,12 +106,11 @@ export function createKeys({ ws, getCommands, overlays, openPalette, openHelp, s
     const t = e.target;
     const atRest = t === document.body || (t instanceof HTMLElement && t.classList.contains('pane'));
     if (!atRest || e.ctrlKey || e.metaKey) return;
-    const dir = DIR_BY_KEY[e.key];
-    if (dir) { e.preventDefault(); ws.focusDir(dir); return; }
-    const swapDir = DIR_BY_KEY[e.key.toLowerCase()];
-    if (swapDir && e.key.length === 1 && e.shiftKey) { e.preventDefault(); ws.swap(swapDir); return; }
-    if (e.key === 'i' || e.key === 'Enter') { e.preventDefault(); ws.focusPrimary(); return; }
-    if (e.key === 'z') { e.preventDefault(); ws.toggleZoom(); return; }
+    const l = letterOf(e);
+    const dir = DIR_BY_KEY[l || e.key];
+    if (dir) { e.preventDefault(); if (l && e.shiftKey) ws.swap(dir); else ws.focusDir(dir); return; }
+    if ((l === 'i' && !e.shiftKey) || e.key === 'Enter') { e.preventDefault(); ws.focusPrimary(); return; }
+    if (l === 'z' && !e.shiftKey) { e.preventDefault(); ws.toggleZoom(); return; }
     if (e.key === '?') { e.preventDefault(); openHelp(); return; }
     if (e.key === ':') { e.preventDefault(); openPalette(); }
   }

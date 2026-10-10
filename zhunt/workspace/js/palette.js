@@ -23,11 +23,13 @@ export function createOverlays(root) {
   let current = null; // {close(result)}
   let returnFocus = null;
 
-  function mount(dialog, label) {
+  // primary: the element that should hold focus while the overlay is open (the input, or the dialog itself).
+  function mount(dialog, label, primary = dialog) {
     returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const backdrop = h('div', { class: 'backdrop' });
     const wrap = h('div', { class: 'overlay' }, backdrop, dialog);
     dialog.setAttribute('role', 'dialog');
+    dialog.tabIndex = -1;
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-label', label);
     root.append(wrap);
@@ -40,6 +42,20 @@ export function createOverlays(root) {
       target?.focus({ preventScroll: true });
     };
     backdrop.addEventListener('mousedown', () => current?.cancel());
+    // Escape works wherever focus sits inside the overlay (not only on the input), except while an IME is composing.
+    wrap.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      e.stopPropagation();
+      current?.cancel();
+    }, true);
+    // Clicking a non-focusable part of the dialog (label, list gap, help text) must not drop focus to <body>.
+    wrap.addEventListener('mousedown', (e) => {
+      if (e.target === backdrop) return;
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, button, a')) return;
+      e.preventDefault();
+      primary.focus({ preventScroll: true });
+    });
     return close;
   }
 
@@ -95,13 +111,13 @@ export function createOverlays(root) {
 
       input.addEventListener('input', () => { sel = 0; render(); });
       input.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return; // IME candidate selection must not run/select an item
         if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) { e.preventDefault(); sel = Math.min(shown.length - 1, sel + 1); paintSel(); }
         else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) { e.preventDefault(); sel = Math.max(0, sel - 1); paintSel(); }
         else if (e.key === 'Enter') { e.preventDefault(); choose(sel); }
-        else if (e.key === 'Escape') { e.preventDefault(); finish(null); }
         else if (e.key === 'Tab') { e.preventDefault(); }
       });
-      const closeFn = mount(dialog, placeholder);
+      const closeFn = mount(dialog, placeholder, input);
       current = { cancel: () => finish(null), kind: 'palette' };
       render();
       input.focus();
@@ -119,11 +135,11 @@ export function createOverlays(root) {
       const check = () => { const msg = validate ? validate(input.value.trim()) : ''; note.textContent = msg || hint; note.classList.toggle('bad', !!msg); return !msg; };
       input.addEventListener('input', check);
       input.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return;
         if (e.key === 'Enter') { e.preventDefault(); if (input.value.trim() && check()) finish(input.value.trim()); }
-        else if (e.key === 'Escape') { e.preventDefault(); finish(null); }
         else if (e.key === 'Tab') e.preventDefault();
       });
-      const closeFn = mount(dialog, label);
+      const closeFn = mount(dialog, label, input);
       current = { cancel: () => finish(null), kind: 'prompt' };
       input.focus();
       input.select();
@@ -138,7 +154,7 @@ export function createOverlays(root) {
       h('dl', {}, g.rows.map(([k, d]) => [h('dt', {}, h('kbd', {}, k)), h('dd', {}, d)])))));
     const dialog = h('div', { class: 'dialog help', tabindex: '-1' }, h('div', { class: 'pal-label' }, 'Keyboard reference  (Esc closes)'), body);
     const finish = () => { closeFn(); current = null; };
-    dialog.addEventListener('keydown', (e) => { if (e.key === 'Escape' || e.key === '?' || e.key === 'q') { e.preventDefault(); finish(); } });
+    dialog.addEventListener('keydown', (e) => { if (e.key === '?' || e.key === 'q') { e.preventDefault(); finish(); } });
     const closeFn = mount(dialog, 'Keyboard reference');
     current = { cancel: finish, kind: 'help' };
     dialog.focus();

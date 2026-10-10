@@ -12,7 +12,9 @@ export function showAuthScreen(reason) {
       h('h1', {}, rejected ? 'The daemon rejected this key' : 'This workspace needs its key'),
       h('p', {}, rejected
         ? 'The key stored for this tab no longer matches the running zhunt daemon (it may have been restarted or rotated).'
-        : 'No master key was found for this tab. The workspace never asks you to type it.'),
+        : reason === 'invalid'
+          ? 'The key in the address is not a valid Zhunt key (it contains spaces or non-ASCII characters, so it was not used). The workspace never asks you to type it.'
+          : 'No master key was found for this tab. The workspace never asks you to type it.'),
       h('p', {}, 'Open it from a terminal instead:'),
       h('pre', { class: 'auth-cmd' }, h('code', {}, 'zhunt open')),
       h('p', { class: 'dim' }, 'That opens this page with the key attached to the address. The page keeps it for this tab only and removes it from the address bar immediately.'),
