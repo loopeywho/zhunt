@@ -5,20 +5,28 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from collections import deque
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, replace
 from importlib import resources
 from pathlib import Path
 from threading import RLock
 from typing import Any
 
+import litellm
 import yaml
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 
-from zhunt.adapters.base import AdapterError, strip_thinking_blocks, system_first
+from zhunt import __version__
+from zhunt.adapters.base import (
+    AdapterError,
+    strip_thinking_blocks,
+    system_first,
+    text_content,
+)
 from zhunt.brain import Tier
-from zhunt.catalog import Catalog
+from zhunt.catalog import Catalog, CatalogModel
 from zhunt.quota import FailureKind as ProviderFailure
 from zhunt.quota import Lease, QuotaTracker, Slot
 from zhunt.registry import ModelRegistry
@@ -42,6 +50,7 @@ from zhunt.server import (
     _header,
     _original_request,
     _response_failure,
+    _response_mapping,
     _telemetry_wire_dialect,
     _usage_tokens,
 )
@@ -49,6 +58,11 @@ from zhunt.telemetry import TelemetryLogger
 
 # Original attempt plus up to this many failovers per client request.
 MAX_REPLAYS = 3
+DECISION_LOG_SIZE = 200
+# Output budget reserved against a model's token quota for a compare request.
+_COMPARE_OUTPUT_TOKENS = 512
+_COMPARE_TIMEOUT_SECONDS = 60
+_ERROR_TEXT_LIMIT = 300
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -140,6 +154,7 @@ class _Pending:
     escalated: bool
     started_at: float
     wire_dialect: str
+    session: str
 
 
 @dataclass(frozen=True)
@@ -175,6 +190,7 @@ class EngineProxyHook(CustomLogger):
         self.telemetry = telemetry
         self._pending: dict[str, _Pending] = {}
         self._retries: dict[str, _Retry] = {}
+        self._decisions: deque[dict[str, Any]] = deque(maxlen=DECISION_LOG_SIZE)
         self._lock = RLock()
 
     async def async_pre_call_hook(
@@ -237,6 +253,7 @@ class EngineProxyHook(CustomLogger):
                 escalated=escalated,
                 started_at=time.perf_counter(),
                 wire_dialect=_telemetry_wire_dialect(call_type),
+                session=_header(headers, "x-session-id") or decision.session_key,
             )
         metadata = data.get("metadata")
         if not isinstance(metadata, dict):
@@ -319,6 +336,9 @@ class EngineProxyHook(CustomLogger):
         """The provider answered; truncation or refusal may still need a better tier."""
 
         self._record_telemetry(pending, response, failure is None, failure)
+        self._record_decision(
+            pending, response, failure.value if failure is not None else None
+        )
         slot = pending.candidate.slot
         self.quota.record_success(slot)
         self.reliability.record(pending.candidate.model.id, success=True)
@@ -336,24 +356,29 @@ class EngineProxyHook(CustomLogger):
     def _handle_error(self, pending: _Pending, error: BaseException) -> None:
         self._record_telemetry(pending, None, False, FailureKind.PROVIDER_ERROR)
         kind, retry_after = classify_failure(error)
+        self._record_decision(
+            pending, None, kind.value if kind is not None else "client-error"
+        )
         if kind is None:
             return
-        for slot in self._benched_slots(pending, error):
+        candidate = pending.candidate
+        for slot in self._benched_slots(candidate.model, candidate.key_id, error):
             self.quota.record_failure(slot, kind, retry_after=retry_after)
         self.reliability.record(pending.candidate.model.id, success=False)
         self._queue_retry(pending, pending.decision, escalated=pending.escalated)
 
-    def _benched_slots(self, pending: _Pending, error: BaseException) -> list[Slot]:
+    def _benched_slots(
+        self, model: CatalogModel, key_id: str, error: BaseException
+    ) -> list[Slot]:
         """A rejected key (401) or empty account (402) fails for every model on
         that provider; any other failure is specific to the model that raised it."""
 
         if getattr(error, "status_code", None) not in (401, 402):
-            return [pending.candidate.slot]
-        candidate = pending.candidate
+            return [(model.id, key_id)]
         return [
-            (model.id, candidate.key_id)
-            for model in self.catalog.models
-            if model.platform == candidate.model.platform
+            (other.id, key_id)
+            for other in self.catalog.models
+            if other.platform == model.platform
         ]
 
     def _queue_retry(
@@ -395,11 +420,7 @@ class EngineProxyHook(CustomLogger):
     ) -> None:
         if self.telemetry is None:
             return
-        input_tokens, output_tokens = _usage_tokens(response)
-        if input_tokens is None:
-            input_tokens = pending.request.estimated_input_tokens or 1
-        if output_tokens is None:
-            output_tokens = pending.request.estimated_output_tokens
+        input_tokens, output_tokens = _attempt_tokens(pending, response)
         self.telemetry.record_request(
             wire_dialect=pending.wire_dialect,
             decision=pending.decision,
@@ -408,6 +429,205 @@ class EngineProxyHook(CustomLogger):
             success=success,
             failure=failure.value if failure is not None else None,
         )
+
+
+    # -- workspace API ------------------------------------------------------
+
+    def _record_decision(
+        self, pending: _Pending, response: Any, failure: str | None
+    ) -> None:
+        input_tokens, output_tokens = _attempt_tokens(pending, response)
+        record = {
+            "ts": time.time(),
+            "session": pending.session,
+            "requested_alias": pending.decision.requested_alias,
+            "tier": pending.candidate.tier.value,
+            "model": pending.candidate.model.id,
+            "degraded": pending.candidate.degraded,
+            "attempt": pending.attempts,
+            "success": failure is None,
+            "failure": failure,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "latency_ms": round((time.perf_counter() - pending.started_at) * 1000),
+        }
+        with self._lock:
+            self._decisions.append(record)
+
+    def decisions(self, *, limit: int = 50, session: str | None = None) -> list[dict[str, Any]]:
+        """Newest first, optionally only one session's attempts."""
+
+        with self._lock:
+            newest_first = reversed(self._decisions)
+            matching = (d for d in newest_first if session is None or d["session"] == session)
+            return [dict(d) for _, d in zip(range(limit), matching)]
+
+    def status(self) -> dict[str, Any]:
+        """Catalog, policy and live quota state. Reports whether a key is set, never it."""
+
+        policy = self.selector.policy
+        providers = []
+        for provider in self.catalog.providers.values():
+            key_ids = self.selector.key_ids(provider.platform)
+            key_id = key_ids[0] if key_ids else "default"
+            models = []
+            for model in self.catalog.models:
+                if model.platform != provider.platform:
+                    continue
+                slot = (model.id, key_id)
+                reason = self.selector.blocked_reason(model)
+                models.append(
+                    {
+                        "id": model.id,
+                        "tiers": [t.value for t in Tier if t in model.tiers],
+                        "free": model.free,
+                        "may_train_on_prompts": model.may_train_on_prompts,
+                        "allowed": reason is None,
+                        "blocked_reason": reason,
+                        "headroom": round(self.quota.headroom(slot, model.limits), 3),
+                        "cooldown_remaining": round(self.quota.cooldown_remaining(slot), 1),
+                        "reliability": round(self.reliability.score(model.id), 3),
+                        "limits": asdict(model.limits),
+                    }
+                )
+            providers.append(
+                {
+                    "platform": provider.platform,
+                    "name": provider.name,
+                    "key_set": bool(key_ids),
+                    "key_env": provider.key_env,
+                    "models": models,
+                }
+            )
+        return {
+            "version": __version__,
+            "policy": {
+                "allow_paid": policy.allow_paid,
+                "allow_training": policy.allow_training,
+            },
+            "providers": providers,
+        }
+
+    async def compare(
+        self, messages: Sequence[Mapping[str, Any]], model_ids: Sequence[str]
+    ) -> list[dict[str, Any]]:
+        """One prompt on several chosen models at once, bypassing routing but not
+        the key, policy, quota or cooldown checks. Ids must exist in the catalog."""
+
+        by_id = {model.id: model for model in self.catalog.models}
+        estimate = (
+            sum(len(text_content(m.get("content"))) for m in messages) // 4
+            + 1
+            + _COMPARE_OUTPUT_TOKENS
+        )
+        return list(
+            await asyncio.gather(
+                *(self._compare_one(by_id[mid], messages, estimate) for mid in model_ids)
+            )
+        )
+
+    async def _compare_one(
+        self, model: CatalogModel, messages: Sequence[Mapping[str, Any]], tokens: int
+    ) -> dict[str, Any]:
+        def blocked(reason: str) -> dict[str, Any]:
+            return _compare_result(model.id, error=f"blocked: {reason}")
+
+        reason = self.selector.blocked_reason(model)
+        provider = self.catalog.providers[model.platform]
+        api_key = os.environ.get(provider.key_env)
+        if reason is None and not api_key:
+            reason = "no key"
+        if reason is not None:
+            return blocked(reason)
+        key_id = self.selector.key_ids(model.platform)[0]
+        slot = (model.id, key_id)
+        cooldown = self.quota.cooldown_remaining(slot)
+        if cooldown > 0:
+            return blocked(f"cooling down for {round(cooldown)}s")
+        lease = self.quota.try_acquire(slot, model.limits, tokens=tokens)
+        if lease is None:
+            return blocked("over quota")
+
+        started = time.perf_counter()
+        try:
+            response = await litellm.acompletion(
+                model=f"{provider.litellm_provider}/{model.model_id}",
+                messages=list(messages),
+                api_key=api_key,
+                timeout=_COMPARE_TIMEOUT_SECONDS,
+            )
+        except Exception as error:
+            kind, retry_after = classify_failure(error)
+            if kind is not None:
+                for bench in self._benched_slots(model, key_id, error):
+                    self.quota.record_failure(bench, kind, retry_after=retry_after)
+                self.reliability.record(model.id, success=False)
+            return _compare_result(model.id, error=_error_text(error, api_key))
+        latency_ms = round((time.perf_counter() - started) * 1000)
+        self.quota.record_success(slot)
+        self.reliability.record(model.id, success=True)
+        input_tokens, output_tokens = _usage_tokens(response)
+        if input_tokens is not None and output_tokens is not None:
+            self.quota.settle(lease, input_tokens + output_tokens)
+        return _compare_result(
+            model.id,
+            text=_reply_text(response),
+            latency_ms=latency_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+
+def _attempt_tokens(pending: _Pending, response: Any) -> tuple[int, int]:
+    """Reported usage, else the routing estimate (as telemetry has always done)."""
+
+    input_tokens, output_tokens = _usage_tokens(response)
+    if input_tokens is None:
+        input_tokens = pending.request.estimated_input_tokens or 1
+    if output_tokens is None:
+        output_tokens = pending.request.estimated_output_tokens
+    return input_tokens, output_tokens
+
+
+def _compare_result(
+    model_id: str,
+    *,
+    text: str | None = None,
+    error: str | None = None,
+    latency_ms: int | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> dict[str, Any]:
+    return {
+        "model": model_id,
+        "ok": error is None,
+        "text": text,
+        "error": error,
+        "latency_ms": latency_ms,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
+
+
+def _reply_text(response: Any) -> str:
+    choices = _response_mapping(response).get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], Mapping):
+        message = choices[0].get("message")
+        if isinstance(message, Mapping):
+            return text_content(message.get("content"))
+    return ""
+
+
+def _error_text(error: BaseException, secret: str | None) -> str:
+    """A provider error is shown to the user, so it must not echo our key."""
+
+    text = str(error) or type(error).__name__
+    if secret:
+        text = text.replace(secret, "***")
+    status = getattr(error, "status_code", None)
+    if status is not None:
+        text = f"{status}: {text}"
+    return text[:_ERROR_TEXT_LIMIT]
 
 
 def build_engine_hook(

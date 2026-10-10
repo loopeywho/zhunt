@@ -100,6 +100,24 @@ class Selector:
         total = sum(weights)
         self._weights = tuple(w / total for w in weights)
 
+    @property
+    def policy(self) -> SelectionPolicy:
+        return self._policy
+
+    def key_ids(self, platform: str) -> tuple[str, ...]:
+        return self._keys.get(platform, ())
+
+    def blocked_reason(self, model: CatalogModel) -> str | None:
+        """Why policy or a missing key excludes the model outright, else ``None``."""
+
+        if not self._keys.get(model.platform):
+            return "no key"
+        if model.may_train_on_prompts and not self._policy.allow_training:
+            return "may train on prompts"
+        if not model.free and not self._policy.allow_paid:
+            return "paid"
+        return None
+
     def ranked(
         self,
         tier: Tier,

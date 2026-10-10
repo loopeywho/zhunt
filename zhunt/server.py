@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -39,6 +39,9 @@ from zhunt.router import (
     RoutingRequest,
 )
 from zhunt.telemetry import TelemetryLogger
+
+if TYPE_CHECKING:
+    from zhunt.workspace_api import WorkspaceDirs
 
 
 _ADAPTERS: dict[str, WireAdapter] = {
@@ -451,6 +454,7 @@ def create_proxy_app(
     telemetry_path: Path | None = None,
     free_tier: bool = False,
     catalog_path: Path | None = None,
+    workspace_dirs: WorkspaceDirs | None = None,
 ) -> Any:
     """Configure LiteLLM behind a small, authenticated inference surface."""
 
@@ -472,7 +476,11 @@ def create_proxy_app(
             telemetry=False,
             drop_params=True,
         )
-        return RetryMiddleware(_inference_app(proxy_server), engine_hook)
+        from zhunt.workspace_api import WorkspaceDirs, mount_workspace
+
+        app = _inference_app(proxy_server)
+        mount_workspace(app, engine_hook, workspace_dirs or WorkspaceDirs())
+        return RetryMiddleware(app, engine_hook)
     provider = configured_provider()
     registry = (
         ModelRegistry.from_path(
