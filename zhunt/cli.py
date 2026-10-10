@@ -13,6 +13,7 @@ from zhunt.benchmark import run_benchmark
 from zhunt.connect_cli import register as register_connect_commands
 from zhunt.dashboard import create_dashboard_app
 from zhunt.installer import InstallationResult, Installer, InstallerError
+from zhunt.keys_cli import keys_app
 from zhunt.onboarding import create_onboarding_app
 from zhunt.ports import configured_port, resolve_daemon_port
 from zhunt.pricing import PricingSyncError, sync_registry
@@ -22,6 +23,7 @@ from zhunt.telemetry import summarize_telemetry
 
 app = typer.Typer(no_args_is_help=True)
 register_connect_commands(app)
+app.add_typer(keys_app, name="keys")
 
 
 class InstallMode(str, Enum):

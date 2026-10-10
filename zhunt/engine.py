@@ -8,13 +8,11 @@ import time
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
-from importlib import resources
 from pathlib import Path
 from threading import RLock
 from typing import Any
 
 import litellm
-import yaml
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 
@@ -26,7 +24,7 @@ from zhunt.adapters.base import (
     text_content,
 )
 from zhunt.brain import Tier
-from zhunt.catalog import Catalog, CatalogModel
+from zhunt.catalog import Catalog, CatalogModel, load_catalog
 from zhunt.quota import FailureKind as ProviderFailure
 from zhunt.quota import Lease, QuotaTracker, Slot
 from zhunt.registry import ModelRegistry
@@ -64,14 +62,6 @@ _COMPARE_OUTPUT_TOKENS = 512
 _COMPARE_TIMEOUT_SECONDS = 60
 _ERROR_TEXT_LIMIT = 300
 _TRUTHY = {"1", "true", "yes", "on"}
-
-
-def load_catalog(path: Path | None = None) -> Catalog:
-    if path is not None:
-        return Catalog.from_path(path)
-    packaged = resources.files("zhunt").joinpath("catalog.yaml")
-    with packaged.open(encoding="utf-8") as catalog_file:
-        return Catalog.from_data(yaml.safe_load(catalog_file))
 
 
 def keys_from_env(catalog: Catalog, env: Mapping[str, str]) -> dict[str, list[str]]:

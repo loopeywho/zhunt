@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -209,3 +210,13 @@ def _parse_model(platform: str, raw: Any) -> CatalogModel:
         input_cost=_parse_cost(raw, "in", owner),
         output_cost=_parse_cost(raw, "out", owner),
     )
+
+
+def load_catalog(path: Path | None = None) -> Catalog:
+    """Load ``path``, or the catalog that ships inside the package."""
+
+    if path is not None:
+        return Catalog.from_path(path)
+    packaged = resources.files("zhunt").joinpath("catalog.yaml")
+    with packaged.open(encoding="utf-8") as catalog_file:
+        return Catalog.from_data(yaml.safe_load(catalog_file))
