@@ -103,13 +103,14 @@ Owner = you unless marked. Order matters.
    zhunt` (`uv build`, `uv publish`, with a PyPI token in a password manager).
 
 **B. Turn on payments (week 0–1)**
-5. Cloudflare Pages: deploy `site/` (it includes `functions/`). Set encrypted variables:
+5. Cloudflare Pages: **done 2026-10-11** — `site/` is live on zhunt.kindredwildcat.com
+   (project `zhunt`) and `LICENCE_KID=2026-10` is set. Still to set, as encrypted variables:
    `STRIPE_SECRET_KEY` (a *restricted* key: read Checkout Sessions, Subscriptions,
    Customers), `LICENCE_KID=2026-10`, `LICENCE_PRIVATE_KEY` (output of
    `uv run python scripts/licence_tool.py worker-secret --key ~/.zhunt-signing/licence-2026-10.pem`).
 6. Stripe: on the existing payment link (`buy.stripe.com/28EdR883o8tSgfE2RncMM01`) set the
    confirmation page to redirect to
-   `https://zhunt.kindredwildcat.com/activate.html?session_id={CHECKOUT_SESSION_ID}`.
+   `https://zhunt.kindredwildcat.com/activate?session_id={CHECKOUT_SESSION_ID}`.
    Turn on the customer portal (cancellation) and link it from emails.
 7. End-to-end test in Stripe test mode first: test-mode payment link → activate page →
    `zhunt licence activate` → `zhunt licence status` shows Pro → theme pack unlocks →
