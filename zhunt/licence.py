@@ -139,7 +139,8 @@ def subscription_of(key: str) -> str | None:
 
 
 def licence_path(home: Path | None = None) -> Path:
-    return (home or Path.home()) / ".zhunt" / "licence"
+    override = os.environ.get("ZHUNT_LICENCE_FILE") if home is None else None
+    return Path(override) if override else (home or Path.home()) / ".zhunt" / "licence"
 
 
 def stored_key(home: Path | None = None) -> str | None:

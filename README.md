@@ -114,7 +114,7 @@ publish are left unset and learned from 429 responses.
 - **Providers that may train on your prompts are off by default.** Set
   `ZHUNT_ALLOW_TRAINING=1` to allow them. Until you do, only providers marked as
   not training are used.
-- **Paid models are off by default.** Set `ZHUNT_ALLOW_PAID=1` to allow them.
+- **Premium (paid) models are off by default.** They need zhunt Pro, your own paid OpenRouter key and an explicit opt-in with a monthly cap: `zhunt keys add openrouter`, then `zhunt premium on --cap 5`. They are used only when every free model is busy, and every OpenRouter request refuses providers that collect prompt data.
 - Keys are only ever read from `~/.zhunt/env` and the environment. The workspace and
   its API show whether a key is set, never its value.
 - The master key that protects the local API is created on first run. `zhunt open`

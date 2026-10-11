@@ -69,7 +69,7 @@ export function panelsTile(svc, state, ctx) {
     const ds = decisions.data || [];
     if (kind === 'capacity') {
       if (!s) return h('p', { class: 'quiet' }, status.error ? 'daemon unreachable' : 'loading...');
-      const models = (s.providers || []).flatMap((p) => p.models || []);
+      const models = (s.providers || []).flatMap((p) => p.models || []).filter((m) => m.free || s.policy?.allow_paid);
       const usable = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0));
       const known = usable.map((m) => m.headroom).filter((x) => x !== null && x !== undefined);
       const avg = known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
@@ -77,7 +77,8 @@ export function panelsTile(svc, state, ctx) {
       return [
         h('p', { class: 'big' }, String(usable.length), h('span', { class: 'big-of' }, ` / ${models.length} models ready`)),
         h('div', { class: 'meter' }, h('span', { class: 'quiet' }, 'quota left'), headroomBar(avg)),
-        h('p', { class: 'quiet' }, `${keys} of ${(s.providers || []).length} providers have a key · ${s.policy?.allow_paid ? 'paid allowed' : 'free only'}`),
+        h('p', { class: 'quiet' }, `${keys} of ${(s.providers || []).length} providers have a key · ${s.policy?.allow_paid ? 'premium on' : 'free only'}`),
+        s.spend && s.policy?.allow_paid ? h('p', { class: 'quiet' }, `premium this month: $${s.spend.spent.toFixed(2)} of $${s.spend.cap.toFixed(2)}`) : null,
       ];
     }
     if (kind === 'today') {

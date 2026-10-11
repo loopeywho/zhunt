@@ -6,6 +6,9 @@ def _isolated_state_db(tmp_path, monkeypatch):
     """Keep every test's quota state in a temp file, never ~/.zhunt/state.db."""
 
     monkeypatch.setenv("ZHUNT_STATE_DB", str(tmp_path / "state.db"))
+    # ...and never read the tester's real Pro licence
+    monkeypatch.setenv("ZHUNT_LICENCE_FILE", str(tmp_path / "licence"))
+    monkeypatch.delenv("ZHUNT_LICENCE", raising=False)
 
 
 @pytest.fixture(autouse=True)

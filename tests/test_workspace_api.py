@@ -64,7 +64,7 @@ def headers(key: str | None = None, **extra: str) -> dict[str, str]:
 
 
 @contextmanager
-def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None, static=True):
+def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None, static=True, plan=None):
     """Free-tier daemon with the workspace mounted on temp dirs; litellm patched."""
 
     with TemporaryDirectory() as directory:
@@ -79,7 +79,9 @@ def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None,
         dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir)
         with patch.dict(os.environ, {**dict.fromkeys(ENV_NAMES, ""), **env}), patch(
             "litellm.acompletion", call
-        ), patch("zhunt.workspace_api.current_plan", return_value=FREE):  # never the tester's real licence
+        ), patch("zhunt.workspace_api.current_plan", return_value=plan or FREE), patch(
+            "zhunt.licence.current_plan", return_value=plan or FREE
+        ):  # never the tester's real licence
             app = create_proxy_app(
                 catalog_path=root / "catalog.yaml",
                 env_path=root / "zhunt.env",
@@ -176,9 +178,10 @@ def test_status_shape_and_blocked_reasons() -> None:
         models = status_models(client)
 
     body = response.json()
-    assert set(body) == {"version", "policy", "providers"}
+    assert set(body) == {"version", "policy", "spend", "providers"}
     assert body["version"]
-    assert body["policy"] == {"allow_paid": False, "allow_training": False}
+    assert body["policy"] == {"allow_paid": False, "allow_training": False, "premium_reason": "pro only"}
+    assert body["spend"]["spent"] == 0 and body["spend"]["cap"] == 5.0
     providers = {p["platform"]: p for p in body["providers"]}
     assert set(providers) == {"alpha", "beta", "gamma", "delta", "zeta", "epsilon"}
     assert providers["alpha"] == {
@@ -202,18 +205,18 @@ def test_status_shape_and_blocked_reasons() -> None:
     assert models["beta/trainer"]["may_train_on_prompts"] is True
     assert models["beta/trainer"]["blocked_reason"] == "may train on prompts"
     assert models["gamma/paid-chat"]["free"] is False
-    assert models["gamma/paid-chat"]["blocked_reason"] == "paid"
+    assert models["gamma/paid-chat"]["blocked_reason"] == "pro only"
     assert models["zeta/z1"]["blocked_reason"] == "no key"
     assert not models["zeta/z1"]["allowed"]
 
 
 def test_status_follows_the_policy_flags() -> None:
     env = {**ENV, "ZHUNT_ALLOW_TRAINING": "1", "ZHUNT_ALLOW_PAID": "1"}
-    with workspace(AsyncMock(), env=env) as (client, _):
+    with workspace(AsyncMock(), env=env, plan=PRO) as (client, _):
         body = client.get("/zhunt/api/status", headers=headers()).json()
         models = status_models(client)
 
-    assert body["policy"] == {"allow_paid": True, "allow_training": True}
+    assert body["policy"] == {"allow_paid": True, "allow_training": True, "premium_reason": None}
     assert models["beta/trainer"]["allowed"] and models["gamma/paid-chat"]["allowed"]
 
 
@@ -424,7 +427,7 @@ def test_compare_blocks_what_policy_or_keys_exclude_without_calling_the_provider
     assert got["alpha/coder"]["ok"] is True
     for model_id, reason in [
         ("beta/trainer", "may train on prompts"),
-        ("gamma/paid-chat", "paid"),
+        ("gamma/paid-chat", "pro only"),
         ("epsilon/e1", "no key"),
     ]:
         assert got[model_id] == {
@@ -796,3 +799,21 @@ def test_a_users_own_theme_is_free_even_if_named_like_a_pack_theme() -> None:
 
     assert listed["nord"]["locked"] is False and listed["nord"]["builtin"] is False
     assert served.status_code == 200 and served.text == ":root{--bg:#abc}"
+
+
+def test_premium_needs_pro_and_the_opt_in_and_stops_at_the_cap() -> None:
+    opted_in = {**ENV, "ZHUNT_ALLOW_PAID": "1"}
+    with workspace(AsyncMock(), env=ENV, plan=PRO) as (client, _):
+        not_opted = client.get("/zhunt/api/status", headers=headers()).json()["policy"]
+    with workspace(AsyncMock(), env=opted_in) as (client, _):
+        free = client.get("/zhunt/api/status", headers=headers()).json()["policy"]
+    with workspace(AsyncMock(), env={**opted_in, "ZHUNT_MONTHLY_CAP": "1"}, plan=PRO) as (client, hook):
+        hook.spend.add("gamma/paid-chat", 1.25)
+        capped = client.get("/zhunt/api/status", headers=headers()).json()
+        paid = status_models(client)["gamma/paid-chat"]
+
+    assert not_opted == {"allow_paid": False, "allow_training": False, "premium_reason": "premium off"}
+    assert free["premium_reason"] == "pro only"  # the opt-in alone does not unlock it
+    assert capped["policy"]["premium_reason"] == "monthly cap reached"
+    assert capped["spend"]["spent"] == 1.25 and capped["spend"]["cap"] == 1.0
+    assert paid["blocked_reason"] == "monthly cap reached"

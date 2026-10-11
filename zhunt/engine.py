@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import os
 import random
 import re
@@ -13,13 +14,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Callable
 
 import litellm
 from fastapi import HTTPException
 from litellm.integrations.custom_logger import CustomLogger
 
-from zhunt import __version__
+from zhunt import __version__, licence
 from zhunt.adapters.base import (
     AdapterError,
     strip_thinking_blocks,
@@ -55,6 +56,7 @@ from zhunt.server import (
     _telemetry_wire_dialect,
     _usage_tokens,
 )
+from zhunt.spend import SpendLedger, cap_from_env, cost_of, month_of
 from zhunt.state import StateStore
 from zhunt.telemetry import TelemetryLogger
 
@@ -344,8 +346,19 @@ class EngineProxyHook(CustomLogger):
         *,
         telemetry: TelemetryLogger | None = None,
         summary: tuple[str, ...] = (),
+        spend: SpendLedger | None = None,
+        plan: Callable[[], licence.Plan] | None = None,
+        monthly_cap: float | None = None,
     ) -> None:
         self.summary = summary
+        # Premium (paid) models need Pro, the user's opt-in (ZHUNT_ALLOW_PAID) and
+        # headroom under the monthly cap; refresh_policy() combines them per request.
+        self._base_policy = selector.policy
+        self.spend = spend or SpendLedger()
+        self._plan = plan or (lambda: licence.current_plan())
+        self.monthly_cap = cap_from_env() if monthly_cap is None else monthly_cap
+        self._plan_cache: tuple[float, licence.Plan] | None = None
+        self.premium_reason: str | None = None
         self.coordinator = coordinator
         self.selector = selector
         self.quota = quota
@@ -370,6 +383,7 @@ class EngineProxyHook(CustomLogger):
 
         payload, headers = _original_request(data)
         _enforce_engine_routing(data, call_type)
+        self.refresh_policy()
         if isinstance(payload.get("input"), list):
             data["input"] = strip_thinking_blocks(system_first(payload["input"]))
         if isinstance(payload.get("messages"), list):
@@ -406,6 +420,8 @@ class EngineProxyHook(CustomLogger):
             )
         data["model"] = f"{provider.litellm_provider}/{candidate.model.model_id}"
         data["api_key"] = api_key
+        # fixed per-provider settings from the catalog (client copies were scrubbed above)
+        data.update(copy.deepcopy(dict(provider.request_params)))
         decision = replace(decision, model=candidate.model.id)
 
         call_id = _call_id(data)
@@ -519,6 +535,7 @@ class EngineProxyHook(CustomLogger):
         input_tokens, output_tokens = _usage_tokens(response)
         if input_tokens is not None and output_tokens is not None:
             self.quota.settle(pending.lease, input_tokens + output_tokens)
+            self._record_spend(model, input_tokens, output_tokens)
         if failure is None:
             self.coordinator.record_success(pending.decision)
             return
@@ -692,9 +709,39 @@ class EngineProxyHook(CustomLogger):
             matching = (d for d in newest_first if session is None or d["session"] == session)
             return [dict(d) for _, d in zip(range(limit), matching)]
 
+    def current_plan(self) -> licence.Plan:
+        """The licence plan, re-read at most every 15 s (activation needs no restart)."""
+
+        now = time.monotonic()
+        if self._plan_cache is None or now - self._plan_cache[0] > 15:
+            self._plan_cache = (now, self._plan())
+        return self._plan_cache[1]
+
+    def refresh_policy(self) -> None:
+        """Recompute whether premium models may be used for the next request."""
+
+        base = self._base_policy
+        if not self.current_plan().has("premium_fallback"):
+            reason: str | None = "pro only"
+        elif not base.allow_paid:
+            reason = "premium off"
+        elif self.spend.spent() >= self.monthly_cap:
+            reason = "monthly cap reached"
+        else:
+            reason = None
+        self.premium_reason = reason
+        self.selector.set_policy(
+            replace(base, allow_paid=reason is None, paid_block_reason=reason or "paid")
+        )
+
+    def _record_spend(self, model: CatalogModel, input_tokens: int, output_tokens: int) -> None:
+        if not model.free:
+            self.spend.add(model.id, cost_of(input_tokens, output_tokens, model.input_cost, model.output_cost))
+
     def status(self) -> dict[str, Any]:
         """Catalog, policy and live quota state. Reports whether a key is set, never it."""
 
+        self.refresh_policy()
         policy = self.selector.policy
         providers = []
         for provider in self.catalog.providers.values():
@@ -736,6 +783,12 @@ class EngineProxyHook(CustomLogger):
             "policy": {
                 "allow_paid": policy.allow_paid,
                 "allow_training": policy.allow_training,
+                "premium_reason": self.premium_reason,
+            },
+            "spend": {
+                "month": month_of(time.time()),
+                "spent": round(self.spend.spent(), 4),
+                "cap": self.monthly_cap,
             },
             "providers": providers,
         }
@@ -746,6 +799,7 @@ class EngineProxyHook(CustomLogger):
         """One prompt on several chosen models at once, bypassing routing but not
         the key, policy, quota or cooldown checks. Ids must exist in the catalog."""
 
+        self.refresh_policy()
         by_id = {model.id: model for model in self.catalog.models}
         estimate = (
             sum(len(text_content(m.get("content"))) for m in messages) // 4
@@ -788,6 +842,7 @@ class EngineProxyHook(CustomLogger):
                 api_key=api_key,
                 timeout=_COMPARE_TIMEOUT_SECONDS,
                 max_retries=0,
+                **copy.deepcopy(dict(provider.request_params)),
             )
         except Exception as error:
             self.quota.settle(lease, 0)
@@ -803,6 +858,7 @@ class EngineProxyHook(CustomLogger):
         input_tokens, output_tokens = _usage_tokens(response)
         if input_tokens is not None and output_tokens is not None:
             self.quota.settle(lease, input_tokens + output_tokens)
+            self._record_spend(model, input_tokens, output_tokens)
         return _compare_result(
             model.id,
             text=_reply_text(response),
@@ -882,7 +938,8 @@ def build_engine_hook(
     env = os.environ if env is None else env
     catalog = load_catalog(catalog_path)
     # Defaults to ~/.zhunt/state.db (or $ZHUNT_STATE_DB); memory-only if unusable.
-    quota = QuotaTracker(store=StateStore.open(state_path))
+    store = StateStore.open(state_path)
+    quota = QuotaTracker(store=store)
     # Thompson sampling: each pick draws from the posterior so a model with few
     # samples still gets tried. Pass a seeded ``rng`` for reproducible tests.
     reliability = Reliability(rng=rng or selection_rng())
@@ -900,6 +957,8 @@ def build_engine_hook(
             TelemetryLogger(telemetry_path, registry) if telemetry_path else None
         ),
         summary=describe(catalog, keys, policy),
+        spend=SpendLedger(store),
+        monthly_cap=cap_from_env(dict(env)),
     )
 
 
@@ -923,5 +982,7 @@ def describe(
             "(set ZHUNT_ALLOW_TRAINING=1 to allow them)"
         )
     if not policy.allow_paid:
-        lines.append("Free-tier engine: paid models are off (ZHUNT_ALLOW_PAID=1 to allow)")
+        lines.append(
+            "Free-tier engine: premium models are off (zhunt Pro, then `zhunt premium on`)"
+        )
     return tuple(lines)

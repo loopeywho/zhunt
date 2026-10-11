@@ -27,7 +27,8 @@ in `/zhunt/api/decisions` by that session id.
 ```json
 {
   "version": "0.1.0.dev0",
-  "policy": {"allow_paid": false, "allow_training": false},
+  "policy": {"allow_paid": false, "allow_training": false, "premium_reason": "pro only"},
+  "spend": {"month": "2026-10", "spent": 0.0, "cap": 5.0},
   "providers": [
     {
       "platform": "groq",
@@ -54,7 +55,11 @@ in `/zhunt/api/decisions` by that session id.
 ```
 
 `allowed` is false when policy or a missing key excludes the model;
-`blocked_reason` is then one of `"no key"`, `"may train on prompts"`, `"paid"`.
+`blocked_reason` is then one of `"no key"`, `"may train on prompts"`, or for a paid model
+the `premium_reason`: `"pro only"` (no Pro licence), `"premium off"` (Pro, but
+`zhunt premium on` was not run) or `"monthly cap reached"`. `premium_reason` is null
+while premium models are allowed. `spend` is this UTC month's premium spend (catalog
+prices x tokens) against `ZHUNT_MONTHLY_CAP` (USD, default 5).
 `cooldown_remaining` is seconds. Never include key values, only `key_set`.
 
 ## `GET /zhunt/api/decisions?limit=50&session=<id>`

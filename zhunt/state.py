@@ -1,5 +1,5 @@
 # Parts adapted from FreeLLMAPI (MIT, (c) 2026 Tashfeen Ahmed); see THIRD_PARTY_NOTICES.md
-"""SQLite persistence for quota usage, cooldowns and learned limits.
+"""SQLite persistence for quota usage, cooldowns, learned limits and premium spend.
 
 The quota tracker keeps working state in memory and writes through to this
 store, so a restart neither forgets today's usage (and overruns a daily cap) nor
@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS cooldowns (
     level INTEGER NOT NULL,
     source TEXT NOT NULL,
     PRIMARY KEY (model, key)
+);
+CREATE TABLE IF NOT EXISTS spend (
+    month TEXT NOT NULL,
+    model TEXT NOT NULL,
+    usd REAL NOT NULL,
+    PRIMARY KEY (month, model)
 );
 CREATE TABLE IF NOT EXISTS learned_limits (
     model TEXT NOT NULL,
@@ -134,6 +140,19 @@ class StateStore:
     def learned_limits(self) -> list[tuple[str, str, int]]:
         cursor = self._run("SELECT model, axis, value FROM learned_limits", ())
         return cursor.fetchall() if cursor is not None else []
+
+    def add_spend(self, month: str, model: str, usd: float) -> None:
+        self._run(
+            "INSERT INTO spend (month, model, usd) VALUES (?, ?, ?) "
+            "ON CONFLICT (month, model) DO UPDATE SET usd = usd + excluded.usd",
+            (month, model, usd),
+        )
+
+    def spend(self, month: str) -> float:
+        """Premium spend recorded for ``month`` (``YYYY-MM``, UTC). Never pruned."""
+
+        cursor = self._run("SELECT COALESCE(SUM(usd), 0) FROM spend WHERE month = ?", (month,))
+        return float(cursor.fetchone()[0]) if cursor is not None else 0.0
 
     def prune(self, now: float) -> None:
         self._last_prune = now

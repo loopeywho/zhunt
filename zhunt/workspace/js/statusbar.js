@@ -45,7 +45,7 @@ export function createStatusbar(root, { store }) {
     conn.textContent = snap.error ? 'offline' : 'online';
     conn.title = snap.error ? snap.error.message : 'connected to the zhunt daemon';
     if (!snap.data) { quota.textContent = ''; return; }
-    const models = (snap.data.providers || []).flatMap((p) => p.models || []);
+    const models = (snap.data.providers || []).flatMap((p) => p.models || []).filter((m) => m.free || snap.data.policy?.allow_paid);
     const usable = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0)).length;
     const keys = (snap.data.providers || []).filter((p) => p.key_set).length;
     quota.textContent = `${usable}/${models.length} usable  ${keys}/${(snap.data.providers || []).length} keys`;

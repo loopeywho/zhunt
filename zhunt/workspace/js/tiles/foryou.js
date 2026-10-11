@@ -27,13 +27,25 @@ export function buildCards(status, decisions, { openWindow, openPlan, plan = nul
   const providers = s.providers || [];
   for (const p of providers.filter((x) => !x.key_set)) {
     const n = (p.models || []).length;
+    if (n && p.models.every((m) => !m.free)) {
+      // a premium-only provider: only worth a card for Pro users
+      if (plan && plan.plan !== 'free') {
+        cards.push({
+          id: 'premium-key-' + p.platform, tone: 'accent', title: 'Connect premium models',
+          detail: `Pro can step up to ${n} premium models when every free model is busy. Add your paid ${p.name || p.platform} key, then turn it on with a monthly cap:`,
+          code: `zhunt keys add ${p.platform} && zhunt premium on --cap 5`, actions: [],
+        });
+      }
+      continue;
+    }
     cards.push({
       id: 'key-' + p.platform, tone: 'accent', title: `Add your free ${p.name || p.platform} key`,
       detail: `${n} free model${n === 1 ? '' : 's'} ready to use once zhunt has a key. Run this in a terminal (the key is typed there, never here):`,
       code: `zhunt keys add ${p.platform}`, actions: [],
     });
   }
-  const models = providers.flatMap((p) => p.models || []);
+  // premium models only count while premium is allowed
+  const models = providers.flatMap((p) => p.models || []).filter((m) => m.free || s.policy?.allow_paid);
   const cooling = models.filter((m) => m.allowed && m.cooldown_remaining > 0)
     .sort((a, b) => a.cooldown_remaining - b.cooldown_remaining);
   if (cooling.length) {

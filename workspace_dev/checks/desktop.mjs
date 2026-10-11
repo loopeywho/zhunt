@@ -13,7 +13,7 @@ const { skyFor } = await import(pathToFileURL(path.join(dir, 'desktop.js')).href
 let fail = 0;
 const check = (name, ok, extra = '') => { if (!ok) fail += 1; console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : '  ' + extra)); };
 const now = 1_760_000_000_000;
-const model = (id, over = {}) => ({ id, allowed: true, cooldown_remaining: 0, headroom: 0.9, blocked_reason: null, ...over });
+const model = (id, over = {}) => ({ id, free: true, allowed: true, cooldown_remaining: 0, headroom: 0.9, blocked_reason: null, ...over });
 const status = (providers, policy = {}) => ({ data: { policy, providers }, error: null, at: now });
 const ids = (cards) => cards.map((c) => c.id.replace(/-\d+$/, ''));
 const opts = { openWindow() {}, now };
@@ -82,6 +82,14 @@ const opts = { openWindow() {}, now };
   const s2 = status([{ platform: 'groq', name: 'Groq', key_set: true, models: [model('groq/a')] }]);
   check('free users see Pro after requests found no model', ids(buildCards(s2, failed, { ...opts, plan: { plan: 'free' } })).includes('upsell'));
   check('Pro users are not upsold', !ids(buildCards(s2, failed, { ...opts, plan: { plan: 'pro' } })).includes('upsell'));
+}
+{
+  const premium = { platform: 'openrouter', name: 'OpenRouter', key_set: false, models: [model('openrouter/x', { free: false, allowed: false, blocked_reason: 'pro only' })] };
+  const free = { platform: 'groq', name: 'Groq', key_set: true, models: [model('groq/a')] };
+  const freeUser = ids(buildCards(status([free, premium]), { data: [] }, { ...opts, plan: { plan: 'free' } }));
+  const proUser = buildCards(status([free, premium]), { data: [] }, { ...opts, plan: { plan: 'pro' } });
+  check('Free users get no card for a premium-only provider', !freeUser.some((i) => i.startsWith('key-') || i.startsWith('premium-key')), freeUser.join());
+  check('Pro users are shown how to connect premium models', proUser[0].id === 'premium-key-openrouter' && /zhunt premium on/.test(proUser[0].code));
 }
 check('sky follows the hour', [4, 6, 12, 18, 22].map(skyFor).join() === 'night,dawn,day,dusk,night');
 

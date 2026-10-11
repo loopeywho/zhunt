@@ -115,8 +115,16 @@ def test_packaged_catalog_covers_every_tier_with_tool_capable_models() -> None:
         "groq",
         "google",
         "cerebras",
+        "openrouter",
     }
-    assert all(m.free for m in catalog.models)
+    # premium models live only on the Pro-only OpenRouter entry, which refuses data collection
+    paid = [m for m in catalog.models if not m.free]
+    assert paid and all(m.platform == "openrouter" for m in paid)
+    assert catalog.providers["openrouter"].request_params == {
+        "extra_body": {"provider": {"data_collection": "deny"}}
+    }
+    for tier in Tier:
+        assert any(m.free for m in catalog.models_for_tier(tier)), f"no free model for {tier.value}"
     assert registry_from_catalog(catalog).model_ids()
 
 
@@ -497,3 +505,85 @@ def test_a_spent_google_daily_quota_benches_until_pacific_midnight() -> None:
 
     expected = seconds_until_midnight(time.time(), "America/Los_Angeles")
     assert remaining == pytest.approx(expected, abs=5)
+
+
+# -- premium fallback (Pro) ------------------------------------------------
+
+PRO_PLAN = __import__("zhunt.licence", fromlist=["Plan"]).Plan(
+    name="pro", features=frozenset({"premium_fallback", "theme_pack"}), expires_at=2e9
+)
+
+
+def premium_catalog() -> dict:
+    """One free model and one premium model whose provider refuses data collection."""
+
+    return {
+        "providers": {
+            "alpha": provider([model("free-chat", ["chat"], intelligence=40, speed=90)]),
+            "router": provider(
+                [model("premium", ["chat"], intelligence=95, speed=60, **{"in": 0.001, "out": 0.002})],
+                key_env="ROUTER_API_KEY",
+                request_params={"extra_body": {"provider": {"data_collection": "deny"}}},
+            ),
+        }
+    }
+
+
+def usage_reply() -> litellm.ModelResponse:
+    response = ok()
+    response.usage = litellm.Usage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+    return response
+
+
+def test_premium_takes_over_when_free_models_fail_and_its_cost_is_recorded() -> None:
+    def answer(**kwargs):
+        if kwargs["model"].endswith("free-chat"):
+            raise provider_error()
+        return usage_reply()
+
+    call = AsyncMock(side_effect=answer)
+    env = {"FAKE_API_KEY": "free-key", "ROUTER_API_KEY": "paid-key", "ZHUNT_ALLOW_PAID": "1"}
+    with patch("zhunt.licence.current_plan", return_value=PRO_PLAN), daemon(
+        call, env=env, catalog=premium_catalog()
+    ) as (client, hook):
+        response = post(client)
+        spent = hook.spend.spent()
+
+    assert response.status_code == 200
+    paid_call = call.await_args.kwargs
+    assert paid_call["model"].endswith("premium") and paid_call["api_key"] == "paid-key"
+    assert paid_call["extra_body"] == {"provider": {"data_collection": "deny"}}
+    assert spent == pytest.approx(100 * 0.001 + 50 * 0.002)
+
+
+def test_without_pro_a_failing_free_model_is_a_503_not_a_paid_call() -> None:
+    call = AsyncMock(side_effect=provider_error())
+    env = {"FAKE_API_KEY": "free-key", "ROUTER_API_KEY": "paid-key", "ZHUNT_ALLOW_PAID": "1"}
+    with daemon(call, env=env, catalog=premium_catalog()) as (client, hook):
+        response = post(client)
+        spent = hook.spend.spent()
+
+    assert response.status_code == 503
+    assert all(not c.kwargs["model"].endswith("premium") for c in call.await_args_list)
+    assert spent == 0
+
+
+def test_premium_stops_at_the_monthly_cap() -> None:
+    call = AsyncMock(side_effect=provider_error())
+    env = {"FAKE_API_KEY": "k", "ROUTER_API_KEY": "paid-key", "ZHUNT_ALLOW_PAID": "1", "ZHUNT_MONTHLY_CAP": "0.5"}
+    with patch("zhunt.licence.current_plan", return_value=PRO_PLAN), daemon(
+        call, env=env, catalog=premium_catalog()
+    ) as (client, hook):
+        hook.spend.add("router/premium", 0.6)
+        response = post(client)
+
+    assert response.status_code == 503
+    assert all(not c.kwargs["model"].endswith("premium") for c in call.await_args_list)
+
+
+def test_client_supplied_extra_body_never_reaches_the_provider() -> None:
+    call = AsyncMock(return_value=ok())
+    with daemon(call, env={"FAKE_API_KEY": "k"}) as (client, _):
+        post(client, {**CHAT, "extra_body": {"provider": {"data_collection": "allow"}}})
+
+    assert "extra_body" not in call.await_args.kwargs

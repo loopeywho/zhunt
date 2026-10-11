@@ -137,6 +137,8 @@ class Penalties:
 class SelectionPolicy:
     allow_paid: bool = False
     allow_training: bool = False
+    # what status reports for a paid model while allow_paid is off
+    paid_block_reason: str = "paid"
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,9 @@ class Selector:
     def policy(self) -> SelectionPolicy:
         return self._policy
 
+    def set_policy(self, policy: SelectionPolicy) -> None:
+        self._policy = policy
+
     def key_ids(self, platform: str) -> tuple[str, ...]:
         return self._keys.get(platform, ())
 
@@ -190,7 +195,7 @@ class Selector:
         if model.may_train_on_prompts and not self._policy.allow_training:
             return "may train on prompts"
         if not model.free and not self._policy.allow_paid:
-            return "paid"
+            return self._policy.paid_block_reason
         return None
 
     def ranked(

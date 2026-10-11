@@ -48,7 +48,7 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
       pulse.className = 'top-pulse' + (snap.error ? ' bad' : '');
       return;
     }
-    const models = (snap.data.providers || []).flatMap((p) => p.models || []);
+    const models = (snap.data.providers || []).flatMap((p) => p.models || []).filter((m) => m.free || snap.data.policy?.allow_paid);
     const usable = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0)).length;
     pulse.textContent = `${usable} free model${usable === 1 ? '' : 's'} ready`;
     pulse.className = 'top-pulse' + (snap.error ? ' bad' : usable ? ' ok' : ' warn');
