@@ -77,7 +77,7 @@ def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None,
             (static_dir / "index.html").write_text("<h1>workspace</h1>")
             (static_dir / "css" / "themes" / "dark.css").write_text(":root{--bg:#000}")
             (static_dir / "css" / "themes" / "light.css").write_text(":root{--bg:#fff}")
-        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env")
+        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env", bots=root / "home" / "bots")
         with patch.dict(os.environ, {**dict.fromkeys(ENV_NAMES, ""), **env}), patch(
             "litellm.acompletion", call
         ), patch("zhunt.workspace_api.current_plan", return_value=plan or FREE), patch(
@@ -868,3 +868,27 @@ def test_the_training_switch_unlocks_may_train_providers_and_is_saved() -> None:
     assert before == "may train on prompts" and on.json() == {"allow_training": True}
     assert after is True and 'ZHUNT_ALLOW_TRAINING="1"' in saved
     assert bad.status_code == 400 and off == "may train on prompts"
+
+
+def test_bots_are_plain_json_files_that_round_trip_and_are_validated() -> None:
+    import stat
+
+    bot = {"name": "Researcher", "instructions": "Find facts.", "alias": "zhunt-reasoning", "color": "#7AA2F7"}
+    with workspace(AsyncMock(), env=ENV) as (client, _):
+        saved = client.put("/zhunt/api/bots/researcher", headers=headers(), json=bot)
+        listed = client.get("/zhunt/api/bots", headers=headers()).json()
+        path = client.dirs.bots / "researcher.json"
+        mode = stat.S_IMODE(path.stat().st_mode)
+        (client.dirs.bots / "broken.json").write_text("{not json")
+        still = client.get("/zhunt/api/bots", headers=headers()).json()
+        bad_alias = client.put("/zhunt/api/bots/x", headers=headers(), json={**bot, "alias": "gpt-5"})
+        bad_handle = client.put("/zhunt/api/bots/Bad%20Name", headers=headers(), json=bot)
+        no_name = client.put("/zhunt/api/bots/y", headers=headers(), json={**bot, "name": " "})
+        deleted = client.delete("/zhunt/api/bots/researcher", headers=headers())
+        after = client.get("/zhunt/api/bots", headers=headers()).json()
+
+    assert saved.json() == {"handle": "researcher", "name": "Researcher", "instructions": "Find facts.", "alias": "zhunt-reasoning", "color": "#7aa2f7"}
+    assert listed == {"bots": [saved.json()]} and mode == 0o600
+    assert [b["handle"] for b in still["bots"]] == ["researcher"]  # a broken hand edit is skipped
+    assert bad_alias.status_code == 400 and bad_handle.status_code == 400 and no_name.status_code == 400
+    assert deleted.status_code == 200 and after == {"bots": []}

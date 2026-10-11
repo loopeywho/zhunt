@@ -14,7 +14,7 @@ export function skyFor(hour) {
   return 'night';
 }
 
-const SHORT = { chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing', providers: 'Providers', logs: 'Logs', connect: 'Connect' };
+const SHORT = { chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing', providers: 'Providers', logs: 'Logs', connect: 'Connect', team: 'Team' };
 
 export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays, toast, openPalette }) {
   const clock = h('span', { class: 'top-clock' });

@@ -12,7 +12,7 @@ import * as T from './tree.js';
 
 const NARROW_PX = 640;   // below this only the focused tile is shown (like a zoomed tile)
 const MIN_TILE_PX = 110; // dragging a divider cannot squeeze a tile below this
-const LABELS = { foryou: 'for you', connect: 'connect models' }; // window titles that differ from the kind id
+const LABELS = { foryou: 'for you', connect: 'connect models', team: 'team chat' }; // window titles that differ from the kind id
 const MIN_WIN_W = 240;   // floating windows cannot be resized smaller than this
 const MIN_WIN_H = 150;
 
@@ -27,6 +27,7 @@ const SLOTS = {
   compare: { x: 0.18, y: 0.06, w: 0.64, h: 0.82 },
   logs: { x: 0.14, y: 0.48, w: 0.72, h: 0.48 },
   connect: { x: 0.3, y: 0.06, w: 0.4, h: 0.86 },
+  team: { x: 0.2, y: 0.04, w: 0.6, h: 0.92 },
 };
 
 export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {

@@ -54,8 +54,12 @@ in the top bar (or `Ctrl+Space g`):
 - **Tiled** (after Omarchy / Hyprland): the same windows fill the screen in a split grid,
   driven from the keyboard.
 
-Both styles share the same windows (Chat, For you, Panels, Compare, Routing, Providers,
-Logs), so switching keeps every conversation and half-typed message. *For you* shows cards
+Both styles share the same windows (Chat, Team chat, For you, Panels, Compare, Routing,
+Providers, Logs, Connect), so switching keeps every conversation and half-typed message.
+**Team chat** puts several bots in one conversation: each has its own instructions and
+preferred model type, you @mention one, and they hand work to each other with @mentions
+(bots are JSON files in `~/.zhunt/bots/`). **Connect** adds free keys without a terminal,
+and the chat mic uses Groq's free Whisper for voice input. *For you* shows cards
 for what needs attention (a missing free key, a model resting after its limit, requests
 zhunt rescued by failing over) with one-tap actions; *Panels* are small dashboards you can
 reorder or hide.

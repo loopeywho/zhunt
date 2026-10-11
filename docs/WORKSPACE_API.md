@@ -138,6 +138,16 @@ contains the key. 400 for a value that is not one printable line of 8-512 charac
 404 for an unknown provider. `DELETE` removes it. `/status` providers carry `key_url`
 (where to get a key) and `free_note` (one plain-language line) from the catalog.
 
+## Bots: `GET /zhunt/api/bots`, `PUT|DELETE /zhunt/api/bots/{handle}`
+
+Team chat bots, one JSON file each in `~/.zhunt/bots/<handle>.json` (mode 0600, editable
+by hand): `{"handle", "name" (1-40 chars), "instructions" (<= 4000), "alias" (a zhunt-*
+tier alias), "color" ("#rrggbb")}`. A file that no longer parses is skipped by `GET`.
+Orchestration runs in the workspace: each bot turn is an ordinary routed
+`/v1/chat/completions` call with the bot's instructions and the team roster as the system
+message; an @mention of a teammate in a reply queues that teammate, up to 6 bot turns per
+user message.
+
 ## Plan: `GET /zhunt/api/plan`
 
 ```json

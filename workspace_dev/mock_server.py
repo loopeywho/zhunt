@@ -52,6 +52,12 @@ FEATURE_LABELS = {
     "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
 }
 LOCK = threading.Lock()
+BOTS = {}
+TEAM = {
+    "researcher": "Three free options: **Obsidian** (local files), **Joplin** (open source, own sync), **Notion** free plan (easy sharing).\n\n@writer can you turn this into a short recommendation?",
+    "writer": "**Pick Joplin for the simplest free start.** Obsidian if you like plugins, Notion if you share a lot.\n\n@critic does this read clearly?",
+    "critic": "Clear. One fix: mention that Obsidian sync costs extra.",
+}
 DECISIONS = []  # newest last; served newest first
 COOLDOWNS = {"cerebras/gpt-oss-120b": time.time() + 47}
 
@@ -232,6 +238,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._layouts("list", None)
         if u.path.startswith("/zhunt/api/layouts/"):
             return self._layouts("get", u.path.rsplit("/", 1)[1])
+        if u.path == "/zhunt/api/bots":
+            return self._send(200, {"bots": [BOTS[k] for k in sorted(BOTS)]})
         if u.path == "/zhunt/api/plan":
             pro = STATE["plan"] == "pro"
             return self._send(200, {
@@ -250,6 +258,14 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path.startswith("/zhunt/api/layouts/") and self._authed():
             return self._layouts("put", u.path.rsplit("/", 1)[1])
+        if u.path.startswith("/zhunt/api/bots/") and self._authed():
+            handle = u.path.rsplit("/", 1)[1]
+            body = self._json_body() or {}
+            if not NAME_RE.match(handle) or not str(body.get("name", "")).strip():
+                return self._send(400, {"detail": "a bot needs a handle and a name"})
+            BOTS[handle] = {"handle": handle, "name": str(body["name"]).strip(), "instructions": str(body.get("instructions", "")),
+                            "alias": body.get("alias", "zhunt-auto"), "color": body.get("color", "#7aa2f7")}
+            return self._send(200, BOTS[handle])
         if u.path == "/zhunt/api/policy/training" and self._authed():
             allow = (self._json_body() or {}).get("allow")
             if not isinstance(allow, bool):
@@ -262,6 +278,9 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path.startswith("/zhunt/api/layouts/") and self._authed():
             return self._layouts("delete", u.path.rsplit("/", 1)[1])
+        if u.path.startswith("/zhunt/api/bots/") and self._authed():
+            BOTS.pop(u.path.rsplit("/", 1)[1], None)
+            return self._send(200, {"handle": u.path.rsplit("/", 1)[1]})
         if u.path.startswith("/zhunt/api/keys/") and self._authed():
             prov = next((p for p in CATALOG if p["platform"] == u.path.rsplit("/", 1)[1]), None)
             if prov is None:
@@ -409,6 +428,10 @@ class Handler(BaseHTTPRequestHandler):
         model = pool[0]["id"]
 
         words = words_for(prompt, model, tier)
+        system = str(msgs[0].get("content", "")) if msgs and msgs[0].get("role") == "system" else ""
+        bot = re.search(r"\(@([a-z0-9_-]+)\)", system)
+        if bot:
+            words = TEAM.get(bot.group(1), f"I am @{bot.group(1)}, a mock bot.").split(" ")
         if body.get("stream"):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")

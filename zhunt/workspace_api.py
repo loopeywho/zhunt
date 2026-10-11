@@ -20,6 +20,10 @@ from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
 
 MAX_LAYOUT_BYTES = 64 * 1024
+# Team chat bots: plain JSON files, one per bot, editable by hand.
+BOT_ALIASES = ("zhunt-auto", "zhunt-chat", "zhunt-coding", "zhunt-long-context", "zhunt-reasoning")
+MAX_BOT_INSTRUCTIONS = 4000
+_COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 MAX_COMPARE_MODELS = 4
 MAX_COMPARE_BYTES = 1024 * 1024
 # Voice input: Groq's free Whisper, on the user's own Groq key.
@@ -40,6 +44,7 @@ class WorkspaceDirs:
 
     layouts: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "layouts")
     env_file: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "env")
+    bots: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "bots")
     themes: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "themes")
     static: Path = Path(__file__).parent / "workspace"
 
@@ -231,6 +236,31 @@ def build_router(
             raise HTTPException(404, f"no layout named {name!r}") from None
         return {"name": name}
 
+    @router.get("/bots")
+    def list_bots() -> dict[str, Any]:
+        bots = []
+        for handle in _names(dirs.bots, ".json"):
+            try:
+                bots.append(_bot(handle, json.loads((dirs.bots / f"{handle}.json").read_text(encoding="utf-8"))))
+            except (ValueError, HTTPException):
+                continue  # a hand-edited file that no longer parses is skipped, not fatal
+        return {"bots": bots}
+
+    @router.put("/bots/{handle}")
+    async def put_bot(handle: str, request: Request) -> dict[str, Any]:
+        path = _path(dirs.bots, handle, ".json")
+        bot = _bot(handle, await _json_body(request, limit=16 * 1024))
+        _write_private(path, json.dumps(bot, indent=2).encode())
+        return bot
+
+    @router.delete("/bots/{handle}")
+    def delete_bot(handle: str) -> dict[str, Any]:
+        try:
+            _path(dirs.bots, handle, ".json").unlink()
+        except FileNotFoundError:
+            raise HTTPException(404, f"no bot named {handle!r}") from None
+        return {"handle": handle}
+
     @router.get("/themes")
     def list_themes() -> dict[str, Any]:
         user = set(_names(dirs.themes, ".css"))
@@ -257,6 +287,26 @@ def build_router(
         raise HTTPException(404, f"no theme named {name!r}")
 
     return router
+
+
+def _bot(handle: str, body: Any) -> dict[str, Any]:
+    """A clean bot record from untrusted JSON (the PUT body or a hand-edited file)."""
+
+    if not isinstance(body, dict):
+        raise HTTPException(400, "a bot must be a JSON object")
+    name = body.get("name")
+    instructions = body.get("instructions", "")
+    alias = body.get("alias", "zhunt-auto")
+    color = body.get("color", "#7aa2f7")
+    if not isinstance(name, str) or not 0 < len(name.strip()) <= 40:
+        raise HTTPException(400, "a bot needs a name of 1-40 characters")
+    if not isinstance(instructions, str) or len(instructions) > MAX_BOT_INSTRUCTIONS:
+        raise HTTPException(400, f"instructions must be text of at most {MAX_BOT_INSTRUCTIONS} characters")
+    if alias not in BOT_ALIASES:
+        raise HTTPException(400, f"alias must be one of {', '.join(BOT_ALIASES)}")
+    if not isinstance(color, str) or not _COLOR.fullmatch(color):
+        raise HTTPException(400, "color must look like #7aa2f7")
+    return {"handle": handle, "name": name.strip(), "instructions": instructions, "alias": alias, "color": color.lower()}
 
 
 def _compare_request(body: Any) -> tuple[list[dict[str, Any]], list[str]]:

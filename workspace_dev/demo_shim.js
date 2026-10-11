@@ -27,6 +27,7 @@
   var COOLDOWN = { 'cerebras/gpt-oss-120b': now() + 47 };
   var DECISIONS = [];
   var LAYOUTS = {};
+  var BOTS = {};
   var PLAN = 'free';
   var ALLOW_TRAINING = false;
   var THEMES = ['catppuccin', 'catppuccin-latte', 'dark', 'everforest', 'flexoki-light', 'gruvbox', 'kanagawa', 'light', 'matte-black', 'nord', 'rose-pine', 'tokyo-night'];
@@ -100,6 +101,18 @@
     return 'This is the **zhunt demo**, so this reply is scripted. In the real app, zhunt would send your message to `' + model + '` (a free model it picked for the `' + tier + '` tier) and stream its answer here.\n\nTry one of the suggestion buttons, or type **failover** to watch zhunt switch models when one hits its limit. To get real answers, install zhunt and add a free Groq key: it takes about a minute.';
   }
 
+  // team chat: a bot's reply depends on which bot is speaking (named in its system prompt)
+  var TEAM = {
+    researcher: 'Three free options worth a look:\n\n- **Obsidian**: local Markdown files, huge plugin library, free for personal use.\n- **Joplin**: open source, syncs through your own cloud, has a web clipper.\n- **Notion (free plan)**: easiest to share, but your notes live on their servers.\n\n@writer can you turn this into a short recommendation for a beginner?',
+    writer: '**If you want the simplest start, pick Joplin.** It is free, open source and syncs through a cloud you already use. Choose **Obsidian** if you like tinkering with plugins, and **Notion** if you mostly share notes with others.\n\n@critic does this read clearly?',
+    critic: 'Clear and fair. One fix: say that Obsidian sync costs extra (the app itself is free), so a beginner is not surprised. Otherwise ready to send.',
+  };
+  function teamReply(system) {
+    var m = /\(@([a-z0-9_-]+)\)/.exec(system || '');
+    if (!m) return null;
+    return TEAM[m[1]] || 'I am @' + m[1] + ', a bot you made. In the real app I answer with a free model chosen for my job.';
+  }
+
   function json(status, body) { return new Response(JSON.stringify(body), { status: status, headers: { 'content-type': 'application/json' } }); }
   function sseStream(model, text, onDone) {
     var words = text.split(/(\s+)/);
@@ -138,7 +151,8 @@
     var pool = usable(tier);
     if (!pool.length) pool = usable('chat');
     var model = pool[0].id;
-    var text = /failover/i.test(prompt)
+    var team = msgs.length && msgs[0].role === 'system' ? teamReply(msgs[0].content) : null;
+    var text = team ? team : /failover/i.test(prompt)
       ? 'The first model zhunt tried (`cerebras/gpt-oss-120b`) answered **429 rate limited**, so zhunt rested it and retried on `' + model + '` before you saw an error. The line under this reply shows both attempts; the Routing window explains why each model was chosen.'
       : replyFor(prompt, model, tier);
     var inTok = Math.max(1, Math.round(prompt.length / 4));
@@ -195,6 +209,16 @@
     if (rest === 'transcribe') {
       // demo: the recording is ignored (never uploaded); a fixed sentence comes back
       return new Promise(function (resolve) { setTimeout(function () { resolve(json(200, { text: 'Write a regex for UK postcodes' })); }, 700); });
+    }
+    if (rest === 'bots') return Promise.resolve(json(200, { bots: Object.keys(BOTS).sort().map(function (k) { return BOTS[k]; }) }));
+    if (rest.indexOf('bots/') === 0) {
+      var handle = decodeURIComponent(rest.slice(5));
+      if (method === 'DELETE') { delete BOTS[handle]; return Promise.resolve(json(200, { handle: handle })); }
+      if (method === 'PUT') {
+        if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(handle) || !body || !String(body.name || '').trim()) return Promise.resolve(json(400, { detail: 'a bot needs a handle and a name' }));
+        BOTS[handle] = { handle: handle, name: String(body.name).trim(), instructions: String(body.instructions || ''), alias: body.alias || 'zhunt-auto', color: body.color || '#7aa2f7' };
+        return Promise.resolve(json(200, BOTS[handle]));
+      }
     }
     if (rest === 'layouts') return Promise.resolve(json(200, { layouts: Object.keys(LAYOUTS).filter(function (n) { return n !== 'last'; }) }));
     if (rest.indexOf('layouts/') === 0) {
