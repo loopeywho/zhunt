@@ -206,3 +206,11 @@
 .team-field .connect-input { flex: none; font-family: var(--font-prose); font-size: 13.5px; }
 .team-instructions { resize: vertical; min-height: 90px; }
 .team-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.bot-avatar { display: inline-grid; place-items: center; flex: none; border-radius: 50%; object-fit: cover; vertical-align: middle; }
+.bot-avatar.initials { background: var(--bot, var(--accent)); color: #0b0d10; font: 700 10px/1 var(--font-prose); }
+.bot-avatar.initials.big { width: 96px; height: 96px; font-size: 30px; }
+.team-chip { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.team-role { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.team-picture-block { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.team-picture img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-strong); }
+.team-picture-tools { flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px; }

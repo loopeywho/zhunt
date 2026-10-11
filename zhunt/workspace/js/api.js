@@ -105,6 +105,15 @@ export const api = {
     list: () => request('/zhunt/api/bots'),
     put: (handle, bot) => request('/zhunt/api/bots/' + encodeURIComponent(handle), { method: 'PUT', json: bot }),
     remove: (handle) => request('/zhunt/api/bots/' + encodeURIComponent(handle), { method: 'DELETE' }),
+    avatar: (handle) => request('/zhunt/api/bots/' + encodeURIComponent(handle) + '/avatar'),
+    setAvatar: (handle, image) => request('/zhunt/api/bots/' + encodeURIComponent(handle) + '/avatar', { method: 'PUT', json: { image } }),
+    removeAvatar: (handle) => request('/zhunt/api/bots/' + encodeURIComponent(handle) + '/avatar', { method: 'DELETE' }),
+  },
+  images: {
+    status: () => request('/zhunt/api/images/status'),
+    connect: (account_id, token) => request('/zhunt/api/images/connect', { method: 'PUT', json: { account_id, token } }),
+    disconnect: () => request('/zhunt/api/images/connect', { method: 'DELETE' }),
+    generate: (prompt) => request('/zhunt/api/images', { method: 'POST', json: { prompt } }),
   },
   setTraining: (allow) => request('/zhunt/api/policy/training', { method: 'PUT', json: { allow } }),
   decisions: ({ limit = 50, session } = {}, signal) => {

@@ -1,3 +1,4 @@
+import httpx
 from types import SimpleNamespace
 """Workspace API (docs/WORKSPACE_API.md) driven through the real daemon app."""
 
@@ -888,7 +889,69 @@ def test_bots_are_plain_json_files_that_round_trip_and_are_validated() -> None:
         after = client.get("/zhunt/api/bots", headers=headers()).json()
 
     assert saved.json() == {"handle": "researcher", "name": "Researcher", "instructions": "Find facts.", "alias": "zhunt-reasoning", "color": "#7aa2f7"}
-    assert listed == {"bots": [saved.json()]} and mode == 0o600
+    assert listed == {"bots": [{**saved.json(), "avatar": False}]} and mode == 0o600
     assert [b["handle"] for b in still["bots"]] == ["researcher"]  # a broken hand edit is skipped
     assert bad_alias.status_code == 400 and bad_handle.status_code == 400 and no_name.status_code == 400
     assert deleted.status_code == 200 and after == {"bots": []}
+
+
+ACCOUNT = "0123456789abcdef0123456789abcdef"
+CF_TOKEN = "cf-token-abcdefghijklmnopqrstuvwxyz"
+
+
+def cloudflare_reply(status=200, image=b"\xff\xd8\xffjpeg"):
+    import base64 as b64
+
+    body = {"result": {"image": b64.b64encode(image).decode()}, "success": True} if status == 200 else {"errors": [{"message": f"bad {CF_TOKEN}"}]}
+    return httpx.Response(status, json=body, request=httpx.Request("POST", "https://api.cloudflare.com/x"))
+
+
+def test_ai_pictures_need_cloudflare_connected_and_use_the_users_account() -> None:
+    post = AsyncMock(return_value=cloudflare_reply())
+    with patch("httpx.AsyncClient.post", post), workspace(AsyncMock(), env=ENV) as (client, _):
+        before = client.post("/zhunt/api/images", headers=headers(), json={"prompt": "a fox"})
+        bad = client.put("/zhunt/api/images/connect", headers=headers(), json={"account_id": "nope", "token": CF_TOKEN})
+        ok = client.put("/zhunt/api/images/connect", headers=headers(), json={"account_id": ACCOUNT, "token": CF_TOKEN})
+        status = client.get("/zhunt/api/images/status", headers=headers()).json()
+        made = client.post("/zhunt/api/images", headers=headers(), json={"prompt": "a friendly fox avatar"})
+        saved = client.dirs.env_file.read_text()
+
+    assert before.status_code == 409 and "Connect" in before.json()["detail"]
+    assert bad.status_code == 400 and ok.json() == {"connected": True} and status["connected"] is True
+    assert made.status_code == 200 and made.json()["image"].startswith("data:image/jpeg;base64,")
+    url = post.await_args.args[0]
+    assert ACCOUNT in url and url.endswith("@cf/black-forest-labs/flux-1-schnell")
+    assert post.await_args.kwargs["headers"]["Authorization"] == f"Bearer {CF_TOKEN}"
+    assert f'CLOUDFLARE_API_TOKEN="{CF_TOKEN}"' in saved and CF_TOKEN not in made.text
+
+
+def test_cloudflare_errors_never_show_the_token() -> None:
+    env = {**ENV, "CLOUDFLARE_ACCOUNT_ID": ACCOUNT, "CLOUDFLARE_API_TOKEN": CF_TOKEN}
+    with patch("httpx.AsyncClient.post", AsyncMock(return_value=cloudflare_reply(400))), workspace(AsyncMock(), env=env) as (client, _):
+        failed = client.post("/zhunt/api/images", headers=headers(), json={"prompt": "x"})
+    with patch("httpx.AsyncClient.post", AsyncMock(return_value=cloudflare_reply(429))), workspace(AsyncMock(), env=env) as (client, _):
+        limited = client.post("/zhunt/api/images", headers=headers(), json={"prompt": "x"})
+
+    assert failed.status_code == 502 and CF_TOKEN not in failed.text
+    assert limited.status_code == 429
+
+
+def test_bot_pictures_round_trip_and_are_checked() -> None:
+    import base64 as b64
+
+    png = "data:image/png;base64," + b64.b64encode(b"\x89PNG fake").decode()
+    bot = {"name": "Writer", "instructions": "", "alias": "zhunt-chat", "color": "#9ece6a"}
+    with workspace(AsyncMock(), env=ENV) as (client, _):
+        client.put("/zhunt/api/bots/writer", headers=headers(), json=bot)
+        missing = client.get("/zhunt/api/bots/writer/avatar", headers=headers())
+        put = client.put("/zhunt/api/bots/writer/avatar", headers=headers(), json={"image": png})
+        listed = client.get("/zhunt/api/bots", headers=headers()).json()["bots"][0]["avatar"]
+        got = client.get("/zhunt/api/bots/writer/avatar", headers=headers()).json()["image"]
+        svg = client.put("/zhunt/api/bots/writer/avatar", headers=headers(), json={"image": "data:image/svg+xml;base64,PHN2Zz4="})
+        client.delete("/zhunt/api/bots/writer/avatar", headers=headers())
+        gone = client.get("/zhunt/api/bots/writer/avatar", headers=headers())
+
+    assert missing.status_code == 404 and put.json() == {"handle": "writer", "avatar": True}
+    assert listed is True and got == png
+    assert svg.status_code == 400  # SVG can carry script: not accepted
+    assert gone.status_code == 404

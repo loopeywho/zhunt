@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -15,6 +16,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from zhunt.auth import remove_env_value, save_env_value
+from zhunt import images
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
@@ -24,6 +26,9 @@ MAX_LAYOUT_BYTES = 64 * 1024
 BOT_ALIASES = ("zhunt-auto", "zhunt-chat", "zhunt-coding", "zhunt-long-context", "zhunt-reasoning")
 MAX_BOT_INSTRUCTIONS = 4000
 _COLOR = re.compile(r"#[0-9a-fA-F]{6}")
+MAX_AVATAR_BYTES = 2 * 1024 * 1024
+_DATA_URL = re.compile(r"data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)")
+_AVATAR_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_COMPARE_MODELS = 4
 MAX_COMPARE_BYTES = 1024 * 1024
 # Voice input: Groq's free Whisper, on the user's own Groq key.
@@ -241,7 +246,9 @@ def build_router(
         bots = []
         for handle in _names(dirs.bots, ".json"):
             try:
-                bots.append(_bot(handle, json.loads((dirs.bots / f"{handle}.json").read_text(encoding="utf-8"))))
+                bot = _bot(handle, json.loads((dirs.bots / f"{handle}.json").read_text(encoding="utf-8")))
+                bot["avatar"] = any((dirs.bots / f"{handle}{ext}").is_file() for ext in _AVATAR_EXT.values())
+                bots.append(bot)
             except (ValueError, HTTPException):
                 continue  # a hand-edited file that no longer parses is skipped, not fatal
         return {"bots": bots}
@@ -259,7 +266,81 @@ def build_router(
             _path(dirs.bots, handle, ".json").unlink()
         except FileNotFoundError:
             raise HTTPException(404, f"no bot named {handle!r}") from None
+        _remove_avatar(handle)
         return {"handle": handle}
+
+    # ---- AI pictures (Cloudflare Workers AI, the user's own free account) ----
+
+    @router.get("/images/status")
+    def images_status() -> dict[str, Any]:
+        return {"connected": images.credentials() is not None, "provider": images.PROVIDER,
+                "key_url": images.KEY_URL, "note": images.NOTE}
+
+    @router.put("/images/connect")
+    async def images_connect(request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=2048)
+        account = str(body.get("account_id", "")).strip() if isinstance(body, dict) else ""
+        token = str(body.get("token", "")).strip() if isinstance(body, dict) else ""
+        if not images.valid_account(account):
+            raise HTTPException(400, "the account ID is 32 letters and digits (Cloudflare dashboard, right-hand side)")
+        if not images.valid_token(token):
+            raise HTTPException(400, "that does not look like a Cloudflare API token")
+        save_env_value(images.ACCOUNT_ENV, account, dirs.env_file)
+        save_env_value(images.TOKEN_ENV, token, dirs.env_file)
+        return {"connected": True}
+
+    @router.delete("/images/connect")
+    def images_disconnect() -> dict[str, Any]:
+        remove_env_value(images.ACCOUNT_ENV, dirs.env_file)
+        remove_env_value(images.TOKEN_ENV, dirs.env_file)
+        return {"connected": False}
+
+    @router.post("/images")
+    async def make_image(request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=4096)
+        prompt = body.get("prompt") if isinstance(body, dict) else None
+        if not isinstance(prompt, str):
+            raise HTTPException(400, "send {\"prompt\": \"...\"}")
+        try:
+            data = await images.generate(prompt)
+        except images.ImageError as error:
+            raise HTTPException(error.status, str(error)) from None
+        return {"image": "data:image/jpeg;base64," + base64.b64encode(data).decode()}
+
+    @router.get("/bots/{handle}/avatar")
+    def get_avatar(handle: str) -> dict[str, Any]:
+        _path(dirs.bots, handle, ".json")  # validates the handle
+        for mime, ext in _AVATAR_EXT.items():
+            path = dirs.bots / f"{handle}{ext}"
+            if path.is_file() and not path.is_symlink():
+                return {"image": f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()}
+        raise HTTPException(404, "this bot has no picture")
+
+    @router.put("/bots/{handle}/avatar")
+    async def put_avatar(handle: str, request: Request) -> dict[str, Any]:
+        """Save a picture (generated or uploaded) as data:image/...;base64,..."""
+
+        _path(dirs.bots, handle, ".json")
+        body = await _json_body(request, limit=MAX_AVATAR_BYTES * 4 // 3 + 1024)
+        match = _DATA_URL.fullmatch(str(body.get("image", ""))) if isinstance(body, dict) else None
+        if not match:
+            raise HTTPException(400, "send a JPEG, PNG or WebP picture")
+        data = base64.b64decode(match.group(2))
+        if len(data) > MAX_AVATAR_BYTES:
+            raise HTTPException(413, "pictures can be at most 2 MB")
+        _remove_avatar(handle)
+        _write_private(dirs.bots / f"{handle}{_AVATAR_EXT[match.group(1)]}", data)
+        return {"handle": handle, "avatar": True}
+
+    @router.delete("/bots/{handle}/avatar")
+    def delete_avatar(handle: str) -> dict[str, Any]:
+        _path(dirs.bots, handle, ".json")
+        _remove_avatar(handle)
+        return {"handle": handle, "avatar": False}
+
+    def _remove_avatar(handle: str) -> None:
+        for ext in _AVATAR_EXT.values():
+            (dirs.bots / f"{handle}{ext}").unlink(missing_ok=True)
 
     @router.get("/themes")
     def list_themes() -> dict[str, Any]:

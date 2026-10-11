@@ -14,6 +14,39 @@ export function connectTile(svc) {
     'Keys stay on this computer, in a file only you can read.');
   const el = h('div', { class: 'connect' }, intro, list);
   const open = new Set(); // providers whose paste box is showing
+  let images = null; // /images/status
+  const loadImages = () => api.images.status().then((s) => { images = s; paint(); }, () => {});
+  loadImages();
+
+  // Cloudflare Workers AI needs two values (account id + token), so it has its own row.
+  function picturesRow() {
+    const actions = [h('button', { class: 'act primary', type: 'button', onclick: () => window.open(images.key_url, '_blank', 'noopener') }, images.connected ? 'Manage token' : 'Get free token')];
+    if (!open.has('images')) actions.push(h('button', { class: 'act', type: 'button', onclick: () => { open.add('images'); paint(); focusInput('images'); } }, images.connected ? 'Replace' : 'Connect'));
+    if (images.connected) actions.push(h('button', { class: 'act ghost', type: 'button', onclick: async () => { await api.images.disconnect(); svc.toast('AI pictures disconnected'); loadImages(); } }, 'Disconnect'));
+    let form = null;
+    if (open.has('images')) {
+      const account = h('input', { class: 'connect-input', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Cloudflare account ID', placeholder: 'account ID (32 letters and digits)' });
+      const token = h('input', { class: 'connect-input', type: 'password', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Cloudflare API token', placeholder: 'API token' });
+      const note = h('p', { class: 'quiet connect-note', role: 'status' });
+      form = h('form', { class: 'connect-form', 'data-for': 'images' }, account, token,
+        h('button', { class: 'act primary', type: 'submit' }, 'Save'),
+        h('button', { class: 'act ghost', type: 'button', onclick: () => { open.delete('images'); paint(); } }, 'Cancel'), note);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          await api.images.connect(account.value.trim(), token.value.trim());
+          token.value = '';
+          open.delete('images');
+          svc.toast('AI pictures connected');
+          loadImages();
+        } catch (err) { note.textContent = err.message || String(err); }
+      });
+    }
+    return h('article', { class: 'connect-row' + (images.connected ? ' is-set' : ''), 'data-platform': 'images' },
+      h('div', { class: 'connect-top' }, h('strong', {}, images.provider), images.connected ? chip('connected', 'ok') : chip('not connected', '')),
+      h('p', { class: 'quiet' }, images.note),
+      h('div', { class: 'acts' }, actions), form);
+  }
 
   function paint() {
     if (snap.error && !snap.data) { swapIfChanged(list, [errorBox('Cannot reach zhunt', snap.error.message)]); return; }
@@ -28,6 +61,7 @@ export function connectTile(svc) {
       trainers.length ? trainingSwitch(!!snap.data.policy?.allow_training, trainers) : null,
       ...free.map(row),
     ].filter(Boolean);
+    if (images) rows.push(h('h3', { class: 'connect-h' }, 'AI pictures (free)'), picturesRow());
     if (paid.length) rows.push(h('h3', { class: 'connect-h' }, 'Premium (Pro, billed by the provider)'), ...paid.map(row));
     swapIfChanged(list, rows);
   }

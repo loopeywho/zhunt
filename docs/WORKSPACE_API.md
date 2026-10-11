@@ -148,6 +148,15 @@ Orchestration runs in the workspace: each bot turn is an ordinary routed
 message; an @mention of a teammate in a reply queues that teammate, up to 6 bot turns per
 user message.
 
+## AI pictures: `GET /zhunt/api/images/status`, `PUT|DELETE /zhunt/api/images/connect`, `POST /zhunt/api/images`
+
+Cloudflare Workers AI (FLUX-1-schnell) on the user's own free account: `PUT /images/connect
+{"account_id", "token"}` saves `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` to
+`~/.zhunt/env`. `POST /images {"prompt"}` -> `{"image": "data:image/jpeg;base64,..."}`; 409
+when not connected, 429 when the free daily allowance is spent. Bot pictures:
+`GET|PUT|DELETE /zhunt/api/bots/{handle}/avatar` with `{"image": data URL}` (JPEG, PNG or
+WebP, at most 2 MB; SVG refused), stored next to the bot as `<handle>.jpg|png|webp`.
+
 ## Plan: `GET /zhunt/api/plan`
 
 ```json

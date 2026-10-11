@@ -28,6 +28,28 @@
   var DECISIONS = [];
   var LAYOUTS = {};
   var BOTS = {};
+  var AVATARS = {};
+  // demo pictures: drawn in the page (the real app asks Cloudflare's FLUX model)
+  function demoPicture(prompt) {
+    var c = document.createElement('canvas');
+    c.width = c.height = 256;
+    var g = c.getContext('2d');
+    var seed = 0;
+    for (var i = 0; i < prompt.length; i++) seed = (seed * 31 + prompt.charCodeAt(i)) >>> 0;
+    var rnd = function () { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    var hue = Math.floor(rnd() * 360);
+    var grad = g.createLinearGradient(0, 0, 256, 256);
+    grad.addColorStop(0, 'hsl(' + hue + ',70%,62%)');
+    grad.addColorStop(1, 'hsl(' + ((hue + 70) % 360) + ',70%,42%)');
+    g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+    for (var k = 0; k < 6; k++) {
+      g.fillStyle = 'hsla(' + ((hue + k * 47) % 360) + ',80%,' + (55 + rnd() * 30) + '%,0.75)';
+      g.beginPath(); g.arc(rnd() * 256, rnd() * 256, 20 + rnd() * 70, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(98, 112, 14, 0, 7); g.arc(158, 112, 14, 0, 7); g.fill();
+    g.strokeStyle = '#fff'; g.lineWidth = 8; g.lineCap = 'round'; g.beginPath(); g.arc(128, 150, 34, 0.2, Math.PI - 0.2); g.stroke();
+    return c.toDataURL('image/png');
+  }
   var PLAN = 'free';
   var ALLOW_TRAINING = false;
   var THEMES = ['catppuccin', 'catppuccin-latte', 'dark', 'everforest', 'flexoki-light', 'gruvbox', 'kanagawa', 'light', 'matte-black', 'nord', 'rose-pine', 'tokyo-night'];
@@ -210,7 +232,17 @@
       // demo: the recording is ignored (never uploaded); a fixed sentence comes back
       return new Promise(function (resolve) { setTimeout(function () { resolve(json(200, { text: 'Write a regex for UK postcodes' })); }, 700); });
     }
-    if (rest === 'bots') return Promise.resolve(json(200, { bots: Object.keys(BOTS).sort().map(function (k) { return BOTS[k]; }) }));
+    if (rest === 'bots') return Promise.resolve(json(200, { bots: Object.keys(BOTS).sort().map(function (k) { var b = Object.assign({}, BOTS[k]); b.avatar = !!AVATARS[k]; return b; }) }));
+    if (rest === 'images/status') return Promise.resolve(json(200, { connected: true, provider: 'Cloudflare Workers AI', key_url: 'https://dash.cloudflare.com/profile/api-tokens', note: 'Demo: pictures are drawn in your browser. The real app uses Cloudflare\'s free FLUX model.' }));
+    if (rest === 'images' && method === 'POST') {
+      return new Promise(function (resolve) { setTimeout(function () { resolve(json(200, { image: demoPicture(String((body && body.prompt) || '')) })); }, 1200); });
+    }
+    var av = /^bots\/([a-z0-9_-]+)\/avatar$/.exec(rest);
+    if (av) {
+      if (method === 'PUT') { AVATARS[av[1]] = body && body.image; return Promise.resolve(json(200, { handle: av[1], avatar: true })); }
+      if (method === 'DELETE') { delete AVATARS[av[1]]; return Promise.resolve(json(200, { handle: av[1], avatar: false })); }
+      return Promise.resolve(AVATARS[av[1]] ? json(200, { image: AVATARS[av[1]] }) : json(404, { detail: 'this bot has no picture' }));
+    }
     if (rest.indexOf('bots/') === 0) {
       var handle = decodeURIComponent(rest.slice(5));
       if (method === 'DELETE') { delete BOTS[handle]; return Promise.resolve(json(200, { handle: handle })); }

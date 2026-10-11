@@ -57,9 +57,17 @@ export function contextFor(bot, transcript, bots) {
   return [{ role: 'system', content: systemPrompt(bot, bots) }, ...msgs];
 }
 
+export function avatarPrompt(bot) {
+  const job = (bot.instructions || '').split(/[.!?]/)[0].slice(0, 140);
+  return `Profile picture for an AI assistant called ${bot.name || bot.handle}${job ? ', whose job is: ' + job : ''}. Friendly character, bold simple shapes, flat illustration, centred, plain soft background.`;
+}
+
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+
 export function teamTile(svc) {
   const teamId = Math.random().toString(36).slice(2, 8);
   let bots = [];
+  const avatars = new Map(); // handle -> data URL
   let transcript = []; // {who: 'you' | handle, text, model?}
   let queue = [];
   let hops = 0;
@@ -90,6 +98,8 @@ export function teamTile(svc) {
         for (const b of STARTER_BOTS) await api.bots.put(b.handle, b);
         bots = (await api.bots.list()).bots || [];
       }
+      avatars.clear();
+      await Promise.all(bots.filter((b) => b.avatar).map((b) => api.bots.avatar(b.handle).then((r) => avatars.set(b.handle, r.image), () => {})));
     } catch (err) {
       if (err.status !== 401) msgs.replaceChildren(errorBox('Cannot load bots', err.message));
       return;
@@ -98,10 +108,20 @@ export function teamTile(svc) {
     if (!transcript.length) paintEmpty();
   }
 
+  // A bot's picture, or its initials on its colour when it has none.
+  function avatarEl(bot, size = 22) {
+    const src = bot && avatars.get(bot.handle);
+    const el = src ? h('img', { class: 'bot-avatar', src, alt: '', width: String(size), height: String(size) })
+      : h('span', { class: 'bot-avatar initials', 'aria-hidden': 'true' }, (bot?.name || bot?.handle || '?').slice(0, 2).toUpperCase());
+    el.style.width = el.style.height = size + 'px';
+    if (!src && bot) el.style.setProperty('--bot', bot.color);
+    return el;
+  }
+
   function paintChips() {
     chips.replaceChildren(
       ...bots.map((b) => {
-        const chip = h('button', { class: 'team-chip', type: 'button', title: `${b.name}: ${b.instructions.slice(0, 120)}`, onclick: () => mention(b.handle) }, '@' + b.handle);
+        const chip = h('button', { class: 'team-chip', type: 'button', title: `${b.name}: ${b.instructions.slice(0, 120)}`, onclick: () => mention(b.handle) }, avatarEl(b, 20), '@' + b.handle);
         chip.style.setProperty('--bot', b.color);
         const edit = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Edit ' + b.name, onclick: () => openEditor(b) }, '✎');
         return h('span', { class: 'team-chip-wrap' }, chip, edit);
@@ -127,8 +147,9 @@ export function teamTile(svc) {
     const bot = bots.find((b) => b.handle === who);
     const text = h('div', { class: 'msg-text' });
     const meta = h('div', { class: 'msg-meta' });
-    const node = h('article', { class: 'msg ' + (who === 'you' ? 'user' : 'assistant team-bot') },
-      h('div', { class: 'msg-role' }, who === 'you' ? 'you' : `${bot?.name || who} @${who}`), text, meta);
+    const role = who === 'you' ? h('div', { class: 'msg-role' }, 'you')
+      : h('div', { class: 'msg-role team-role' }, avatarEl(bot, 26), `${bot?.name || who} @${who}`);
+    const node = h('article', { class: 'msg ' + (who === 'you' ? 'user' : 'assistant team-bot') }, role, text, meta);
     if (bot) node.style.setProperty('--bot', bot.color);
     msgs.append(node);
     msgs.scrollTop = msgs.scrollHeight;
@@ -218,11 +239,52 @@ export function teamTile(svc) {
     const color = h('input', { type: 'color', value: bot?.color || '#7aa2f7', 'aria-label': 'Colour' });
     const note = h('p', { class: 'quiet connect-note', role: 'status' });
     const field = (label, control) => h('label', { class: 'team-field' }, h('span', {}, label), control);
+
+    // profile picture: generate with AI, upload your own, or remove
+    let picture = bot ? avatars.get(bot.handle) || null : null;
+    let pictureChanged = false;
+    const preview = h('div', { class: 'team-picture' });
+    const paintPreview = () => {
+      preview.replaceChildren(picture ? h('img', { src: picture, alt: 'Picture for this bot', width: '96', height: '96' })
+        : h('span', { class: 'bot-avatar initials big' }, (name.value || handle.value || '?').slice(0, 2).toUpperCase()));
+      const big = preview.querySelector('.initials');
+      if (big) big.style.setProperty('--bot', color.value);
+    };
+    const promptBox = h('textarea', { class: 'connect-input team-instructions', rows: '2', maxlength: '500', 'aria-label': 'Describe the picture' });
+    promptBox.value = avatarPrompt({ name: bot?.name, handle: bot?.handle, instructions: bot?.instructions });
+    const genBtn = h('button', { class: 'act primary', type: 'button' }, 'Generate with AI');
+    genBtn.addEventListener('click', async () => {
+      genBtn.disabled = true;
+      genBtn.textContent = 'Generating...';
+      try {
+        picture = (await api.images.generate(promptBox.value)).image;
+        pictureChanged = true;
+        paintPreview();
+        note.textContent = 'Picture ready. Save the bot to keep it.';
+      } catch (err) {
+        note.textContent = err.status === 409 ? 'AI pictures need a free Cloudflare token: add it in the Connect window (AI pictures).' : err.message || String(err);
+      } finally { genBtn.disabled = false; genBtn.textContent = 'Generate with AI'; }
+    });
+    const file = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true });
+    file.addEventListener('change', () => {
+      const f = file.files[0];
+      if (!f) return;
+      if (f.size > MAX_AVATAR_BYTES) { note.textContent = 'Pictures can be at most 2 MB.'; return; }
+      const reader = new FileReader();
+      reader.onload = () => { picture = reader.result; pictureChanged = true; paintPreview(); note.textContent = 'Picture ready. Save the bot to keep it.'; };
+      reader.readAsDataURL(f);
+    });
+    const uploadBtn = h('button', { class: 'act', type: 'button', onclick: () => file.click() }, 'Upload picture');
+    const clearBtn = h('button', { class: 'act ghost', type: 'button', onclick: () => { picture = null; pictureChanged = true; paintPreview(); } }, 'Remove picture');
+    const pictureBlock = h('div', { class: 'team-picture-block' }, preview,
+      h('div', { class: 'team-picture-tools' }, field('Describe the picture (for AI)', promptBox), h('div', { class: 'acts' }, genBtn, uploadBtn, clearBtn, file)));
+    paintPreview();
     const save = h('button', { class: 'act primary', type: 'submit' }, isNew ? 'Create bot' : 'Save');
     const remove = isNew ? null : h('button', { class: 'act ghost', type: 'button', onclick: async () => { await api.bots.remove(bot.handle); close(); load(); } }, 'Delete');
     const cancel = h('button', { class: 'act', type: 'button', onclick: () => close() }, 'Cancel');
     const formEl = h('form', { class: 'team-form' },
       h('h3', { class: 'connect-h' }, isNew ? 'New bot' : 'Edit @' + bot.handle),
+      pictureBlock,
       field('Name', name), field('Handle (@)', handle), field('Instructions: what this bot does', instructions),
       h('div', { class: 'team-row' }, field('Model type', alias), field('Colour', color)),
       h('div', { class: 'acts' }, save, cancel, remove), note);
@@ -231,6 +293,7 @@ export function teamTile(svc) {
       const id = (isNew ? handle.value : bot.handle).trim().toLowerCase();
       try {
         await api.bots.put(id, { name: name.value, instructions: instructions.value, alias: alias.value, color: color.value });
+        if (pictureChanged) await (picture ? api.bots.setAvatar(id, picture) : api.bots.removeAvatar(id));
         close();
         await load();
       } catch (err) { note.textContent = err.message || String(err); }
