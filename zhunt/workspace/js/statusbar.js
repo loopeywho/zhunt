@@ -51,6 +51,26 @@ export function createStatusbar(root, { store }) {
     quota.textContent = `${usable}/${models.length} usable  ${keys}/${(snap.data.providers || []).length} keys`;
   });
 
+  // Omarchy-style key pop-up: while the leader is armed, every next key, grouped.
+  const whichkey = h('div', { class: 'whichkey', hidden: true, 'aria-hidden': 'true' });
+  document.body.append(whichkey);
+  function paintWhichkey(cmds) {
+    const groups = new Map();
+    const add = (group, keys, title) => { if (!groups.has(group)) groups.set(group, []); groups.get(group).push([keys, title]); };
+    for (const c of cmds) {
+      if (/^(split-right-|split-down-|focus-|swap-|kind-|theme-(?!menu))/.test(c.id)) continue;
+      add(c.group, c.leader.slice(0, 2).map((k) => k.replace('ArrowLeft', '<-').replace('ArrowRight', '->')).join(' '), c.title.replace(/ \(.*\)/, '').replace('...', ''));
+    }
+    add('Focus', 'h j k l', 'Move between windows');
+    add('Tile', 'H J K L', 'Swap tiles (floating: move window)');
+    add('Tile', '1-' + cmds.filter((c) => c.id.startsWith('kind-')).length, 'Change this window\'s type');
+    whichkey.replaceChildren(
+      h('div', { class: 'wk-title' }, 'Ctrl+Space then...', h('span', { class: 'wk-esc' }, 'Esc closes')),
+      h('div', { class: 'wk-grid' }, [...groups].map(([group, rows]) => h('section', { class: 'wk-group' },
+        h('h4', {}, group),
+        rows.map(([keys, title]) => h('div', { class: 'wk-row' }, h('kbd', {}, keys), h('span', {}, title)))))));
+  }
+
   return {
     setMode(m) {
       mode.className = 'sb-mode ' + m;
@@ -58,6 +78,8 @@ export function createStatusbar(root, { store }) {
     },
     setLeader(on, cmds) {
       leaderHints = on ? cmds : null;
+      if (on) paintWhichkey(cmds);
+      whichkey.hidden = !on;
       root.classList.toggle('leader', on);
       if (on) { hints.hidden = false; toastEl.textContent = ''; }
       paintHints();
