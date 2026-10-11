@@ -196,6 +196,81 @@ _DAILY_MARKER = re.compile(r"daily|per[ _-]?day|\btoday\b")
 _QUOTA_MARKER = re.compile(r"allocation|quota|limit|exhaust|used up")
 
 
+# A provider-stated ceiling in a 429/413 body, e.g. Groq's "on tokens per minute
+# (TPM): Limit 6000, Used 5000, Requested 2000". Per-day axes are checked before
+# per-minute and tokens before requests so the more specific one wins.
+_LIMIT_VALUE = re.compile(r"\blimit[:\s]+([\d,]+)", re.IGNORECASE)
+_LIMIT_AXIS_PATTERNS = (
+    ("tpd", re.compile(r"tokens?\s*per\s*day|\btpd\b", re.IGNORECASE)),
+    ("tpm", re.compile(r"tokens?\s*per\s*min(?:ute)?|\btpm\b", re.IGNORECASE)),
+    ("rpd", re.compile(r"requests?\s*per\s*day|\brpd\b", re.IGNORECASE)),
+    ("rpm", re.compile(r"requests?\s*per\s*min(?:ute)?|\brpm\b", re.IGNORECASE)),
+)
+# Rate-limit headers by provider, as (header, axis). Groq's request header is a
+# daily count and Cerebras names its windows; anything else follows OpenAI's
+# per-minute convention, which errs high (harmless) if a provider means per day.
+_HEADER_LIMITS = {
+    "groq": (("x-ratelimit-limit-requests", "rpd"), ("x-ratelimit-limit-tokens", "tpm")),
+    "cerebras": (
+        ("x-ratelimit-limit-requests-day", "rpd"),
+        ("x-ratelimit-limit-tokens-minute", "tpm"),
+    ),
+}
+_DEFAULT_HEADER_LIMITS = (
+    ("x-ratelimit-limit-requests", "rpm"),
+    ("x-ratelimit-limit-tokens", "tpm"),
+)
+
+
+def parse_limit_from_error(message: str) -> tuple[str, int] | None:
+    """``(axis, cap)`` when a body states both a "Limit N" and a clear axis.
+    Guessing the axis would cap the wrong window, so anything vaguer is None."""
+
+    match = _LIMIT_VALUE.search(message)
+    if match is None:
+        return None
+    value = int(match.group(1).replace(",", "") or 0)
+    if value <= 0:
+        return None
+    for axis, pattern in _LIMIT_AXIS_PATTERNS:
+        if pattern.search(message):
+            return axis, value
+    return None
+
+
+def limits_from_headers(platform: str, headers: Any) -> list[tuple[str, int]]:
+    """``(axis, cap)`` pairs from provider rate-limit headers, raw or as LiteLLM
+    re-exposes them (``llm_provider-`` prefixed in a response's hidden params)."""
+
+    if headers is None:
+        return []
+    found = []
+    for name, axis in _HEADER_LIMITS.get(platform, _DEFAULT_HEADER_LIMITS):
+        for candidate in (name, f"llm_provider-{name}"):
+            try:
+                value = int(float(headers.get(candidate)))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if value > 0:
+                found.append((axis, value))
+                break
+    return found
+
+
+def _error_headers(error: BaseException) -> Any:
+    headers = getattr(error, "litellm_response_headers", None)
+    if headers is None:
+        headers = getattr(getattr(error, "response", None), "headers", None)
+    return headers
+
+
+def _response_headers(response: Any) -> Any:
+    hidden = getattr(response, "_hidden_params", None)
+    if isinstance(hidden, Mapping):
+        return hidden.get("additional_headers")
+    return None
+
+
 def _is_daily_quota_exhausted(message: str) -> bool:
     """A 429 body that says the day's allowance is spent. Needs both a daily and
     a quota marker so an ordinary per-minute 429 never matches."""
@@ -432,6 +507,10 @@ class EngineProxyHook(CustomLogger):
             pending, response, failure.value if failure is not None else None
         )
         slot = pending.candidate.slot
+        model = pending.candidate.model
+        self._learn_limits(
+            model, limits_from_headers(model.platform, _response_headers(response))
+        )
         self.quota.record_success(slot)
         self.reliability.record(pending.candidate.model.id, success=True)
         input_tokens, output_tokens = _usage_tokens(response)
@@ -464,6 +543,7 @@ class EngineProxyHook(CustomLogger):
         if kind is None:
             return
         candidate = pending.candidate
+        self._learn_from_error(candidate.model, error)
         self._bench(candidate.model, candidate.key_id, kind, retry_after)
         self._queue_retry(pending, pending.decision, escalated=pending.escalated)
 
@@ -489,6 +569,20 @@ class EngineProxyHook(CustomLogger):
         every_key = [(model.id, key) for key in self.selector.key_ids(model.platform)]
         self.quota.record_model_failure(model.id, every_key or [(model.id, key_id)])
         self.reliability.record(model.id, success=False)
+
+    def _learn_from_error(self, model: CatalogModel, error: BaseException) -> None:
+        learned = limits_from_headers(model.platform, _error_headers(error))
+        if getattr(error, "status_code", None) in (413, 429):
+            stated = parse_limit_from_error(str(error))
+            if stated is not None:
+                learned.append(stated)
+        self._learn_limits(model, learned)
+
+    def _learn_limits(
+        self, model: CatalogModel, learned: Sequence[tuple[str, int]]
+    ) -> None:
+        for axis, value in learned:
+            self.quota.learn_limit(model.id, model.limits, axis, value)
 
     def _benched_slots(
         self, model: CatalogModel, key_id: str, kind: ProviderFailure
@@ -616,7 +710,9 @@ class EngineProxyHook(CustomLogger):
                         "headroom": round(self.quota.headroom(slot, model.limits), 3),
                         "cooldown_remaining": round(self.quota.cooldown_remaining(slot), 1),
                         "reliability": round(self.reliability.score(model.id), 3),
-                        "limits": asdict(model.limits),
+                        "limits": asdict(
+                            self.quota.effective_limits(model.id, model.limits)
+                        ),
                     }
                 )
             providers.append(
@@ -690,6 +786,7 @@ class EngineProxyHook(CustomLogger):
             self.quota.settle(lease, 0)
             kind, retry_after = classify_failure(error)
             if kind is not None:
+                self._learn_from_error(model, error)
                 self._bench(model, key_id, kind, retry_after)
             return _compare_result(model.id, error=_error_text(error, api_key))
         latency_ms = round((time.perf_counter() - started) * 1000)

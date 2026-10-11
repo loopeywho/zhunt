@@ -71,6 +71,17 @@ def test_cooldown_and_its_level_survive_a_restart(tmp_path) -> None:
     assert again.record_failure(SLOT, FailureKind.SERVER) == 3_600
 
 
+def test_learned_limits_survive_a_restart(tmp_path) -> None:
+    path = tmp_path / "state.db"
+    clock = FakeClock()
+    restart(path, clock).learn_limit("alpha/model", Limits(), "tpm", 6_000)
+
+    clock.advance(5 * 86_400)  # learned limits are not usage and are never pruned
+
+    again = restart(path, clock)
+    assert again.effective_limits("alpha/model", Limits()) == Limits(tpm=6_000)
+
+
 def test_rows_older_than_two_days_are_pruned(tmp_path) -> None:
     path = tmp_path / "state.db"
     clock = FakeClock()

@@ -298,6 +298,36 @@ def test_failures_are_tracked_per_slot() -> None:
     assert quota.try_acquire(("alpha/model", "key-2"), Limits())
 
 
+def test_a_learned_limit_fills_an_unknown_cap_and_is_enforced() -> None:
+    quota = QuotaTracker(clock=FakeClock())
+
+    assert quota.learn_limit("alpha/model", Limits(), "rpd", 1)
+    assert quota.try_acquire(SLOT, Limits())
+    assert quota.try_acquire(SLOT, Limits()) is None
+    assert quota.headroom(SLOT, Limits()) == 0.0
+    assert quota.effective_limits("alpha/model", Limits(rpm=5)) == Limits(rpm=5, rpd=1)
+
+
+def test_a_learned_limit_only_ever_lowers_a_cap() -> None:
+    quota = QuotaTracker(clock=FakeClock())
+    limits = Limits(tpm=10_000)
+
+    assert not quota.learn_limit("alpha/model", limits, "tpm", 30_000)
+    assert quota.learn_limit("alpha/model", limits, "tpm", 6_000)
+    assert not quota.learn_limit("alpha/model", limits, "tpm", 8_000)
+    assert not quota.learn_limit("alpha/model", limits, "bogus", 1)
+    assert quota.effective_limits("alpha/model", limits).tpm == 6_000
+    assert quota.effective_limits("alpha/other", limits).tpm == 10_000
+
+
+def test_a_429_at_a_learned_daily_cap_climbs_the_ladder() -> None:
+    quota = QuotaTracker(clock=FakeClock())
+    quota.learn_limit("alpha/model", Limits(), "rpd", 1)
+    assert quota.try_acquire(SLOT, Limits())
+
+    assert quota.record_failure(SLOT, FailureKind.RATE_LIMIT) == 120
+
+
 def test_headroom_is_the_tightest_remaining_fraction() -> None:
     quota = QuotaTracker(clock=FakeClock())
     limits = Limits(rpm=4, rpd=100)

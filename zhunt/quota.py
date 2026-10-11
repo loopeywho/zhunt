@@ -6,7 +6,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone, tzinfo
 from enum import Enum
 from threading import RLock
@@ -33,6 +33,7 @@ _MAX_COOLDOWN = 86_400.0
 _MODEL_FAILURE_WINDOW = 900.0
 _MODEL_FAILURE_THRESHOLD = 3
 _MODEL_FAILURE_COOLDOWN = 600.0
+LIMIT_AXES = ("rpm", "rpd", "tpm", "tpd")
 
 
 class FailureKind(Enum):
@@ -96,6 +97,8 @@ class QuotaTracker:
         self._states: dict[Slot, _State] = {}
         self._lock = RLock()
         self._model_failures: dict[str, list[float]] = {}
+        # Limits providers reported for a model (model id -> axis -> cap).
+        self._learned: dict[str, dict[str, int]] = {}
         self._store = store
         if store is not None:
             self._load(store)
@@ -112,6 +115,7 @@ class QuotaTracker:
         if tokens < 0:
             raise ValueError("tokens cannot be negative")
         with self._lock:
+            limits = self.effective_limits(slot[0], limits)
             now = self._clock()
             state = self._state(slot, now)
             if state.cooldown_until > now:
@@ -152,6 +156,7 @@ class QuotaTracker:
         """Remaining fraction (0-1) of the tightest window; 1.0 when uncapped."""
 
         with self._lock:
+            limits = self.effective_limits(slot[0], limits)
             now = self._clock()
             state = self._state(slot, now)
             minute_tokens = sum(entry[1] for entry in state.minute)
@@ -191,6 +196,7 @@ class QuotaTracker:
         """
 
         with self._lock:
+            limits = self.effective_limits(slot[0], limits)
             now = self._clock()
             state = self._state(slot, now)
             new_episode = now >= state.cooldown_until
@@ -253,6 +259,35 @@ class QuotaTracker:
                     state.failures = 0
                     self._persist_cooldown(slot, state)
 
+    def effective_limits(self, model_id: str, limits: Limits) -> Limits:
+        """``limits`` tightened by anything the provider reported for the model."""
+
+        with self._lock:
+            learned = self._learned.get(model_id)
+        if not learned:
+            return limits
+        changes = {}
+        for axis, value in learned.items():
+            known = getattr(limits, axis)
+            changes[axis] = value if known is None else min(known, value)
+        return replace(limits, **changes)
+
+    def learn_limit(self, model_id: str, limits: Limits, axis: str, value: int) -> bool:
+        """Record a provider-reported cap. It only ever fills an unknown limit or
+        lowers a known one: hitting a ceiling means the real cap is at or below
+        what was allowed through. True when the effective limit changed."""
+
+        if axis not in LIMIT_AXES or value <= 0:
+            return False
+        with self._lock:
+            current = getattr(self.effective_limits(model_id, limits), axis)
+            if current is not None and value >= current:
+                return False
+            self._learned.setdefault(model_id, {})[axis] = value
+            if self._store is not None:
+                self._store.save_limit(model_id, axis, value)
+            return True
+
     def cooldown_remaining(self, slot: Slot) -> float:
         with self._lock:
             now = self._clock()
@@ -303,6 +338,9 @@ class QuotaTracker:
             state.cooldown_until = until
             state.failures = level
             state.cooldown_source = source
+        for model, axis, value in store.learned_limits():
+            if axis in LIMIT_AXES:
+                self._learned.setdefault(model, {})[axis] = value
 
     def _state(self, slot: Slot, now: float) -> _State:
         state = self._states.setdefault(slot, _State())

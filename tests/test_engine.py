@@ -11,13 +11,15 @@ import yaml
 from fastapi.testclient import TestClient
 from litellm.proxy import proxy_server
 
-from tests.catalog_fixtures import catalog_data
+from tests.catalog_fixtures import catalog_data, model, provider
 from zhunt.brain import Tier
-from zhunt.catalog import Catalog
+from zhunt.catalog import Catalog, Limits
 from zhunt.engine import (
     classify_failure,
     keys_from_env,
+    limits_from_headers,
     load_catalog,
+    parse_limit_from_error,
     policy_from_env,
     registry_from_catalog,
 )
@@ -379,6 +381,75 @@ def test_a_rejected_key_benches_every_model_on_that_provider(
     else:
         assert response.status_code == 200
         assert call.await_count == 2
+
+
+@pytest.mark.parametrize(
+    ("message", "learned"),
+    [
+        ("Rate limit reached for model `llama` on tokens per minute (TPM): Limit 6000, "
+         "Used 5000, Requested 2000.", ("tpm", 6_000)),
+        ("Request too large on tokens per day (TPD): Limit 500,000, Requested 600,000",
+         ("tpd", 500_000)),
+        ("Rate limit reached on requests per day (RPD): Limit 1000, Used 1000",
+         ("rpd", 1_000)),
+        ("Quota exceeded for metric: GenerateRequestsPerDayPerProjectPerModel-FreeTier, "
+         "limit: 20", ("rpd", 20)),
+        ("Too many requests, limit 30", None),  # no axis: never guess
+        ("Rate limit exceeded on tokens per minute", None),  # no number
+    ],
+)
+def test_limits_stated_in_error_bodies_are_parsed(message, learned) -> None:
+    assert parse_limit_from_error(message) == learned
+
+
+def test_limits_are_read_from_provider_rate_limit_headers() -> None:
+    groq = {
+        "llm_provider-x-ratelimit-limit-requests": "14400",
+        "llm_provider-x-ratelimit-limit-tokens": "6000",
+    }
+    cerebras = httpx.Headers(
+        {"x-ratelimit-limit-requests-day": "14400", "x-ratelimit-limit-tokens-minute": "60000"}
+    )
+
+    assert limits_from_headers("groq", groq) == [("rpd", 14_400), ("tpm", 6_000)]
+    assert limits_from_headers("cerebras", cerebras) == [("rpd", 14_400), ("tpm", 60_000)]
+    assert limits_from_headers("alpha", {"x-ratelimit-limit-requests": "30"}) == [("rpm", 30)]
+    assert limits_from_headers("alpha", {"x-ratelimit-limit-requests": "soon"}) == []
+    assert limits_from_headers("alpha", None) == []
+
+
+def test_a_429_body_teaches_the_model_its_real_limit() -> None:
+    error = provider_error()
+    error.message = "on tokens per minute (TPM): Limit 6000, Used 5000, Requested 2000"
+    call = AsyncMock(side_effect=[error, ok()])
+    with daemon(call, env={"FAKE_API_KEY": "k"}) as (client, hook):
+        post(client)
+        failed = call.await_args_list[0].kwargs["model"]
+        limits = hook.quota.effective_limits(failed, Limits())
+
+    assert limits.tpm == 6_000
+
+
+def test_success_headers_lower_a_known_limit_but_never_raise_one() -> None:
+    response = ok()
+    response._hidden_params = {
+        "additional_headers": {
+            "llm_provider-x-ratelimit-limit-requests": "4",
+            "llm_provider-x-ratelimit-limit-tokens": "1",
+        }
+    }
+    raised = ok()
+    raised._hidden_params = {"additional_headers": {"x-ratelimit-limit-requests": "50"}}
+    solo = {"providers": {"alpha": provider([model("solo", ["chat"], limits={"rpm": 5})])}}
+    call = AsyncMock(side_effect=[raised, response])
+    with daemon(call, env={"FAKE_API_KEY": "k"}, catalog=solo) as (client, hook):
+        post(client)
+        after_raise = hook.quota.effective_limits("alpha/solo", Limits(rpm=5))
+        post(client)
+        after_lower = hook.quota.effective_limits("alpha/solo", Limits(rpm=5))
+
+    assert after_raise == Limits(rpm=5)
+    assert after_lower == Limits(rpm=4, tpm=1)
 
 
 def test_a_spent_google_daily_quota_benches_until_pacific_midnight() -> None:
