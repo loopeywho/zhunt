@@ -16,7 +16,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from zhunt.auth import remove_env_value, save_env_value
-from zhunt import images
+from zhunt import images, llm
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
@@ -161,8 +161,6 @@ def build_router(
     async def transcribe(request: Request) -> dict[str, Any]:
         """Speech to text for the chat microphone. Audio goes to Groq, nowhere else."""
 
-        import litellm
-
         key = os.environ.get("GROQ_API_KEY")
         if not key:
             raise HTTPException(409, "voice input uses Groq's free Whisper: connect a Groq key first")
@@ -178,11 +176,11 @@ def build_router(
         if len(audio) > MAX_AUDIO_BYTES:
             raise HTTPException(413, "recording too long (10 MB maximum)")
         try:
-            result = await litellm.atranscription(
+            result = await llm.atranscription(
                 model=TRANSCRIBE_MODEL, file=(f"speech.{ext}", audio, ctype),
                 api_key=key, max_retries=0, timeout=60,
             )
-        except litellm.RateLimitError:
+        except llm.RateLimitError:
             raise HTTPException(429, "Groq's free voice limit is reached; try again shortly") from None
         except Exception as error:  # never let provider text (which may echo the key) through unchecked
             detail = str(error).replace(key, "***")[:200]

@@ -24,19 +24,13 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import httpx
-import litellm
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from litellm.proxy import proxy_server
-from litellm.types.llms.anthropic_messages.anthropic_response import (
-    AnthropicMessagesResponse,
-)
-from litellm.types.llms.openai import ResponsesAPIResponse
 
 from tests.catalog_fixtures import model, provider
 from tests.representative_prompts import AGENT_SYSTEM_PROMPT
+from zhunt import llm
 from zhunt.brain import Tier
 from zhunt.engine import MAX_REPLAYS, build_engine_hook
 from zhunt.quota import FailureKind as ProviderFailure
@@ -94,9 +88,9 @@ def add_models(data: dict[str, Any], platform: str, *models: dict[str, Any]) -> 
 
 def chat_reply(
     content: str = "ok", finish_reason: str = "stop", usage: dict | None = None
-) -> litellm.ModelResponse:
+) -> llm.ModelResponse:
     extra = {"usage": usage} if usage else {}
-    return litellm.ModelResponse(
+    return llm.ModelResponse(dict(
         id="chat",
         model="x",
         choices=[
@@ -107,24 +101,24 @@ def chat_reply(
             }
         ],
         **extra,
-    )
+    ))
 
 
-def responses_reply(status: str = "completed") -> ResponsesAPIResponse:
-    return ResponsesAPIResponse(
+def responses_reply(status: str = "completed") -> llm.ModelResponse:
+    return llm.ModelResponse(dict(
         id="resp",
         created_at=1,
         model="x",
         object="response",
         output=[],
         status=status,
-    )
+    ))
 
 
 def messages_reply(
     text: str = "ok", stop_reason: str = "end_turn"
-) -> AnthropicMessagesResponse:
-    return AnthropicMessagesResponse(
+) -> llm.ModelResponse:
+    return llm.ModelResponse(dict(
         id="msg",
         type="message",
         role="assistant",
@@ -132,30 +126,27 @@ def messages_reply(
         content=[{"type": "text", "text": text}],
         stop_reason=stop_reason,
         usage={"input_tokens": 1, "output_tokens": 1},
-    )
+    ))
 
 
 def stream_of(finish_reasons_and_text: list[tuple[str | None, str]], model_name: str = "x"):
     async def provider_stream():
         for finish_reason, text in finish_reasons_and_text:
-            yield litellm.ModelResponseStream(
+            yield llm.ModelResponse(dict(
                 id="stream",
                 model=model_name,
                 choices=[
                     {"index": 0, "finish_reason": finish_reason, "delta": {"content": text}}
                 ],
-            )
+            ))
 
     return provider_stream()
 
 
 def provider_error(
-    cls=litellm.InternalServerError, status: int = 500
+    cls=llm.InternalServerError, status: int = 500
 ) -> Exception:
-    response = httpx.Response(
-        status, request=httpx.Request("POST", "https://fake.invalid/v1")
-    )
-    return cls(message="boom", llm_provider="alpha", model="alpha/m", response=response)
+    return cls(message="boom", status_code=status)
 
 
 # -- harness --------------------------------------------------------------
@@ -178,9 +169,9 @@ def daemon(
         catalog_path.write_text(yaml.safe_dump(catalog or tier_catalog()))
         stack.enter_context(patch.dict(os.environ, {**_CLEAN_ENV, **(KEYS if env is None else env)}))
         for target, mock in (
-            ("litellm.acompletion", chat),
-            ("litellm.aresponses", responses),
-            ("litellm.anthropic_messages", messages),
+            ("zhunt.llm.acompletion", chat),
+            ("zhunt.llm.aresponses", responses),
+            ("zhunt.llm.anthropic_messages", messages),
         ):
             if mock is not None:
                 stack.enter_context(patch(target, mock))
@@ -194,7 +185,7 @@ def daemon(
 
 
 def auth(session: str | None = None) -> dict[str, str]:
-    headers = {"Authorization": f"Bearer {proxy_server.master_key}"}
+    headers = {"Authorization": f"Bearer {os.environ['ZHUNT_MASTER_KEY']}"}
     if session is not None:
         headers["x-session-id"] = session
     return headers
@@ -943,7 +934,7 @@ def test_anthropic_client_max_tokens_stop_is_not_retried() -> None:
 
 
 def test_responses_refusal_is_retried_on_the_next_tier() -> None:
-    refusal = ResponsesAPIResponse(
+    refusal = llm.ModelResponse(dict(
         id="refused",
         created_at=1,
         model="x",
@@ -958,7 +949,7 @@ def test_responses_refusal_is_retried_on_the_next_tier() -> None:
                 "content": [{"type": "refusal", "refusal": "No"}],
             }
         ],
-    )
+    ))
     call = AsyncMock(side_effect=[refusal, responses_reply("completed")])
     with daemon(responses=call) as (client, _):
         response = post_responses(client, {"model": "zhunt-auto", "input": "Hello"}, "refused")
@@ -968,7 +959,7 @@ def test_responses_refusal_is_retried_on_the_next_tier() -> None:
 
 
 def test_chat_refusal_is_retried_on_the_next_tier() -> None:
-    refused = litellm.ModelResponse(
+    refused = llm.ModelResponse(dict(
         id="refused",
         model="x",
         choices=[
@@ -978,7 +969,7 @@ def test_chat_refusal_is_retried_on_the_next_tier() -> None:
                 "message": {"role": "assistant", "content": None, "refusal": "No"},
             }
         ],
-    )
+    ))
     call = AsyncMock(side_effect=[refused, chat_reply("answered")])
     with daemon(chat=call) as (client, _):
         response = post_chat(client, chat_body(), "refused")
@@ -1143,7 +1134,7 @@ def test_every_model_failing_in_a_tier_ends_in_503_not_a_loop() -> None:
 
 
 def test_a_client_error_from_the_provider_is_not_retried() -> None:
-    bad_request = provider_error(litellm.BadRequestError, 400)
+    bad_request = provider_error(llm.BadRequestError, 400)
     call = AsyncMock(side_effect=[bad_request, chat_reply()])
     with daemon(chat=call) as (client, hook):
         response = post_chat(client, chat_body(), "client-error")
@@ -1194,10 +1185,10 @@ def test_stream_that_fails_midway_is_replayed_on_another_model() -> None:
         if attempt == 1:
 
             async def broken():
-                yield litellm.ModelResponseStream(
+                yield llm.ModelResponse(dict(
                     id="s", model="x",
                     choices=[{"index": 0, "finish_reason": None, "delta": {"content": "par"}}],
-                )
+                ))
                 raise RuntimeError("connection reset")
 
             return broken()

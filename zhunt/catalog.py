@@ -36,7 +36,8 @@ class Provider:
     base_url: str
     key_env: str
     verified_on: date
-    # LiteLLM's name for this provider when it differs from the platform id.
+    # The zhunt.llm route for this provider when it differs from the platform id
+    # (named after LiteLLM's provider names, which it replaced; catalogs keep the key).
     litellm_provider: str
     # Where a user gets a key, and a one-line plain-language note on what is free.
     key_url: str = ""
@@ -46,8 +47,8 @@ class Provider:
 
     @property
     def api_base(self) -> str | None:
-        """Endpoint to pass to LiteLLM: only for generic OpenAI-compatible providers,
-        which LiteLLM cannot locate by name."""
+        """Endpoint to pass to zhunt.llm: only for generic OpenAI-compatible providers,
+        which it cannot locate by route name."""
 
         return self.base_url if self.litellm_provider == "openai" else None
 

@@ -11,14 +11,13 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
-import litellm
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from litellm.proxy import proxy_server
 
 from tests.catalog_fixtures import catalog_data, model, provider
 from tests.test_engine import CHAT, ok, provider_error
+from zhunt import llm
 from zhunt.server import create_proxy_app
 from zhunt.licence import FEATURES, FREE, Plan
 from zhunt.workspace_api import MAX_LAYOUT_BYTES, WorkspaceDirs
@@ -62,12 +61,12 @@ def solo_catalog() -> dict:
 
 
 def headers(key: str | None = None, **extra: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {key or proxy_server.master_key}", **extra}
+    return {"Authorization": f"Bearer {key or os.environ['ZHUNT_MASTER_KEY']}", **extra}
 
 
 @contextmanager
 def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None, static=True, plan=None):
-    """Free-tier daemon with the workspace mounted on temp dirs; litellm patched."""
+    """Free-tier daemon with the workspace mounted on temp dirs; provider call patched."""
 
     with TemporaryDirectory() as directory:
         root = Path(directory)
@@ -80,7 +79,7 @@ def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None,
             (static_dir / "css" / "themes" / "light.css").write_text(":root{--bg:#fff}")
         dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env", bots=root / "home" / "bots", wallpaper=root / "home" / "wallpaper")
         with patch.dict(os.environ, {**dict.fromkeys(ENV_NAMES, ""), **env}), patch(
-            "litellm.acompletion", call
+            "zhunt.llm.acompletion", call
         ), patch("zhunt.workspace_api.current_plan", return_value=plan or FREE), patch(
             "zhunt.licence.current_plan", return_value=plan or FREE
         ):  # never the tester's real licence
@@ -296,7 +295,7 @@ def test_decisions_are_newest_first_with_session_filter_and_limit() -> None:
 
 def test_decisions_use_reported_token_usage() -> None:
     response = ok()
-    response.usage = litellm.Usage(prompt_tokens=11, completion_tokens=7, total_tokens=18)
+    response["usage"] = {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
     with workspace(AsyncMock(return_value=response), env={"ZETA_API_KEY": ZETA_KEY}, data=solo_catalog()) as (client, _):
         chat(client, "ui-t")
         entry = decisions(client)[0]
@@ -328,7 +327,7 @@ def test_a_failover_is_its_own_entry_followed_by_the_next_attempt() -> None:
 
 
 def test_failure_label_distinguishes_client_errors_and_truncation() -> None:
-    bad = provider_error(cls=litellm.BadRequestError, status=400)
+    bad = provider_error(cls=llm.BadRequestError, status=400)
     with workspace(AsyncMock(side_effect=[bad]), env=ENV) as (client, _):
         assert chat(client, "ui-bad").status_code == 400
         (entry,) = decisions(client)
@@ -414,7 +413,7 @@ def test_compare_runs_models_concurrently_with_each_providers_own_key() -> None:
 
 def test_compare_records_usage_quota_and_reliability() -> None:
     response = ok("x")
-    response.usage = litellm.Usage(prompt_tokens=12, completion_tokens=80, total_tokens=92)
+    response["usage"] = {"prompt_tokens": 12, "completion_tokens": 80, "total_tokens": 92}
     with workspace(AsyncMock(return_value=response), env={"ZETA_API_KEY": ZETA_KEY}) as (client, _):
         got = results(compare(client, ["zeta/z2"]))["zeta/z2"]
         models = status_models(client)
@@ -490,7 +489,7 @@ def test_compare_failure_benches_the_model_and_the_next_compare_is_blocked() -> 
 def test_compare_with_a_model_failing_while_another_succeeds() -> None:
     async def by_model(**kwargs):
         if kwargs["model"] == "zeta/z1":
-            raise provider_error(cls=litellm.InternalServerError, status=500)
+            raise provider_error(cls=llm.InternalServerError, status=500)
         return ok("alpha says hi")
 
     call = AsyncMock(side_effect=by_model)
@@ -506,7 +505,7 @@ def test_compare_with_a_model_failing_while_another_succeeds() -> None:
 
 
 def test_a_client_error_in_compare_does_not_bench_the_model() -> None:
-    call = AsyncMock(side_effect=[provider_error(cls=litellm.BadRequestError, status=400)])
+    call = AsyncMock(side_effect=[provider_error(cls=llm.BadRequestError, status=400)])
     with workspace(call, env={"ZETA_API_KEY": ZETA_KEY}) as (client, hook):
         got = results(compare(client, ["zeta/z1"]))["zeta/z1"]
         cooldown = hook.quota.cooldown_remaining(("zeta/z1", "default"))
@@ -515,7 +514,7 @@ def test_a_client_error_in_compare_does_not_bench_the_model() -> None:
 
 
 def test_a_rejected_key_in_compare_benches_every_model_of_that_provider() -> None:
-    call = AsyncMock(side_effect=[provider_error(cls=litellm.AuthenticationError, status=401)])
+    call = AsyncMock(side_effect=[provider_error(cls=llm.AuthenticationError, status=401)])
     with workspace(call, env={"ZETA_API_KEY": ZETA_KEY}) as (client, hook):
         results(compare(client, ["zeta/z1"]))
         sibling = hook.quota.cooldown_remaining(("zeta/z2", "default"))
@@ -833,7 +832,7 @@ def test_the_key_endpoints_need_the_master_key() -> None:
 
 def test_voice_input_goes_to_groq_whisper_with_the_users_key() -> None:
     transcription = AsyncMock(return_value=SimpleNamespace(text=" write a regex for postcodes "))
-    with patch("litellm.atranscription", transcription), workspace(AsyncMock(), env={**ENV, "GROQ_API_KEY": "gsk-user-123456"}) as (client, _):
+    with patch("zhunt.llm.atranscription", transcription), workspace(AsyncMock(), env={**ENV, "GROQ_API_KEY": "gsk-user-123456"}) as (client, _):
         ok = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"\x1aE\xdf\xa3fake")
         wrong = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "text/plain"}), content=b"hi")
         empty = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"")
@@ -849,7 +848,7 @@ def test_voice_input_without_a_groq_key_says_how_to_fix_it_and_errors_hide_the_k
     failing = AsyncMock(side_effect=RuntimeError("bad key gsk-user-123456 rejected"))
     with workspace(AsyncMock(), env={}) as (client, _):
         missing = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"x")
-    with patch("litellm.atranscription", failing), workspace(AsyncMock(), env={**ENV, "GROQ_API_KEY": "gsk-user-123456"}) as (client, _):
+    with patch("zhunt.llm.atranscription", failing), workspace(AsyncMock(), env={**ENV, "GROQ_API_KEY": "gsk-user-123456"}) as (client, _):
         failed = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"x")
 
     assert missing.status_code == 409 and "Groq" in missing.json()["detail"]

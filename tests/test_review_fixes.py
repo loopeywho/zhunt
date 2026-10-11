@@ -1,13 +1,14 @@
 """Regressions for bugs found by the independent reviews of the v2 branch."""
 
+import os
 import random
 from unittest.mock import AsyncMock
 
-import litellm
 import pytest
 
 from tests.catalog_fixtures import FakeClock, catalog_data, model, provider
 from tests.test_engine import CHAT, daemon, ok, post, provider_error
+from zhunt import llm
 from zhunt.brain import Tier
 from zhunt.catalog import Catalog
 from zhunt.engine import (
@@ -81,7 +82,7 @@ def test_other_dialects_are_scrubbed_without_forcing_retry_kwargs(call_type: str
     assert data == {}
 
 
-def test_the_scrub_list_covers_litellms_own_blocklist() -> None:
+def test_the_scrub_list_covers_litellms_former_blocklist() -> None:
     banned = _banned_request_params()
 
     assert {"api_base", "base_url", "fallbacks", "custom_llm_provider"} <= banned
@@ -103,7 +104,7 @@ def limited_catalog():
 
 def test_failed_requests_do_not_burn_the_token_budget() -> None:
     call = AsyncMock(side_effect=lambda **_: (_ for _ in ()).throw(
-        provider_error(cls=litellm.InternalServerError, status=500)))
+        provider_error(cls=llm.InternalServerError, status=500)))
     catalog = Catalog.from_data(limited_catalog())
     limits = catalog.models[0].limits
     with daemon(call, env=ENV, catalog=limited_catalog()) as (client, hook):
@@ -115,16 +116,16 @@ def test_failed_requests_do_not_burn_the_token_budget() -> None:
     assert headroom > 0.99
 
 
-# -- retry-after as LiteLLM really delivers it ---------------------------------------
+# -- retry-after as provider errors deliver it ---------------------------------------
 
 
 class _Err(Exception):
     def __init__(self, headers=None, response_headers=None):
-        self.litellm_response_headers = headers
+        self.response_headers = headers
         self.response = type("R", (), {"headers": response_headers})() if response_headers is not None else None
 
 
-def test_retry_after_is_read_from_litellms_response_headers() -> None:
+def test_retry_after_is_read_from_the_provider_response_headers() -> None:
     assert _retry_after(_Err(headers={"retry-after": "7"})) == 7.0
     assert _retry_after(_Err(headers=None, response_headers={"retry-after": "9"})) == 9.0
 
@@ -197,8 +198,6 @@ def test_reliability_does_not_grow_when_the_clock_steps_backwards() -> None:
 
 
 def test_a_failed_compare_run_does_not_burn_the_token_budget() -> None:
-    from litellm.proxy import proxy_server
-
     tight = {
         "providers": {
             "alpha": provider(
@@ -208,11 +207,11 @@ def test_a_failed_compare_run_does_not_burn_the_token_budget() -> None:
     }
     limits = Catalog.from_data(tight).models[0].limits
     call = AsyncMock(side_effect=lambda **_: (_ for _ in ()).throw(
-        provider_error(cls=litellm.InternalServerError, status=500)))
+        provider_error(cls=llm.InternalServerError, status=500)))
     with daemon(call, env=ENV, catalog=tight) as (client, hook):
         response = client.post(
             "/zhunt/api/compare",
-            headers={"Authorization": f"Bearer {proxy_server.master_key}"},
+            headers={"Authorization": f"Bearer {os.environ['ZHUNT_MASTER_KEY']}"},
             json={"messages": [{"role": "user", "content": "hi"}], "models": ["alpha/solo"]},
         )
         headroom = hook.quota.headroom(("alpha/solo", "default"), limits)
