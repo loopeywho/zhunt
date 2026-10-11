@@ -71,6 +71,18 @@ const opts = { openWindow() {}, now };
   check('layouts saved before floating windows open tiled', parseDoc(doc).mode === 'tiled');
   check('a floating layout reopens floating', parseDoc({ ...doc, mode: 'floating' }).mode === 'floating');
 }
+{
+  const s = status([{ platform: 'groq', name: 'Groq', key_set: true, models: [model('groq/a')] }]);
+  s.data.spend = { month: '2026-10', spent: 4.2, cap: 5 };
+  const near = buildCards(s, { data: [] }, opts);
+  check('premium spend near the cap warns', near[0].id === 'cap-2026-10' && /\$4\.20 of your \$5\.00/.test(near[0].detail), near[0].detail);
+  s.data.spend.spent = 5;
+  check('premium cap reached is an error card', buildCards(s, { data: [] }, opts)[0].tone === 'err');
+  const failed = { data: [{ ts: now / 1000 - 5, session: 'x', attempt: 1, success: false, model: 'groq/a' }] };
+  const s2 = status([{ platform: 'groq', name: 'Groq', key_set: true, models: [model('groq/a')] }]);
+  check('free users see Pro after requests found no model', ids(buildCards(s2, failed, { ...opts, plan: { plan: 'free' } })).includes('upsell'));
+  check('Pro users are not upsold', !ids(buildCards(s2, failed, { ...opts, plan: { plan: 'pro' } })).includes('upsell'));
+}
 check('sky follows the hour', [4, 6, 12, 18, 22].map(skyFor).join() === 'night,dawn,day,dusk,night');
 
 if (fail) { console.log(fail + ' failed'); process.exit(1); }

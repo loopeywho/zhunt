@@ -4,6 +4,7 @@
 import { h, splitModel } from '../dom.js';
 import { groupRequests } from './routing.js';
 import { swapIfChanged } from './util.js';
+import { api } from '../api.js';
 
 const DISMISS_STORE = 'zhunt.foryou.dismissed';
 const shortModel = (id) => splitModel(id).name.split('/').pop();
@@ -12,7 +13,7 @@ function lsGet(key, fallback) { try { return JSON.parse(localStorage.getItem(key
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* storage blocked: lasts until reload */ } }
 
 // Cards, most useful first. Each: {id, tone, title, detail, code?, actions: [{label, run}]}
-export function buildCards(status, decisions, { openWindow, now = Date.now() }) {
+export function buildCards(status, decisions, { openWindow, openPlan, plan = null, now = Date.now() }) {
   const cards = [];
   if (status.error && !status.data) {
     cards.push({
@@ -65,6 +66,25 @@ export function buildCards(status, decisions, { openWindow, now = Date.now() }) 
       actions: [{ label: 'Show why', run: () => openWindow('routing') }],
     });
   }
+  const spend = s.spend;
+  if (spend && spend.cap > 0 && spend.spent >= spend.cap * 0.8) {
+    const reached = spend.spent >= spend.cap;
+    cards.push({
+      id: 'cap-' + spend.month + (reached ? '-reached' : ''), tone: reached ? 'err' : 'warn',
+      title: reached ? 'Premium cap reached for this month' : 'Premium spending is near this month\'s cap',
+      detail: `$${spend.spent.toFixed(2)} of your $${spend.cap.toFixed(2)} cap used. ${reached ? 'zhunt is back to free models only until next month.' : 'At the cap zhunt goes back to free models only.'} To change the cap, start zhunt with:`,
+      code: 'ZHUNT_MONTHLY_CAP=10', actions: [],
+    });
+  }
+  const unanswered = recent.filter((g) => !g.attempts.some((a) => a.success));
+  if (unanswered.length && plan && plan.plan === 'free') {
+    cards.push({
+      id: 'upsell-' + Math.floor(now / 86400000), tone: 'info',
+      title: `${unanswered.length} request${unanswered.length === 1 ? '' : 's'} found no free model this hour`,
+      detail: 'Every free model was busy or out of quota. zhunt Pro steps up to a premium model (GPT, Claude, Gemini) in that case, under a monthly cap you set.',
+      actions: [{ label: 'See Pro', run: () => openPlan?.() }],
+    });
+  }
   const privacy = models.filter((m) => m.blocked_reason === 'may train on prompts');
   if (privacy.length && !s.policy?.allow_training) {
     cards.push({
@@ -88,12 +108,14 @@ export function foryouTile(svc) {
   const dismissed = new Set(lsGet(DISMISS_STORE, []));
   let status = svc.store.get('status');
   let decisions = svc.store.get('decisions');
+  let plan = null;
+  api.plan().then((p) => { plan = p; paint(); }, () => {});
   const feed = h('div', { class: 'feed', 'aria-live': 'polite' });
   feed.dataset.keepScroll = '1';
   const el = h('div', { class: 'foryou' }, feed);
 
   function paint() {
-    const cards = buildCards(status, decisions, { openWindow: svc.openWindow }).filter((c) => !dismissed.has(c.id));
+    const cards = buildCards(status, decisions, { openWindow: svc.openWindow, openPlan: svc.openPlan, plan }).filter((c) => !dismissed.has(c.id));
     swapIfChanged(feed, cards.length ? cards.map(cardEl) : [h('p', { class: 'quiet' }, 'Nothing new.')]);
   }
 

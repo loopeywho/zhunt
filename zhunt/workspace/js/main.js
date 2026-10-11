@@ -59,7 +59,7 @@ async function boot() {
     statusbar.setWhere(`[${i + 1}/${all.length} ${node ? node.kind : ''}]${ws.zoomId ? ' zoom' : ''} ${ws.mode} ${layouts?.currentName ? 'layout:' + layouts.currentName : 'layout:unsaved'}`);
   };
   const ws = createWorkspace(stage, {
-    makeTile: createTileFactory({ store, toast, openWindow: (kind) => ws.openKind(kind) }),
+    makeTile: createTileFactory({ store, toast, openWindow: (kind) => ws.openKind(kind), openPlan: () => desktop?.planSheet() }),
     onChange: () => { layouts?.queueAutosave(); desktop?.refresh(); },
     onFocus: updateWhere,
     toast,

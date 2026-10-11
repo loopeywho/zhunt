@@ -72,6 +72,23 @@ zhunt doctor               # check the daemon, keys, policy flags and catalog ag
 Cursor and VS Code have no environment or flag route for a custom endpoint, so
 `zhunt launch cursor` and `zhunt launch vscode` print the manual steps instead.
 
+## Free and Pro
+
+zhunt is free and open source for free-tier models, the workspace and dark/light themes.
+**zhunt Pro** ($7/month after a 7-day trial) adds premium models (GPT, Claude, Gemini Pro,
+using your own paid keys) when every free model is busy, under a monthly spending cap, and
+the full theme pack. Licence keys are verified offline; zhunt never phones home to check
+them.
+
+```console
+zhunt upgrade                 # pricing page
+zhunt licence activate        # paste the key you got after checkout
+zhunt licence status          # plan in effect and what it includes
+zhunt licence renew           # fresh key after your subscription renews (the only call to our website)
+```
+
+The business model and launch plan are in `docs/LAUNCH.md`.
+
 ## Providers
 
 The catalog is `zhunt/catalog.yaml`: Groq, Google AI Studio and Cerebras, each

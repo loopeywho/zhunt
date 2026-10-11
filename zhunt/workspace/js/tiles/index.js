@@ -12,7 +12,7 @@ export const KIND_LABELS = {
   chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing (why this model)', providers: 'Providers (keys and quota)', logs: 'Logs',
 };
 
-// services: {store, toast, openWindow}. Returns the factory the tiling manager calls.
+// services: {store, toast, openWindow, openPlan}. Returns the factory the tiling manager calls.
 export function createTileFactory(services) {
   return (kind, state, ctx) => FACTORIES[kind](services, state || {}, ctx);
 }
