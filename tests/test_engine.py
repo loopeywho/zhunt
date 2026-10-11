@@ -115,6 +115,8 @@ def test_packaged_catalog_covers_every_tier_with_tool_capable_models() -> None:
         "groq",
         "google",
         "cerebras",
+        "kilo",
+        "zai",
         "anthropic",
         "openai",
         "google-paid",
@@ -587,3 +589,31 @@ def test_client_supplied_extra_body_never_reaches_the_provider() -> None:
         post(client, {**CHAT, "extra_body": {"provider": {"data_collection": "allow"}}})
 
     assert "extra_body" not in call.await_args.kwargs
+
+
+
+def test_a_keyless_provider_is_routable_with_no_key_and_gets_its_own_endpoint() -> None:
+    keyless_catalog = {
+        "providers": {
+            "anon": provider(
+                [model("free-auto", ["chat"])],
+                key_env="ANON_API_KEY", keyless=True, litellm_provider="openai",
+                base_url="https://anon.example/v1",
+            )
+        }
+    }
+    call = AsyncMock(return_value=ok())
+    with daemon(call, env={}, catalog=keyless_catalog) as (client, _):
+        response = post(client)
+
+    assert response.status_code == 200
+    kwargs = call.await_args.kwargs
+    assert kwargs["model"] == "openai/free-auto"
+    assert kwargs["api_base"] == "https://anon.example/v1"
+    assert kwargs["api_key"] == "anonymous"
+
+
+def test_named_litellm_providers_never_get_an_api_base_override() -> None:
+    catalog = load_catalog()
+    assert catalog.providers["groq"].api_base is None
+    assert catalog.providers["kilo"].api_base == "https://api.kilo.ai/api/gateway"

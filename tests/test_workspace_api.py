@@ -192,6 +192,7 @@ def test_status_shape_and_blocked_reasons() -> None:
         "key_env": "FAKE_API_KEY",
         "key_url": "",
         "free_note": "",
+        "keyless": False,
         "models": providers["alpha"]["models"],
     }
     assert providers["zeta"]["key_set"] is False
@@ -852,3 +853,18 @@ def test_voice_input_without_a_groq_key_says_how_to_fix_it_and_errors_hide_the_k
 
     assert missing.status_code == 409 and "Groq" in missing.json()["detail"]
     assert failed.status_code == 502 and "gsk-user-123456" not in failed.text
+
+
+def test_the_training_switch_unlocks_may_train_providers_and_is_saved() -> None:
+    with workspace(AsyncMock(), env=ENV) as (client, _):
+        before = status_models(client)["beta/trainer"]["blocked_reason"]
+        on = client.put("/zhunt/api/policy/training", headers=headers(), json={"allow": True})
+        after = status_models(client)["beta/trainer"]["allowed"]
+        saved = client.dirs.env_file.read_text()
+        bad = client.put("/zhunt/api/policy/training", headers=headers(), json={"allow": "yes"})
+        client.put("/zhunt/api/policy/training", headers=headers(), json={"allow": False})
+        off = status_models(client)["beta/trainer"]["blocked_reason"]
+
+    assert before == "may train on prompts" and on.json() == {"allow_training": True}
+    assert after is True and 'ZHUNT_ALLOW_TRAINING="1"' in saved
+    assert bad.status_code == 400 and off == "may train on prompts"

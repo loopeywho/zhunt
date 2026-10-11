@@ -123,6 +123,18 @@ def build_router(
         hook.reload_keys()
         return {"platform": provider.platform, "key_set": True}
 
+    @router.put("/policy/training")
+    async def set_training(request: Request) -> dict[str, Any]:
+        """Allow (or stop) providers that may train on prompts; saved like a key."""
+
+        body = await _json_body(request, limit=256)
+        allow = body.get("allow") if isinstance(body, dict) else None
+        if not isinstance(allow, bool):
+            raise HTTPException(400, "send {\"allow\": true} or {\"allow\": false}")
+        save_env_value("ZHUNT_ALLOW_TRAINING", "1" if allow else "0", dirs.env_file)
+        hook.set_allow_training(allow)
+        return {"allow_training": allow}
+
     @router.delete("/keys/{platform}")
     def remove_key(platform: str) -> dict[str, Any]:
         provider = hook.catalog.providers.get(platform)

@@ -28,6 +28,7 @@
   var DECISIONS = [];
   var LAYOUTS = {};
   var PLAN = 'free';
+  var ALLOW_TRAINING = false;
   var THEMES = ['catppuccin', 'catppuccin-latte', 'dark', 'everforest', 'flexoki-light', 'gruvbox', 'kanagawa', 'light', 'matte-black', 'nord', 'rose-pine', 'tokyo-night'];
 
   var CATALOG = [
@@ -42,6 +43,9 @@
     { platform: 'google', name: 'Google AI Studio', key_set: true, key_env: 'GEMINI_API_KEY', key_url: 'https://aistudio.google.com/apikey', free_note: 'Free tier with a Google account.', models: [
       { id: 'google/gemini-3.8-flash', tiers: ['chat', 'long-context', 'reasoning'], headroom: 0.66, reliability: 0.93 },
     ] },
+    { platform: 'kilo', name: 'Kilo Gateway (no key needed)', key_set: true, keyless: true, key_env: 'KILO_API_KEY', key_url: 'https://app.kilo.ai', free_note: 'Works with no key at all. Its free models may log prompts and use them for training.', models: [
+      { id: 'kilo/kilo-auto/free', tiers: ['chat', 'coding', 'reasoning'], headroom: null, reliability: null, train: true },
+    ] },
     { platform: 'anthropic', name: 'Anthropic (premium)', key_set: false, key_env: 'ANTHROPIC_API_KEY', key_url: 'https://console.anthropic.com/settings/keys', free_note: 'Paid (Pro): Claude, billed by Anthropic.', models: [
       { id: 'anthropic/claude-sonnet-5-5', tiers: ['chat', 'coding', 'long-context', 'reasoning'], headroom: null, reliability: null, paid: true },
     ] },
@@ -50,16 +54,16 @@
   function view(p, m) {
     var reason = null;
     if (!p.key_set) reason = 'no key';
-    else if (m.train) reason = 'may train on prompts';
+    else if (m.train && !ALLOW_TRAINING) reason = 'may train on prompts';
     else if (m.paid) reason = PLAN === 'pro' ? 'premium off' : 'pro only';
     var cd = Math.max(0, Math.round((COOLDOWN[m.id] || 0) - now()));
     return { id: m.id, tiers: m.tiers, free: !m.paid, may_train_on_prompts: !!m.train, allowed: reason === null, blocked_reason: reason,
       headroom: m.headroom, cooldown_remaining: cd, reliability: m.reliability, limits: { rpm: null, rpd: null, tpm: null, tpd: null } };
   }
   function status() {
-    return { version: 'demo', policy: { allow_paid: false, allow_training: false, premium_reason: 'pro only' },
+    return { version: 'demo', policy: { allow_paid: false, allow_training: ALLOW_TRAINING, premium_reason: 'pro only' },
       spend: { month: new Date().toISOString().slice(0, 7), spent: 0, cap: 5 },
-      providers: CATALOG.map(function (p) { return { platform: p.platform, name: p.name, key_set: p.key_set, key_env: p.key_env, key_url: p.key_url || '', free_note: p.free_note || '', models: p.models.map(function (m) { return view(p, m); }) }; }) };
+      providers: CATALOG.map(function (p) { return { platform: p.platform, name: p.name, key_set: p.key_set, key_env: p.key_env, key_url: p.key_url || '', free_note: p.free_note || '', keyless: !!p.keyless, models: p.models.map(function (m) { return view(p, m); }) }; }) };
   }
   function usable(tier) {
     var out = [];
@@ -183,6 +187,10 @@
       var gone = CATALOG.filter(function (p) { return p.platform === rest.slice(5); })[0];
       if (gone) gone.key_set = false;
       return Promise.resolve(json(200, { platform: rest.slice(5), key_set: false }));
+    }
+    if (rest === 'policy/training' && method === 'PUT') {
+      ALLOW_TRAINING = !!(body && body.allow === true);
+      return Promise.resolve(json(200, { allow_training: ALLOW_TRAINING }));
     }
     if (rest === 'transcribe') {
       // demo: the recording is ignored (never uploaded); a fixed sentence comes back

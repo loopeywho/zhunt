@@ -129,8 +129,18 @@ def keys_from_env(catalog: Catalog, env: Mapping[str, str]) -> dict[str, list[st
     return {
         provider.platform: ["default"]
         for provider in catalog.providers.values()
-        if env.get(provider.key_env)
+        if provider.keyless or env.get(provider.key_env)
     }
+
+
+# Sent as the key to providers that need none (Kilo Gateway accepts anonymous calls).
+_ANONYMOUS_KEY = "anonymous"
+
+
+def provider_key(provider: Any) -> str | None:
+    """The user's key for ``provider``, or the anonymous placeholder when none is needed."""
+
+    return os.environ.get(provider.key_env) or (_ANONYMOUS_KEY if provider.keyless else None)
 
 
 def policy_from_env(env: Mapping[str, str]) -> SelectionPolicy:
@@ -412,13 +422,15 @@ class EngineProxyHook(CustomLogger):
         except NoCandidateError as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
         provider = self.catalog.providers[candidate.model.platform]
-        api_key = os.environ.get(provider.key_env)
+        api_key = provider_key(provider)
         if not api_key:
             raise HTTPException(
                 status_code=503, detail=f"{provider.key_env} is not configured"
             )
         data["model"] = f"{provider.litellm_provider}/{candidate.model.model_id}"
         data["api_key"] = api_key
+        if provider.api_base:
+            data["api_base"] = provider.api_base  # set after the client copy was scrubbed
         decision = replace(decision, model=candidate.model.id)
 
         call_id = _call_id(data)
@@ -714,6 +726,12 @@ class EngineProxyHook(CustomLogger):
             self._plan_cache = (now, self._plan())
         return self._plan_cache[1]
 
+    def set_allow_training(self, allow: bool) -> None:
+        """Turn the privacy gate on or off (the Connect window's switch)."""
+
+        self._base_policy = replace(self._base_policy, allow_training=allow)
+        self.refresh_policy()
+
     def reload_keys(self) -> None:
         """Pick up provider keys added or removed since start-up (the Connect window)."""
 
@@ -779,6 +797,7 @@ class EngineProxyHook(CustomLogger):
                     "key_env": provider.key_env,
                     "key_url": provider.key_url,
                     "free_note": provider.free_note,
+                    "keyless": provider.keyless,
                     "models": models,
                 }
             )
@@ -824,7 +843,7 @@ class EngineProxyHook(CustomLogger):
 
         reason = self.selector.blocked_reason(model)
         provider = self.catalog.providers[model.platform]
-        api_key = os.environ.get(provider.key_env)
+        api_key = provider_key(provider)
         if reason is None and not api_key:
             reason = "no key"
         if reason is not None:
@@ -844,6 +863,7 @@ class EngineProxyHook(CustomLogger):
                 model=f"{provider.litellm_provider}/{model.model_id}",
                 messages=list(messages),
                 api_key=api_key,
+                api_base=provider.api_base,
                 timeout=_COMPARE_TIMEOUT_SECONDS,
                 max_retries=0,
             )

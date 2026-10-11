@@ -41,6 +41,15 @@ class Provider:
     # Where a user gets a key, and a one-line plain-language note on what is free.
     key_url: str = ""
     free_note: str = ""
+    # Works without any key (the key_env variable then only adds a personal key).
+    keyless: bool = False
+
+    @property
+    def api_base(self) -> str | None:
+        """Endpoint to pass to LiteLLM: only for generic OpenAI-compatible providers,
+        which LiteLLM cannot locate by name."""
+
+        return self.base_url if self.litellm_provider == "openai" else None
 
 
 @dataclass(frozen=True)
@@ -113,6 +122,7 @@ class Catalog:
                 ),
                 key_url=_optional_string(raw, "key_url", platform),
                 free_note=_optional_string(raw, "free_note", platform),
+                keyless=_flag(raw, "keyless", platform, default=False),
             )
             raw_models = raw.get("models")
             if not isinstance(raw_models, list) or not raw_models:

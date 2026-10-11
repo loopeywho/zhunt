@@ -22,18 +22,43 @@ export function connectTile(svc) {
     const free = providers.filter((p) => !premium(p));
     const paid = providers.filter(premium);
     const connected = free.filter((p) => p.key_set).length;
+    const trainers = free.filter((p) => (p.models || []).some((m) => m.may_train_on_prompts)).map((p) => p.name.replace(/ \(.*\)$/, ''));
     const rows = [
       h('h3', { class: 'connect-h' }, `Free models · ${connected} of ${free.length} connected`),
+      trainers.length ? trainingSwitch(!!snap.data.policy?.allow_training, trainers) : null,
       ...free.map(row),
-    ];
+    ].filter(Boolean);
     if (paid.length) rows.push(h('h3', { class: 'connect-h' }, 'Premium (Pro, billed by the provider)'), ...paid.map(row));
     swapIfChanged(list, rows);
   }
 
+  // The privacy gate, offered where people set things up: off unless they choose it.
+  function trainingSwitch(on, names) {
+    const box = h('input', { type: 'checkbox', checked: on, 'aria-describedby': 'connect-train-note' });
+    box.addEventListener('change', async () => {
+      box.disabled = true;
+      try {
+        await api.setTraining(box.checked);
+        svc.toast(box.checked ? 'providers that may train are on' : 'providers that may train are off');
+        await svc.store.refresh('status');
+      } catch (err) { box.checked = !box.checked; svc.toast(err.message || String(err), true); } finally { box.disabled = false; }
+    });
+    return h('label', { class: 'connect-train' }, box,
+      h('span', {}, h('strong', {}, 'Also use free providers that may train on your prompts'),
+        h('span', { class: 'quiet', id: 'connect-train-note' }, ` (${names.join(', ')}). Off by default. Turn it on for more free capacity, including ones that need no key.`)));
+  }
+
   function row(p) {
     const ready = (p.models || []).filter((m) => m.allowed).length;
-    const status = p.key_set ? chip('connected', 'ok') : chip('not connected', '');
+    const status = p.keyless ? chip('no key needed', 'ok') : p.key_set ? chip('connected', 'ok') : chip('not connected', '');
     const actions = [];
+    if (p.keyless) {
+      const blocked = (p.models || []).every((m) => m.blocked_reason === 'may train on prompts');
+      return h('article', { class: 'connect-row is-set', 'data-platform': p.platform },
+        h('div', { class: 'connect-top' }, h('strong', {}, p.name), status,
+          h('span', { class: 'quiet' }, blocked ? 'off: turn on the switch above to use it' : `${ready} model${ready === 1 ? '' : 's'} ready`)),
+        p.free_note ? h('p', { class: 'quiet' }, p.free_note) : null);
+    }
     if (p.key_url) actions.push(h('button', { class: 'act primary', type: 'button', onclick: () => window.open(p.key_url, '_blank', 'noopener') }, p.key_set ? 'Manage key' : 'Get free key'));
     if (!open.has(p.platform)) {
       actions.push(h('button', { class: 'act', type: 'button', onclick: () => { open.add(p.platform); paint(); focusInput(p.platform); } }, p.key_set ? 'Replace key' : 'Paste key'));

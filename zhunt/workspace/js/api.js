@@ -101,6 +101,7 @@ export const api = {
     add: (platform, key) => request('/zhunt/api/keys', { method: 'POST', json: { platform, key } }),
     remove: (platform) => request('/zhunt/api/keys/' + encodeURIComponent(platform), { method: 'DELETE' }),
   },
+  setTraining: (allow) => request('/zhunt/api/policy/training', { method: 'PUT', json: { allow } }),
   decisions: ({ limit = 50, session } = {}, signal) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (session) q.set('session', session);

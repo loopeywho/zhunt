@@ -172,3 +172,5 @@
 .btn.mic { font-family: var(--font-prose); }
 .btn.mic.recording { background: var(--err); border-color: var(--err); color: var(--accent-fg); animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { opacity: 0.65; } }
+.connect-train { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--border-strong); cursor: pointer; }
+.connect-train input { margin-top: 3px; accent-color: var(--accent); }

@@ -143,6 +143,58 @@ providers:
         may_train_on_prompts: true
 
 
+  # No key needed: Kilo Gateway serves its `:free` models to anonymous callers
+  # (kilo.ai/docs/gateway/authentication; terms 5(C)(i) allow serving end users).
+  # 200 requests/hour per IP, learned from 429s. Its free router may send prompts to
+  # providers that log them and use them to improve their services, so it stays
+  # behind the training gate. Checked with one anonymous call on 2026-10-11.
+  kilo:
+    name: Kilo Gateway (no key needed)
+    base_url: https://api.kilo.ai/api/gateway
+    key_env: KILO_API_KEY
+    litellm_provider: openai
+    keyless: true
+    key_url: https://app.kilo.ai
+    free_note: "Works with no key at all. Its free models may log prompts and use them for training."
+    verified_on: 2026-10-11
+    models:
+      - id: kilo-auto/free
+        tiers: [chat, coding, reasoning]
+        intelligence: 60
+        speed: 55
+        context_window: 128000
+        supports_tools: true
+        may_train_on_prompts: true
+
+  # Z.ai (international Zhipu, Singapore): recurring free GLM Flash models, email
+  # or Google sign-up (docs.z.ai/guides/overview/pricing, 2026-10-11). The pricing
+  # page shows display names only; the API ids below are lowercased names and need a
+  # live check. Its privacy policy names model training as a basis and points API
+  # users to a separate DPA we could not find, so treated as may-train.
+  zai:
+    name: Z.ai (GLM)
+    base_url: https://api.z.ai/api/paas/v4
+    key_env: ZAI_API_KEY
+    litellm_provider: openai
+    key_url: https://z.ai/manage-apikey/apikey-list
+    free_note: "Free GLM Flash models with an email sign-up; may use prompts for training."
+    verified_on: 2026-10-11
+    models:
+      - id: glm-4.7-flash
+        tiers: [chat, coding, reasoning]
+        intelligence: 70
+        speed: 60
+        context_window: 128000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: glm-4.5-flash
+        tiers: [chat, coding]
+        intelligence: 62
+        speed: 65
+        context_window: 128000
+        supports_tools: true
+        may_train_on_prompts: true
+
   # Premium models for zhunt Pro's fallback, called directly with the user's own
   # paid key for each company (each provider is optional). Used only after every
   # free model is busy, only with Pro and `zhunt premium on`, under a monthly cap.

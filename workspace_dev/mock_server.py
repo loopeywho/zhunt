@@ -44,6 +44,7 @@ STATE = {
     "status_down": False,
     "layouts_dir": None,
     "themes_dir": None,
+    "allow_training": False,
     "plan": "free",  # free | pro  (--plan, or POST /mock/control {"plan": "pro"})
 }
 PLAN_FEATURES = {"free": [], "pro": ["premium_fallback"]}
@@ -69,6 +70,10 @@ CATALOG = [
         {"id": "google/gemini-2.5-pro", "tiers": ["long-context", "reasoning"], "headroom": 0.3, "reliability": 0.9,
          "may_train_on_prompts": True},
     ]},
+    {"platform": "kilo", "name": "Kilo Gateway (no key needed)", "key_set": True, "keyless": True, "key_env": "KILO_API_KEY", "key_url": "https://app.kilo.ai",
+     "free_note": "Works with no key at all. Its free models may log prompts and use them for training.", "models": [
+        {"id": "kilo/kilo-auto/free", "tiers": ["chat", "coding", "reasoning"], "headroom": None, "reliability": None, "may_train_on_prompts": True},
+    ]},
     {"platform": "anthropic", "name": "Anthropic (premium)", "key_set": False, "key_env": "ANTHROPIC_API_KEY", "models": [
         {"id": "anthropic/claude-haiku-5-5", "tiers": ["chat", "coding"], "headroom": None, "reliability": None, "free": False},
         {"id": "anthropic/claude-sonnet-5-5", "tiers": ["chat", "coding", "long-context", "reasoning"], "headroom": None, "reliability": None, "free": False},
@@ -85,7 +90,7 @@ def model_view(provider, m):
     reason = None
     if not provider["key_set"]:
         reason = "no key"
-    elif train:
+    elif train and not STATE["allow_training"]:
         reason = "may train on prompts"
     elif not free:
         reason = "premium off" if STATE["plan"] == "pro" else "pro only"
@@ -102,10 +107,10 @@ def model_view(provider, m):
 def status_payload():
     return {
         "version": "0.1.0.dev0-mock",
-        "policy": {"allow_paid": False, "allow_training": False},
+        "policy": {"allow_paid": False, "allow_training": STATE["allow_training"]},
         "providers": [
             {"platform": p["platform"], "name": p["name"], "key_set": p["key_set"], "key_env": p["key_env"],
-             "key_url": p.get("key_url", ""), "free_note": p.get("free_note", ""),
+             "key_url": p.get("key_url", ""), "free_note": p.get("free_note", ""), "keyless": p.get("keyless", False),
              "models": [model_view(p, m) for m in p["models"]]}
             for p in CATALOG
         ],
@@ -245,6 +250,12 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path.startswith("/zhunt/api/layouts/") and self._authed():
             return self._layouts("put", u.path.rsplit("/", 1)[1])
+        if u.path == "/zhunt/api/policy/training" and self._authed():
+            allow = (self._json_body() or {}).get("allow")
+            if not isinstance(allow, bool):
+                return self._send(400, {"detail": "send allow true or false"})
+            STATE["allow_training"] = allow
+            return self._send(200, {"allow_training": allow})
         self._send(404, {"detail": "not found"})
 
     def do_DELETE(self):
