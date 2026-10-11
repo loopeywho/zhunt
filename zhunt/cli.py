@@ -9,12 +9,15 @@ import typer
 from zhunt.connect_cli import register as register_connect_commands
 from zhunt.installer import Installer, InstallerError
 from zhunt.keys_cli import keys_app
+from zhunt.licence_cli import licence_app, upgrade
 from zhunt.ports import resolve_daemon_port
 
 
 app = typer.Typer(no_args_is_help=True)
 register_connect_commands(app)
 app.add_typer(keys_app, name="keys")
+app.add_typer(licence_app, name="licence")
+app.command("upgrade")(upgrade)
 
 
 @app.callback()

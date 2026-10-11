@@ -3,6 +3,7 @@
 // The wallpaper is the theme's --wallpaper, or a sky that follows the local time when a theme has none.
 
 import { h } from './dom.js';
+import { api } from './api.js';
 import { KINDS } from './tree.js';
 import { KIND_LABELS } from './tiles/index.js';
 
@@ -25,8 +26,10 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
   }, m === 'floating' ? 'Floating' : 'Tiled'));
   const seg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Window style' }, modeBtns);
   const btn = (label, title, onclick) => h('button', { class: 'top-btn', type: 'button', title, onclick }, label);
+  const planBtn = h('button', { class: 'top-btn plan-btn', type: 'button', onclick: () => planSheet() }, 'Free');
+  let plan = { plan: 'free', features: [], feature_labels: {}, upgrade_url: '' };
   topbar.replaceChildren(
-    h('span', { class: 'top-mark' }, 'zhunt'), clock, h('span', { class: 'top-spacer' }), pulse, seg,
+    h('span', { class: 'top-mark' }, 'zhunt'), clock, h('span', { class: 'top-spacer' }), pulse, planBtn, seg,
     btn('+ Window', 'Open a new window (Leader n)', () => newWindowMenu()),
     btn('Theme', 'Choose a theme (Leader t)', () => themeMenu()),
     btn('⌘K', 'Command palette (Ctrl+K)', () => openPalette()));
@@ -51,6 +54,33 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
     pulse.className = 'top-pulse' + (snap.error ? ' bad' : usable ? ' ok' : ' warn');
   });
 
+  async function loadPlan() {
+    try { plan = await api.plan(); } catch { return; }
+    const pro = plan.plan !== 'free';
+    planBtn.textContent = pro ? 'Pro' : 'Upgrade';
+    planBtn.classList.toggle('is-pro', pro);
+    planBtn.title = pro ? 'Your zhunt Pro plan' : 'See what zhunt Pro adds';
+  }
+  loadPlan();
+
+  // What Pro adds, and how to get or check it. Purchases happen on the website, never in here.
+  async function planSheet() {
+    await loadPlan();
+    const pro = plan.plan !== 'free';
+    const labels = plan.feature_labels || {};
+    const until = plan.expires_at ? new Date(plan.expires_at * 1000).toLocaleDateString() : null;
+    const items = [
+      ...Object.keys(labels).map((f) => ({ title: labels[f], group: plan.features.includes(f) ? 'included' : 'pro', hint: plan.features.includes(f) ? 'on' : '' })),
+      pro
+        ? { title: `Pro${plan.email ? ' for ' + plan.email : ''}${until ? ', renews by ' + until : ''}${plan.in_grace ? ' (expired: run zhunt licence renew)' : ''}`, group: 'plan' }
+        : { title: 'Get zhunt Pro ($7/month, 7-day free trial)', group: 'upgrade', hint: 'opens the website', open: true },
+      ...(pro ? [] : [{ title: 'Already bought it? Run: zhunt licence activate', group: 'upgrade' }]),
+      ...(plan.problem ? [{ title: 'Stored licence not in effect: ' + plan.problem, group: 'plan' }] : []),
+    ];
+    const picked = await overlays.palette(items, { placeholder: pro ? 'your plan' : 'zhunt Pro' });
+    if (picked?.open && plan.upgrade_url) window.open(plan.upgrade_url, '_blank', 'noopener');
+  }
+
   async function newWindowMenu() {
     const picked = await overlays.palette(KINDS.map((k) => ({ title: KIND_LABELS[k], group: 'window', kind: k })), { placeholder: 'open which window?' });
     if (picked) ws.split('row', picked.kind);
@@ -59,8 +89,13 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
   async function themeMenu() {
     await themes.refresh();
     const current = themes.current;
-    const items = themes.list.map((t) => ({ title: t.name, group: t.builtin ? 'theme' : 'your theme', hint: t.name === current ? 'current' : '', name: t.name }));
+    const rank = (t) => (t.locked ? 2 : t.builtin ? 0 : 1); // usable first, then your own, then locked Pro themes
+    const items = [...themes.list].sort((a, b) => rank(a) - rank(b)).map((t) => ({
+      title: t.name, group: !t.builtin ? 'your theme' : t.pro ? 'pro theme' : 'theme',
+      hint: t.name === current ? 'current' : t.locked ? 'Pro' : '', name: t.name, locked: t.locked,
+    }));
     const picked = await overlays.palette(items, { placeholder: 'choose a theme' });
+    if (picked?.locked) { toast(`"${picked.name}" is in the zhunt Pro theme pack`); planSheet(); return; }
     if (picked) { await themes.apply(picked.name); toast(`theme ${picked.name}`); }
   }
 
@@ -81,5 +116,5 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
     h('button', { class: 'dock-btn dock-add', type: 'button', 'aria-label': 'Open a new window', onclick: () => newWindowMenu() }, '+'));
   }
 
-  return { refresh, newWindowMenu, themeMenu };
+  return { refresh, newWindowMenu, themeMenu, planSheet };
 }

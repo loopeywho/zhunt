@@ -42,6 +42,8 @@
 }
 .top-btn { padding: 4px 12px; cursor: pointer; white-space: nowrap; }
 .top-btn:hover { background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.plan-btn { font-weight: 600; }
+.plan-btn.is-pro { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .seg { display: inline-flex; padding: 2px; }
 .seg-btn { font: inherit; border: 0; background: transparent; color: inherit; padding: 2px 12px; border-radius: 999px; cursor: pointer; }
 .seg-btn[aria-checked="true"] { background: var(--accent); color: var(--accent-fg); font-weight: 600; }

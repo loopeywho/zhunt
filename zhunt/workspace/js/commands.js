@@ -89,6 +89,7 @@ export function buildCommands(app) {
 
   // ---- misc ----
   add({ id: 'palette', group: 'App', title: 'Command palette', leader: [':'], direct: 'Ctrl+K', hidden: true, run: () => app.openPalette() });
+  add({ id: 'plan', group: 'App', title: 'zhunt Pro / your plan', run: () => app.desktop.planSheet() });
   add({ id: 'help', group: 'App', title: 'Keyboard reference', leader: ['?'], direct: '?', run: () => app.openHelp() });
   add({ id: 'refresh', group: 'App', title: 'Refresh status and decisions now', leader: ['r'], run: () => { store.refresh('status'); store.refresh('decisions'); toast('refreshing'); } });
   return cmds;

@@ -1,4 +1,4 @@
-"""Workspace HTTP API (docs/WORKSPACE_API.md): status, decisions, compare, layouts, themes."""
+"""Workspace HTTP API (docs/WORKSPACE_API.md): status, decisions, compare, layouts, themes, plan."""
 
 from __future__ import annotations
 
@@ -8,19 +8,23 @@ import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
+from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
 
 MAX_LAYOUT_BYTES = 64 * 1024
 MAX_COMPARE_MODELS = 4
 MAX_COMPARE_BYTES = 1024 * 1024
 _NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
+# Built-in themes anyone gets; the rest of the shipped pack needs Pro. Themes the user
+# writes in ~/.zhunt/themes are always free, whatever they are called.
+FREE_THEMES = frozenset({"dark", "light"})
 
 
 @dataclass(frozen=True)
@@ -81,7 +85,11 @@ def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) ->
         )
 
 
-def build_router(hook: EngineProxyHook, dirs: WorkspaceDirs) -> APIRouter:
+def build_router(
+    hook: EngineProxyHook, dirs: WorkspaceDirs, plan: Callable[[], Plan] | None = None
+) -> APIRouter:
+    # Read on every request, so `zhunt licence activate` takes effect without a restart.
+    plan = plan or (lambda: current_plan())
     router = APIRouter(
         prefix="/zhunt/api", dependencies=[Depends(_authenticate_local_request)]
     )
@@ -89,6 +97,10 @@ def build_router(hook: EngineProxyHook, dirs: WorkspaceDirs) -> APIRouter:
     @router.get("/status")
     def status() -> dict[str, Any]:
         return hook.status()
+
+    @router.get("/plan")
+    def get_plan() -> dict[str, Any]:
+        return plan().to_api()
 
     @router.get("/decisions")
     def decisions(
@@ -145,10 +157,16 @@ def build_router(hook: EngineProxyHook, dirs: WorkspaceDirs) -> APIRouter:
     def list_themes() -> dict[str, Any]:
         user = set(_names(dirs.themes, ".css"))
         builtin = set(_names(dirs.static / "css" / "themes", ".css"))
+        unlocked = plan().has("theme_pack")
         # A user theme replaces the built-in of the same name, so it is listed as theirs.
         return {
             "themes": [
-                {"name": name, "builtin": name not in user}
+                {
+                    "name": name,
+                    "builtin": name not in user,
+                    "pro": name not in user and name not in FREE_THEMES,
+                    "locked": name not in user and name not in FREE_THEMES and not unlocked,
+                }
                 for name in sorted(user | builtin)
             ]
         }
@@ -156,6 +174,10 @@ def build_router(hook: EngineProxyHook, dirs: WorkspaceDirs) -> APIRouter:
     @router.get("/themes/{name}")
     def get_theme(name: str) -> PlainTextResponse:
         for folder in (dirs.themes, dirs.static / "css" / "themes"):
+            if folder != dirs.themes and name not in FREE_THEMES and not plan().has("theme_pack"):
+                if _path(folder, name, ".css").is_file():
+                    raise HTTPException(402, f"the {name!r} theme is part of zhunt Pro")
+                continue
             candidate = _path(folder, name, ".css")
             try:
                 if candidate.is_symlink():  # never follow a link out of the themes dir

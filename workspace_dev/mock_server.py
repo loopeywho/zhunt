@@ -16,7 +16,7 @@ Implements docs/WORKSPACE_API.md with realistic fake data (stdlib only):
   POST /zhunt/api/compare               parallel fake results incl. a blocked and a rate-limited model
   *    /zhunt/api/layouts[/name]        backed by a temp dir
   GET  /zhunt/api/themes[/name]         built-ins from the workspace dir + a user theme from a temp dir
-  POST /mock/control                    {"layouts_broken": bool, "status_down": bool} (no auth), test hook
+  POST /mock/control                    {"layouts_broken": bool, "status_down": bool, "plan": "free"|"pro"} (no auth), test hook
 
 Usage: python3 workspace_dev/mock_server.py [--port 8765] [--key mockkey]
 Then open http://127.0.0.1:8765/workspace/#key=mockkey
@@ -44,6 +44,13 @@ STATE = {
     "status_down": False,
     "layouts_dir": None,
     "themes_dir": None,
+    "plan": "free",  # free | pro  (--plan, or POST /mock/control {"plan": "pro"})
+}
+FREE_THEMES = {"dark", "light"}
+PLAN_FEATURES = {"free": [], "pro": ["premium_fallback", "theme_pack"]}
+FEATURE_LABELS = {
+    "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
+    "theme_pack": "The full theme pack (Tokyo Night, Catppuccin, Gruvbox, Nord and more)",
 }
 LOCK = threading.Lock()
 DECISIONS = []  # newest last; served newest first
@@ -222,6 +229,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._layouts("list", None)
         if u.path.startswith("/zhunt/api/layouts/"):
             return self._layouts("get", u.path.rsplit("/", 1)[1])
+        if u.path == "/zhunt/api/plan":
+            pro = STATE["plan"] == "pro"
+            return self._send(200, {
+                "plan": STATE["plan"], "email": "you@example.com" if pro else None,
+                "expires_at": time.time() + 20 * 86400 if pro else None, "in_grace": False, "problem": None,
+                "features": PLAN_FEATURES[STATE["plan"]], "feature_labels": FEATURE_LABELS,
+                "upgrade_url": "https://zhunt.kindredwildcat.com/#pricing",
+            })
         if u.path == "/zhunt/api/themes":
             return self._themes_list()
         if u.path.startswith("/zhunt/api/themes/"):
@@ -243,8 +258,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         if u.path == "/mock/control":
-            STATE.update({k: v for k, v in (self._json_body() or {}).items() if k in ("layouts_broken", "status_down")})
-            return self._send(200, {"ok": True, **{k: STATE[k] for k in ("layouts_broken", "status_down")}})
+            STATE.update({k: v for k, v in (self._json_body() or {}).items() if k in ("layouts_broken", "status_down", "plan")})
+            return self._send(200, {"ok": True, **{k: STATE[k] for k in ("layouts_broken", "status_down", "plan")}})
         if not self._authed():
             return
         if u.path == "/v1/chat/completions":
@@ -287,14 +302,19 @@ class Handler(BaseHTTPRequestHandler):
     def _themes_list(self):
         names = {p.stem: True for p in (WORKSPACE_DIR / "css" / "themes").glob("*.css")}
         for p in Path(STATE["themes_dir"]).glob("*.css"):
-            names[p.stem] = p.stem in names and names[p.stem]
-        self._send(200, {"themes": [{"name": n, "builtin": b} for n, b in sorted(names.items())]})
+            names[p.stem] = False  # a user theme replaces the built-in of the same name
+        unlocked = STATE["plan"] == "pro"
+        self._send(200, {"themes": [
+            {"name": n, "builtin": b, "pro": b and n not in FREE_THEMES, "locked": b and n not in FREE_THEMES and not unlocked}
+            for n, b in sorted(names.items())]})
 
     def _theme_css(self, name):
         if not NAME_RE.match(name):
             return self._send(400, {"detail": "invalid theme name"})
         for base in (Path(STATE["themes_dir"]), WORKSPACE_DIR / "css" / "themes"):
             f = base / (name + ".css")
+            if f.is_file() and base != Path(STATE["themes_dir"]) and name not in FREE_THEMES and STATE["plan"] != "pro":
+                return self._send(402, {"detail": f"the {name!r} theme is part of zhunt Pro"})
             if f.is_file():
                 return self._send(200, f.read_bytes(), "text/css; charset=utf-8")
         self._send(404, {"detail": "theme not found"})
@@ -419,8 +439,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--key", default="mockkey")
+    ap.add_argument("--plan", choices=["free", "pro"], default="free")
     args = ap.parse_args()
     STATE["key"] = args.key
+    STATE["plan"] = args.plan
     tmp = Path(tempfile.mkdtemp(prefix="zhunt-mock-"))
     (tmp / "layouts").mkdir()
     (tmp / "themes").mkdir()
