@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Zhunt — Activate Pro</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Zhunt home"><span class="brand-mark" aria-hidden="true">z</span><span>Zhunt</span></a>
+      </header>
+      <main class="activate-main">
+        <p class="eyebrow">Zhunt Pro</p>
+        <h1 class="activate-title" id="title">Getting your licence key…</h1>
+        <p class="section-intro" id="detail">One moment while we confirm your checkout with Stripe.</p>
+        <div class="install-card" id="result" hidden>
+          <pre class="install-code licence-code"><code id="licence"></code></pre>
+          <div class="hero-actions"><button class="button button-primary" type="button" id="copy">Copy key</button></div>
+        </div>
+        <div class="install-card" id="next" hidden>
+          <p class="section-intro">Then, in a terminal on the computer where zhunt runs:</p>
+<pre class="install-code"><code>zhunt licence activate     # paste the key when asked
+zhunt licence status       # shows Pro and what it includes</code></pre>
+          <p class="section-note">The key is checked on your machine, offline. Keep it private: anyone with it can use your Pro plan. When your subscription renews, run <code>zhunt licence renew</code>.</p>
+        </div>
+      </main>
+      <footer class="site-footer"><div class="footer-meta"><span>© 2026 Kindred Wildcat</span><a href="./">Back to zhunt</a></div></footer>
+    </div>
+    <script src="activate.js"></script>
+  </body>
+</html>

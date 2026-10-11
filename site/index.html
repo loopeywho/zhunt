@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Zhunt routes coding-agent requests to the cheapest capable model while showing the cost and trade-offs." />
-    <title>Zhunt — Give every token a job</title>
+    <meta name="description" content="Zhunt puts every AI model in one workspace and answers with the best free model available, switching automatically when one runs out. Pro adds premium models when the free ones are busy." />
+    <title>Zhunt — Every AI model, free first</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -16,111 +16,148 @@
         </a>
         <nav class="nav" aria-label="Primary navigation">
           <a href="#how-it-works">How it works</a>
-          <a href="#security">Security</a>
-          <a href="#downloads">Downloads</a>
-          <a href="#evidence">Evidence</a>
-          <a href="#feedback">Feedback</a>
+          <a href="#workspace">Workspace</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#install">Install</a>
           <a href="#pricing">Pricing</a>
-          <a class="nav-cta" href="https://buy.stripe.com/28EdR883o8tSgfE2RncMM01" target="_blank" rel="noopener">Start 7-day trial</a>
+          <a class="nav-cta" href="https://buy.stripe.com/28EdR883o8tSgfE2RncMM01" target="_blank" rel="noopener">Start 7-day Pro trial</a>
         </nav>
       </header>
 
       <aside class="release-banner" aria-label="Current release">
         <span class="release-pulse" aria-hidden="true"></span>
-        <strong>0.1.0 preview</strong>
-        <span>Local core downloads are live for macOS Apple Silicon, Windows x64, and Linux x86_64.</span>
-        <a href="#downloads">See installers <span aria-hidden="true">↓</span></a>
+        <strong>v2 preview</strong>
+        <span>The free-first engine and the new desktop workspace are here. Installs with one command on macOS, Windows and Linux.</span>
+        <a href="#install">Install <span aria-hidden="true">↓</span></a>
       </aside>
 
       <main id="top">
         <section class="hero section-grid">
           <div class="hero-copy">
-            <p class="eyebrow"><span class="pulse"></span> Local-first routing for coding agents</p>
-            <h1>Give every token a <em>job.</em></h1>
+            <p class="eyebrow"><span class="pulse"></span> One workspace for every AI model</p>
+            <h1>Every model.<br /><em>Free first.</em></h1>
             <p class="hero-lede">
-              Zhunt routes coding-agent requests locally, sends them directly to the provider you choose, and shows you what actually happened. The local core is free; Pro adds history, policy controls, multiple-app support, and richer cost reports.
+              Zhunt answers each prompt with the best free model available right now (Groq, Google AI Studio, Cerebras and more) and switches the moment one hits its limit. Bring your own free keys and it costs nothing. Pro steps up to premium models only when the free ones are busy, under a monthly cap you set.
             </p>
             <div class="hero-actions">
-              <a class="button button-primary" href="https://buy.stripe.com/28EdR883o8tSgfE2RncMM01" target="_blank" rel="noopener">Start your 7-day Pro trial <span>↗</span></a>
-              <a class="button button-quiet" href="#downloads">Download the free local core <span>↓</span></a>
+              <a class="button button-primary" href="#install">Install free <span>↓</span></a>
+              <a class="button button-quiet" href="https://buy.stripe.com/28EdR883o8tSgfE2RncMM01" target="_blank" rel="noopener">Start the 7-day Pro trial <span>↗</span></a>
             </div>
-            <p class="hero-note">Card required for the trial. $0 today · $7/month before applicable tax. Your provider billing remains separate.</p>
+            <p class="hero-note">Free forever for free-tier models. Pro is $7/month before applicable tax after a 7-day trial; premium model usage is billed by your provider.</p>
           </div>
-          <div class="hero-visual" aria-label="Illustration of a request being routed through model tiers">
+          <div class="hero-visual" aria-label="Illustration of zhunt failing over from one free model to the next, then to a premium model">
             <div class="visual-glow"></div>
             <div class="route-card route-card-top">
-              <div><span class="route-dot dot-lime"></span><span>simple request</span></div>
-              <strong>chat</strong>
-              <small>$</small>
+              <div><span class="route-dot dot-lime"></span><span>groq · llama 3.3</span></div>
+              <strong>free</strong>
+              <small>limit hit</small>
             </div>
             <div class="route-line line-one"></div>
             <div class="route-card route-card-middle">
-              <div><span class="route-dot dot-blue"></span><span>coding turn</span></div>
-              <strong>coding</strong>
-              <small>$$</small>
+              <div><span class="route-dot dot-blue"></span><span>gemini flash</span></div>
+              <strong>free</strong>
+              <small>answers</small>
             </div>
             <div class="route-line line-two"></div>
             <div class="route-card route-card-bottom">
-              <div><span class="route-dot dot-orange"></span><span>hard problem</span></div>
-              <strong>reasoning</strong>
-              <small>$$$</small>
+              <div><span class="route-dot dot-orange"></span><span>claude · gpt</span></div>
+              <strong>Pro</strong>
+              <small>if all free are busy</small>
             </div>
-            <div class="visual-caption">one conversation · the right tier per turn</div>
+            <div class="visual-caption">one prompt · never a dead end</div>
           </div>
         </section>
 
         <section class="proof-strip" aria-label="Zhunt product highlights">
-          <div><strong>Local by default</strong><span>Your daemon stays on your machine.</span></div>
-          <div><strong>Works with your tools</strong><span>Hermes · Claude Code · Codex · Cursor · VS Code</span></div>
-          <div><strong>Evidence, not promises</strong><span>Cost, model, tier, and escalation are visible.</span></div>
+          <div><strong>Free models, pooled</strong><span>Groq · Google AI Studio · Cerebras, with more on the way.</span></div>
+          <div><strong>Its own desktop</strong><span>Floating or tiled windows, ten themes, keyboard-first.</span></div>
+          <div><strong>Runs on your machine</strong><span>No zhunt servers between you and the model.</span></div>
         </section>
 
         <section class="content-section" id="how-it-works">
           <div class="section-heading">
             <p class="eyebrow">The simple version</p>
-            <h2>Your app stays the same.<br /><span>Zhunt does the sorting.</span></h2>
+            <h2>Ask once.<br /><span>Zhunt finds a model that can answer.</span></h2>
           </div>
           <div class="steps-grid">
-            <article class="step-card"><span class="step-number">01</span><h3>Connect once</h3><p>Choose OpenRouter or Nous Portal, enter your key in the local setup page, and verify it before a request leaves your machine.</p></article>
-            <article class="step-card"><span class="step-number">02</span><h3>Keep your workflow</h3><p>Install a recipe for Hermes, Claude Code, Codex, Cursor, or VS Code. Your app keeps speaking its native protocol.</p></article>
-            <article class="step-card"><span class="step-number">03</span><h3>See the trade-off</h3><p>Review the selected model, projected cost, escalations, and session behavior. No black-box “trust us” score.</p></article>
+            <article class="step-card"><span class="step-number">01</span><h3>Add free keys</h3><p>Groq, Google AI Studio and Cerebras give free API keys. Paste one in a terminal with <code>zhunt keys add groq</code>; it never touches a web page.</p></article>
+            <article class="step-card"><span class="step-number">02</span><h3>Ask anything</h3><p>Zhunt reads the request on your machine, decides if it is chat, code, long-context or reasoning, and picks the healthiest free model with quota left.</p></article>
+            <article class="step-card"><span class="step-number">03</span><h3>Never hit a wall</h3><p>When a model runs out, zhunt rests it and retries on the next one before you see an error. Every reply says which model answered and why.</p></article>
           </div>
         </section>
 
-        <section class="security-section" id="security">
+        <section class="security-section" id="workspace">
           <div class="security-copy">
-            <p class="eyebrow">The provider boundary</p>
-            <h2>Your prompt is inspected <span>locally.</span></h2>
-            <p>Zhunt analyzes the request—and, when needed, recent conversation context—on your machine before selecting a route. It does not upload prompts to Zhunt for classification.</p>
-            <p>After a route is selected, the request goes directly from your machine to OpenRouter or Nous Portal. The provider you choose still receives the prompt, just as it would if you used that provider directly.</p>
-            <div class="security-links"><a class="text-link" href="#privacy">Security architecture <span>↗</span></a><a class="text-link" href="#privacy">Privacy policy <span>↗</span></a></div>
+            <p class="eyebrow">Not another chat sidebar</p>
+            <h2>A workspace you can <span>shape.</span></h2>
+            <p>Zhunt is its own desktop. Float glass windows over a wallpaper, or snap them into a tiled grid that you drive from the keyboard, and switch any time without losing a conversation.</p>
+            <p>Chat, side-by-side model comparison, a "why this model" view, quota and keys, logs, and a <em>For you</em> feed that tells you what needs attention, like a missing free key or a model taking a break.</p>
           </div>
           <div class="security-card">
-            <div class="security-card-heading"><span class="security-lock" aria-hidden="true">⌁</span><strong>Local by default</strong></div>
+            <div class="security-card-heading"><span class="security-lock" aria-hidden="true">⌘</span><strong>Make it yours</strong></div>
             <ul class="bullet-list">
-              <li>Provider keys stay on your machine in <code>~/.zhunt/env</code> with restrictive file permissions.</li>
-              <li>Zhunt does not proxy requests through its own servers.</li>
-              <li>Prompts, responses, and provider keys are excluded from telemetry.</li>
-              <li>You can inspect or delete local credentials at any time.</li>
+              <li>Floating (drag, overlap, dock) or tiled (keyboard grid) windows.</li>
+              <li>Dark and light with a sky that follows your day; Pro adds Tokyo Night, Catppuccin, Gruvbox, Nord, Rosé Pine and more.</li>
+              <li>Themes and layouts are plain files you can edit and share.</li>
+              <li>Also an endpoint for Codex, Hermes, Cursor and VS Code if you want it.</li>
             </ul>
           </div>
         </section>
 
-        <section class="evidence-section" id="evidence">
-          <div class="evidence-copy">
-            <p class="eyebrow">A better first conversation</p>
-            <h2>Show people the bill they can understand.</h2>
-            <p>Start with a small, private benchmark. Compare the model your app normally uses with the route Zhunt would choose. Keep quality and latency separate from cost so a cheap number never pretends to be a good answer.</p>
-            <a class="text-link" href="#evidence">Build a local report <span>↗</span></a>
+        <section class="security-section" id="privacy">
+          <div class="security-copy">
+            <p class="eyebrow">The provider boundary</p>
+            <h2>Your prompts stay <span>between you and the model.</span></h2>
+            <p>Zhunt runs on your computer. It classifies requests locally and sends them straight to the provider it picks. There is no zhunt server in the middle, and zhunt does not phone home, not even to check your licence.</p>
+            <p>Some free tiers may train on prompts. Zhunt skips those providers unless you opt in, and labels them everywhere.</p>
           </div>
-          <div class="report-card">
-            <div class="report-header"><span>offline benchmark · example</span><span class="report-status">no provider calls</span></div>
-            <div class="report-main"><strong>43.5%</strong><span>projected difference</span></div>
-            <div class="report-bars">
-              <div class="bar-row"><span>top-model baseline</span><div class="bar"><i class="bar-baseline"></i></div><b>$0.112</b></div>
-              <div class="bar-row"><span>Zhunt route</span><div class="bar"><i class="bar-zhunt"></i></div><b>$0.064</b></div>
+          <div class="security-card">
+            <div class="security-card-heading"><span class="security-lock" aria-hidden="true">⌁</span><strong>Local by default</strong></div>
+            <ul class="bullet-list">
+              <li>Provider keys live in <code>~/.zhunt/env</code> with owner-only permissions.</li>
+              <li>Prompts and responses are never logged; telemetry stays on your machine.</li>
+              <li>Licence keys are verified offline.</li>
+              <li>Open source: read every line.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="downloads-section" id="install">
+          <div class="section-heading compact"><p class="eyebrow">Install in a minute</p><h2>One command. <span>Then add a free key.</span></h2><p class="section-intro">Zhunt is a Python app. <a class="text-link" href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener">uv</a> installs it and keeps it isolated; it works the same on macOS, Windows and Linux.</p></div>
+          <div class="install-card">
+<pre class="install-code"><code>uv tool install git+https://github.com/loopeywho/zhunt
+zhunt keys add groq      # free key from console.groq.com
+zhunt serve              # starts zhunt on this computer
+zhunt open               # opens your workspace</code></pre>
+          </div>
+          <p class="section-note">Free keys: <a class="text-link" href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>, <a class="text-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>, <a class="text-link" href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a>. One key per provider, under that provider's terms. Preview software: tell us what breaks.</p>
+        </section>
+
+        <section class="trial-section" id="trial">
+          <div class="section-heading compact"><p class="eyebrow">How Pro works</p><h2>Seven days free. <span>Then $7 a month.</span></h2></div>
+          <div class="trial-grid">
+            <div class="trial-steps">
+              <article><span class="step-number">01</span><div><h3>Start the trial</h3><p>Stripe collects your payment method; zhunt never sees your card number. You are not charged today.</p></div></article>
+              <article><span class="step-number">02</span><div><h3>Copy your licence key</h3><p>After checkout you get a key. Run <code>zhunt licence activate</code> and paste it. It is checked on your machine, offline.</p></div></article>
+              <article><span class="step-number">03</span><div><h3>Continue or cancel</h3><p>Checkout shows the exact renewal date. Cancel any time before it; the free version keeps working.</p></div></article>
             </div>
-            <div class="report-foot"><span>5 representative turns</span><span>quality: not measured</span></div>
+            <div class="checkout-card" id="checkout">
+              <p class="eyebrow">Checkout disclosure</p>
+              <h3>7-day Pro trial</h3>
+              <strong class="checkout-price">$0 today <span>·</span> $7/month before applicable tax</strong>
+              <p>Your card is required to prevent automated signups. You will not be charged today. Unless cancelled, your subscription renews at $7/month before applicable tax; the exact total is shown at checkout. Premium model usage is billed separately by the provider whose key you add.</p>
+              <a class="button button-primary" href="https://buy.stripe.com/28EdR883o8tSgfE2RncMM01" target="_blank" rel="noopener">Start 7-day trial — $0 today <span>↗</span></a>
+              <p class="checkout-note">Checkout is hosted securely by Stripe. Cancel before renewal to avoid a charge.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="pricing-section" id="pricing">
+          <div class="section-heading compact"><p class="eyebrow">Simple pricing</p><h2>Free models stay free.<br /><span>Pay only for the safety net.</span></h2></div>
+          <div class="pricing-grid">
+            <article class="price-card"><p class="price-label">Free</p><h3>$0</h3><p class="price-copy">Free-tier routing with automatic failover, the full workspace, floating and tiled windows, dark and light themes.</p><span class="price-rule"></span><p class="price-foot">Bring your own free keys. No card.</p></article>
+            <article class="price-card featured"><p class="price-label">Pro</p><h3>$7/mo <small>before applicable tax, after 7 days</small></h3><p class="price-copy">Everything in Free, plus premium models (GPT, Claude, Gemini Pro) when every free model is busy, a monthly spend cap, and the full theme pack.</p><span class="price-rule"></span><p class="price-foot">Premium usage billed by your provider.</p></article>
+            <article class="price-card"><p class="price-label">Cloud</p><h3>Waitlist</h3><p class="price-copy">Zhunt with premium model credits included and nothing to install, for people who want one subscription for every model.</p><span class="price-rule"></span><p class="price-foot"><a class="text-link" href="mailto:kwokwingfoods@gmail.com?subject=Zhunt%20Cloud%20waitlist">Join the waitlist ↗</a></p></article>
           </div>
         </section>
 
@@ -128,86 +165,39 @@
           <div class="feedback-copy">
             <p class="eyebrow">Help shape the next build</p>
             <h2>Rome wasn’t built in a day.<br /><span>Neither is Zhunt.</span></h2>
-            <p>Your trial feedback is valuable, especially when something feels confusing, routes to the wrong model, or simply does not work as expected. Tell us what happened and what you hoped would happen next.</p>
-            <p class="feedback-note">Please do not include API keys, full prompts, private code, or customer data. A short description, app, operating system, and approximate time is enough.</p>
+            <p>Tell us when something feels confusing, routes to the wrong model, or does not work. What happened, and what you hoped would happen, is enough.</p>
+            <p class="feedback-note">Please do not include API keys, licence keys, full prompts, private code or customer data.</p>
           </div>
           <div class="feedback-card">
-            <div class="feedback-card-heading"><span class="feedback-icon" aria-hidden="true">↗</span><strong>Send trial feedback</strong></div>
+            <div class="feedback-card-heading"><span class="feedback-icon" aria-hidden="true">↗</span><strong>Send feedback</strong></div>
             <p>Include the type of issue, what you expected, what happened, and whether you can reproduce it.</p>
             <div class="feedback-actions">
-              <a class="button button-primary" href="mailto:kwokwingfoods@gmail.com?subject=Zhunt%20trial%20bug%20report&body=What%20I%20expected%3A%0A%0AWhat%20happened%3A%0A%0AApp%20and%20OS%3A%0A%0ACan%20you%20reproduce%20it%3F%20Yes%20%2F%20No">Report a bug <span>↗</span></a>
-              <a class="button button-quiet" href="mailto:kwokwingfoods@gmail.com?subject=Zhunt%20trial%20suggestion&body=What%20would%20you%20like%20to%20see%3F%0A%0AWhy%20would%20it%20help%3F%0A%0AApp%20and%20OS%3A">Suggest an improvement <span>↗</span></a>
+              <a class="button button-primary" href="mailto:kwokwingfoods@gmail.com?subject=Zhunt%20bug%20report&body=What%20I%20expected%3A%0A%0AWhat%20happened%3A%0A%0AOS%3A%0A%0ACan%20you%20reproduce%20it%3F%20Yes%20%2F%20No">Report a bug <span>↗</span></a>
+              <a class="button button-quiet" href="mailto:kwokwingfoods@gmail.com?subject=Zhunt%20suggestion&body=What%20would%20you%20like%20to%20see%3F%0A%0AWhy%20would%20it%20help%3F">Suggest an improvement <span>↗</span></a>
             </div>
           </div>
         </section>
 
-        <section class="audience-section">
-          <div class="section-heading compact"><p class="eyebrow">For where you are now</p><h2>Start simple. Go deeper when you need to.</h2></div>
-          <div class="audience-grid">
-            <article><span class="audience-icon icon-spark">✦</span><h3>New to API keys</h3><p>One guided setup page. Plain language. A hard billing warning before you connect.</p></article>
-            <article><span class="audience-icon icon-bracket">{ }</span><h3>Building every day</h3><p>Keep your agent, tools, and prompts. Add a routing layer without rebuilding your workflow.</p></article>
-            <article><span class="audience-icon icon-pulse">↗</span><h3>Running a team</h3><p>Make model policy visible, compare spend, and give every developer a safer default.</p></article>
-          </div>
-        </section>
-
-        <section class="downloads-section" id="downloads">
-          <div class="section-heading compact"><p class="eyebrow">Available for your computer</p><h2>Download the free <span>local core.</span></h2><p class="section-intro">Choose your platform, verify the checksum in the release, and connect your own provider key during local setup.</p></div>
-          <div class="download-grid">
-            <article class="download-card"><span class="download-badge">macOS · Apple Silicon</span><h3>macOS arm64</h3><p>For Apple Silicon Macs. This preview is unsigned and is not a Universal 2 build.</p><div class="download-actions"><a class="button button-primary" href="https://github.com/loopeywho/zhunt/releases/download/v0.1.0.dev1/Zhunt-Setup-macos-arm64.dmg">DMG <span>↓</span></a><a class="button button-quiet" href="https://github.com/loopeywho/zhunt/releases/download/v0.1.0.dev1/Zhunt-Setup-macos-arm64.pkg">PKG <span>↓</span></a></div><span class="download-status">Preview release · verify the checksum before installing</span></article>
-            <article class="download-card"><span class="download-badge">Windows</span><h3>Windows x64</h3><p>For most Intel and AMD PCs. The installer is built and smoke-tested on a real Windows runner.</p><div class="download-actions"><a class="button button-primary" href="https://github.com/loopeywho/zhunt/releases/download/v0.1.0.dev1/Zhunt-Setup-win-x64.exe">Download installer <span>↓</span></a></div><span class="download-status">Preview release · Quill validation still pending</span></article>
-            <article class="download-card"><span class="download-badge">Linux</span><h3>Linux x86_64</h3><p>Portable bundle for common x86_64 Linux systems. No system Python installation is required.</p><div class="download-actions"><a class="button button-primary" href="https://github.com/loopeywho/zhunt/releases/download/v0.1.0.dev1/Zhunt-Setup-linux-x64.tar.gz">Download bundle <span>↓</span></a></div><span class="download-status">Preview release · verify the checksum before installing</span></article>
-          </div>
-          <p class="section-note">No card is needed for the local core. Connect your own OpenRouter or Nous Portal key during setup. Downloads are preview artifacts; review the release notes and checksums before installing.</p>
-        </section>
-
-        <section class="trial-section" id="trial">
-          <div class="section-heading compact"><p class="eyebrow">How the trial works</p><h2>Full workflow for <span>seven days.</span></h2></div>
-          <div class="trial-grid">
-            <div class="trial-steps">
-              <article><span class="step-number">01</span><div><h3>Download the free local core</h3><p>Install Zhunt for macOS or Windows. No card is needed to use local routing.</p></div></article>
-              <article><span class="step-number">02</span><div><h3>Start Pro when you want it</h3><p>Choose the 7-day Pro trial. Stripe securely collects your payment method; Zhunt never receives your full card number.</p></div></article>
-              <article><span class="step-number">03</span><div><h3>Continue or cancel</h3><p>Your checkout screen shows the exact renewal date. Cancel from the billing portal at any time before renewal.</p></div></article>
-            </div>
-            <div class="checkout-card" id="checkout">
-              <p class="eyebrow">Checkout disclosure</p>
-              <h3>7-day Pro trial</h3>
-              <strong class="checkout-price">$0 today <span>·</span> $7/month before applicable tax</strong>
-              <p>Your card is required to prevent automated signups. You will not be charged today. Unless cancelled, your subscription renews at $7/month before applicable tax; the exact total is shown at checkout.</p>
-              <a class="button button-primary" href="https://buy.stripe.com/28EdR883o8tSgfE2RncMM01" target="_blank" rel="noopener">Start 7-day trial — $0 today <span>↗</span></a>
-              <p class="checkout-note">Checkout is hosted securely by Stripe. $0 today; $7/month before applicable tax after the 7-day trial. Cancel before renewal to avoid a charge.</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="pricing-section" id="pricing">
-          <div class="section-heading compact"><p class="eyebrow">Simple pricing</p><h2>Keep the local core free.<br /><span>Charge for the work around it.</span></h2></div>
-          <div class="pricing-grid">
-            <article class="price-card"><p class="price-label">Local core</p><h3>Free</h3><p class="price-copy">One machine, basic local routing, and a local cost report. No subscription and no card required.</p><span class="price-rule"></span><p class="price-foot">You pay your provider directly.</p></article>
-            <article class="price-card featured"><p class="price-label">Pro</p><h3>$7/mo <small>before applicable tax, after 7 days</small></h3><p class="price-copy">History, policy controls, multiple apps, and richer reports. Card required to start; no charge today.</p><span class="price-rule"></span><p class="price-foot">Provider usage remains separate and visible.</p></article>
-            <article class="price-card"><p class="price-label">Teams</p><h3>Shared</h3><p class="price-copy">Shared policies, admin controls, and team reporting.</p><span class="price-rule"></span><p class="price-foot">Available after the pilot.</p></article>
-          </div>
-        </section>
-
-        <section class="privacy-section" id="privacy">
+        <section class="privacy-section" id="billing">
           <p class="eyebrow">Trust, cancellation, and billing</p>
           <h2>Keep control of <span>your data and spend.</span></h2>
           <div class="privacy-grid">
-            <p>Provider billing remains separate. Zhunt cannot see your full card number, provider secret, prompts, or responses. Your selected provider still receives requests routed to it.</p>
-            <p>Cancel Pro any time from the billing portal before the renewal date shown at checkout. The local core continues to work without a subscription.</p>
+            <p>Zhunt cannot see your card number, provider keys, prompts or responses. The provider zhunt routes a request to receives it, as it would if you used that provider directly. Premium usage is billed by that provider and capped by the monthly limit you set.</p>
+            <p>Cancel Pro any time before the renewal date shown at checkout. Your licence keeps working to the end of the paid period, and the free version keeps working after that.</p>
           </div>
         </section>
 
         <section class="final-cta">
           <p class="eyebrow">Zhunt by Kindred Wildcat</p>
-          <h2>Spend less on the easy turns.<br />Keep the hard ones honest.</h2>
+          <h2>Use the free models first.<br />Keep a safety net for the rest.</h2>
           <a class="button button-primary" href="https://buy.stripe.com/28EdR883o8tSgfE2RncMM01" target="_blank" rel="noopener">Start your 7-day trial <span>↗</span></a>
         </section>
       </main>
 
       <footer class="site-footer">
-        <div><a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">z</span><span>Zhunt</span></a><p>Local-first routing for coding agents.</p></div>
-        <div class="footer-links"><a href="#how-it-works">How it works</a><a href="#security">Security</a><a href="#feedback">Feedback</a><a href="#pricing">Pricing</a><a href="#privacy">Privacy</a></div>
-        <div class="footer-meta"><span>© 2026 Kindred Wildcat</span><span>Provider billing remains separate</span></div>
+        <div><a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">z</span><span>Zhunt</span></a><p>Every AI model, free first.</p></div>
+        <div class="footer-links"><a href="#how-it-works">How it works</a><a href="#workspace">Workspace</a><a href="#install">Install</a><a href="#pricing">Pricing</a><a href="#privacy">Privacy</a><a href="activate.html">Activate Pro</a></div>
+        <div class="footer-meta"><span>© 2026 Kindred Wildcat</span><span>Open source · runs on your machine</span></div>
       </footer>
     </div>
   </body>
