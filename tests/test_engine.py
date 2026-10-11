@@ -140,8 +140,9 @@ def test_policy_is_off_unless_explicitly_enabled() -> None:
         (429, ProviderFailure.RATE_LIMIT),
         (402, ProviderFailure.CREDIT),
         (401, ProviderFailure.AUTH),
-        (403, ProviderFailure.AUTH),
-        (404, ProviderFailure.AUTH),
+        (403, ProviderFailure.FORBIDDEN),
+        (404, ProviderFailure.NOT_FOUND),
+        (410, ProviderFailure.NOT_FOUND),
         (500, ProviderFailure.SERVER),
         (503, ProviderFailure.SERVER),
         (408, ProviderFailure.SERVER),
@@ -152,6 +153,29 @@ def test_policy_is_off_unless_explicitly_enabled() -> None:
 def test_failure_kinds_by_status(status: int, kind) -> None:
     error = RuntimeError("x")
     error.status_code = status
+
+    assert classify_failure(error)[0] == kind
+
+
+@pytest.mark.parametrize(
+    ("message", "kind"),
+    [
+        ("You have used up your daily free allocation of 10,000 neurons",
+         ProviderFailure.DAILY_QUOTA),
+        ("Rate limit exceeded: free-models-per-day. Quota resets at midnight",
+         ProviderFailure.DAILY_QUOTA),
+        ("Quota exceeded for metric: GenerateRequestsPerDayPerProjectPerModel-FreeTier, "
+         "limit: 20", ProviderFailure.DAILY_QUOTA),
+        # Groq's per-minute 429 ends in sales copy that says "today".
+        ("Rate limit reached on tokens per minute (TPM): Limit 6000, Used 5000, "
+         "Requested 2000. Need more tokens? Upgrade to Dev Tier today at "
+         "https://console.groq.com/settings/billing", ProviderFailure.RATE_LIMIT),
+        ("Too many requests", ProviderFailure.RATE_LIMIT),
+    ],
+)
+def test_a_429_saying_the_daily_quota_is_spent_is_told_apart(message, kind) -> None:
+    error = RuntimeError(message)
+    error.status_code = 429
 
     assert classify_failure(error)[0] == kind
 
@@ -192,7 +216,8 @@ def test_rate_limited_model_fails_over_and_is_benched() -> None:
         assert response.json()["choices"][0]["message"]["content"] == "recovered"
         assert call.await_count == 2
         assert call.await_args_list[1].kwargs["model"] != first
-        assert hook.quota.cooldown_remaining(slot) == pytest.approx(7, abs=1)
+        # A per-minute 429: the 7 s retry-after is only a floor under 90 s.
+        assert hook.quota.cooldown_remaining(slot) == pytest.approx(90, abs=1)
 
 
 def test_several_failures_in_a_row_still_find_a_working_model() -> None:
@@ -312,25 +337,29 @@ def test_a_success_resets_the_failure_streak_so_cooldowns_start_over() -> None:
         slot = ("alpha/solo", "default")
 
         assert post(client).status_code == 503  # 429, nothing else to fail over to
-        assert hook.quota.cooldown_remaining(slot) == pytest.approx(120)
-        clock.advance(121)
+        assert hook.quota.cooldown_remaining(slot) == pytest.approx(90)
+        clock.advance(91)
         assert post(client).status_code == 200  # recovers
         assert post(client).status_code == 503  # fails again
-        # Without the reset this would be the second step (600s), not 120s.
-        assert hook.quota.cooldown_remaining(slot) == pytest.approx(120)
+        # Without the reset a second 429 within the hour would escalate (120s).
+        assert hook.quota.cooldown_remaining(slot) == pytest.approx(90)
 
 
 @pytest.mark.parametrize(
-    ("cls", "status", "whole_provider"),
+    ("cls", "status", "whole_provider", "seconds"),
     [
-        (litellm.AuthenticationError, 401, True),
-        (litellm.BadRequestError, 401, True),  # Cerebras and Groq report a 401 this way
-        (litellm.PermissionDeniedError, 403, False),
-        (litellm.NotFoundError, 404, False),
+        (litellm.AuthenticationError, 401, True, 300),
+        # Cerebras and Groq report a 401 this way
+        (litellm.BadRequestError, 401, True, 300),
+        (litellm.BadRequestError, 402, True, 86_400),
+        # A 403 is this model off the key's tier, a 404 this model gone: neither
+        # condemns the provider's other models.
+        (litellm.PermissionDeniedError, 403, False, 86_400),
+        (litellm.NotFoundError, 404, False, 86_400),
     ],
 )
 def test_a_rejected_key_benches_every_model_on_that_provider(
-    cls, status: int, whole_provider: bool
+    cls, status: int, whole_provider: bool, seconds: int
 ) -> None:
     call = AsyncMock(side_effect=[provider_error(cls=cls, status=status), ok()])
     with daemon(call, env={"FAKE_API_KEY": "k"}) as (client, hook):
@@ -339,7 +368,9 @@ def test_a_rejected_key_benches_every_model_on_that_provider(
         other = next(m for m in ("alpha/chat-fast", "alpha/coder") if m != failed)
 
         benched = hook.quota.cooldown_remaining((other, "default")) > 0
-        assert hook.quota.cooldown_remaining((failed, "default")) > 0
+        assert hook.quota.cooldown_remaining((failed, "default")) == pytest.approx(
+            seconds, abs=1
+        )
 
     assert benched is whole_provider
     if whole_provider:
@@ -348,3 +379,21 @@ def test_a_rejected_key_benches_every_model_on_that_provider(
     else:
         assert response.status_code == 200
         assert call.await_count == 2
+
+
+def test_a_spent_google_daily_quota_benches_until_pacific_midnight() -> None:
+    import time
+
+    from zhunt.quota import seconds_until_midnight
+
+    error = provider_error(retry_after=20)
+    error.message = "Quota exceeded for metric: GenerateRequestsPerDayPerProjectPerModel"
+    call = AsyncMock(side_effect=[error, ok()])
+    env = {"GEMINI_API_KEY": "g", "ZHUNT_ALLOW_TRAINING": "1"}
+    with daemon(call, env=env, catalog=False) as (client, hook):
+        post(client)
+        failed = call.await_args_list[0].kwargs["model"].replace("gemini/", "google/")
+        remaining = hook.quota.cooldown_remaining((failed, "default"))
+
+    expected = seconds_until_midnight(time.time(), "America/Los_Angeles")
+    assert remaining == pytest.approx(expected, abs=5)

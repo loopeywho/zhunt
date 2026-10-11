@@ -462,7 +462,7 @@ def test_compare_honours_quota() -> None:
 
 
 def test_compare_failure_benches_the_model_and_the_next_compare_is_blocked() -> None:
-    call = AsyncMock(side_effect=[provider_error(retry_after=60)])
+    call = AsyncMock(side_effect=[provider_error(retry_after=300)])
     with workspace(call, env={"ZETA_API_KEY": ZETA_KEY}) as (client, hook):
         first = results(compare(client, ["zeta/z1"]))["zeta/z1"]
         second = results(compare(client, ["zeta/z1"]))["zeta/z1"]
@@ -472,9 +472,9 @@ def test_compare_failure_benches_the_model_and_the_next_compare_is_blocked() -> 
 
     assert first["ok"] is False and first["error"].startswith("429:")
     assert second["error"].startswith("blocked: cooling down")
-    assert cooldown == pytest.approx(60, abs=2)
+    assert cooldown == pytest.approx(300, abs=2)  # retry-after above the 90 s floor
     assert reliability < 0.5
-    assert listed["cooldown_remaining"] == pytest.approx(60, abs=2)
+    assert listed["cooldown_remaining"] == pytest.approx(300, abs=2)
     assert call.await_count == 1
 
 

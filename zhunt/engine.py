@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from collections import deque
 from collections.abc import Mapping, Sequence
@@ -161,21 +162,46 @@ def classify_failure(
 ) -> tuple[ProviderFailure | None, float | None]:
     """Map a provider error to a cooldown kind, or ``None`` for a client error.
 
-    A 4xx other than auth/credit/rate-limit is about this request (too long,
+    A 4xx other than those mapped here is about this request (too long,
     malformed), not about the model, so it must not bench the model.
     """
 
     status = getattr(error, "status_code", None)
     retry_after = _retry_after(error)
     if status == 429:
+        if _is_daily_quota_exhausted(str(error)):
+            return ProviderFailure.DAILY_QUOTA, retry_after
         return ProviderFailure.RATE_LIMIT, retry_after
-    if status == 402:
-        return ProviderFailure.CREDIT, retry_after
-    if status in (401, 403, 404):
-        return ProviderFailure.AUTH, retry_after
+    if status in _STATUS_FAILURES:
+        return _STATUS_FAILURES[status], retry_after
     if isinstance(status, int) and 400 <= status < 500 and status != 408:
         return None, None
     return ProviderFailure.SERVER, retry_after
+
+
+_STATUS_FAILURES = {
+    401: ProviderFailure.AUTH,
+    402: ProviderFailure.CREDIT,
+    403: ProviderFailure.FORBIDDEN,
+    404: ProviderFailure.NOT_FOUND,
+    410: ProviderFailure.NOT_FOUND,
+}
+# Providers whose daily free allowance resets at a fixed local midnight rather
+# than UTC (https://ai.google.dev/gemini-api/docs/rate-limits).
+_DAILY_RESET_ZONES = {"google": "America/Los_Angeles"}
+# Groq ends every limit error with "Upgrade to Dev Tier today": that "today" is
+# sales copy, not a window, so it is cut before looking for a daily marker.
+_UPGRADE_UPSELL = re.compile(r"\bupgrade to [^.?!]*?\btoday\b")
+_DAILY_MARKER = re.compile(r"daily|per[ _-]?day|\btoday\b")
+_QUOTA_MARKER = re.compile(r"allocation|quota|limit|exhaust|used up")
+
+
+def _is_daily_quota_exhausted(message: str) -> bool:
+    """A 429 body that says the day's allowance is spent. Needs both a daily and
+    a quota marker so an ordinary per-minute 429 never matches."""
+
+    text = _UPGRADE_UPSELL.sub("", message.lower())
+    return bool(_DAILY_MARKER.search(text) and _QUOTA_MARKER.search(text))
 
 
 _MAX_RETRY_AFTER_SECONDS = 86_400.0
@@ -438,18 +464,43 @@ class EngineProxyHook(CustomLogger):
         if kind is None:
             return
         candidate = pending.candidate
-        for slot in self._benched_slots(candidate.model, candidate.key_id, error):
-            self.quota.record_failure(slot, kind, retry_after=retry_after)
-        self.reliability.record(pending.candidate.model.id, success=False)
+        self._bench(candidate.model, candidate.key_id, kind, retry_after)
         self._queue_retry(pending, pending.decision, escalated=pending.escalated)
 
+    def _bench(
+        self,
+        model: CatalogModel,
+        key_id: str,
+        kind: ProviderFailure,
+        retry_after: float | None,
+    ) -> None:
+        """Cool down whatever the failure condemns and count it against the model."""
+
+        for slot in self._benched_slots(model, key_id, kind):
+            # Provider-wide kinds have fixed durations, so the failing model's
+            # limits are only consulted for its own slot.
+            self.quota.record_failure(
+                slot,
+                kind,
+                limits=model.limits,
+                retry_after=retry_after,
+                daily_reset_zone=_DAILY_RESET_ZONES.get(model.platform),
+            )
+        every_key = [(model.id, key) for key in self.selector.key_ids(model.platform)]
+        self.quota.record_model_failure(model.id, every_key or [(model.id, key_id)])
+        self.reliability.record(model.id, success=False)
+
     def _benched_slots(
-        self, model: CatalogModel, key_id: str, error: BaseException
+        self, model: CatalogModel, key_id: str, kind: ProviderFailure
     ) -> list[Slot]:
         """A rejected key (401) or empty account (402) fails for every model on
-        that provider; any other failure is specific to the model that raised it."""
+        that provider; a model the provider no longer serves (404) fails on every
+        key; anything else (a 403 tier gate included) is this model and key only."""
 
-        if getattr(error, "status_code", None) not in (401, 402):
+        if kind is ProviderFailure.NOT_FOUND:
+            keys = self.selector.key_ids(model.platform) or (key_id,)
+            return [(model.id, key) for key in keys]
+        if kind not in (ProviderFailure.AUTH, ProviderFailure.CREDIT):
             return [(model.id, key_id)]
         return [
             (other.id, key_id)
@@ -639,9 +690,7 @@ class EngineProxyHook(CustomLogger):
             self.quota.settle(lease, 0)
             kind, retry_after = classify_failure(error)
             if kind is not None:
-                for bench in self._benched_slots(model, key_id, error):
-                    self.quota.record_failure(bench, kind, retry_after=retry_after)
-                self.reliability.record(model.id, success=False)
+                self._bench(model, key_id, kind, retry_after)
             return _compare_result(model.id, error=_error_text(error, api_key))
         latency_ms = round((time.perf_counter() - started) * 1000)
         self.quota.record_success(slot)
