@@ -714,6 +714,11 @@ class EngineProxyHook(CustomLogger):
             self._plan_cache = (now, self._plan())
         return self._plan_cache[1]
 
+    def reload_keys(self) -> None:
+        """Pick up provider keys added or removed since start-up (the Connect window)."""
+
+        self.selector.set_keys(keys_from_env(self.catalog, os.environ))
+
     def refresh_policy(self) -> None:
         """Recompute whether premium models may be used for the next request."""
 
@@ -772,6 +777,8 @@ class EngineProxyHook(CustomLogger):
                     "name": provider.name,
                     "key_set": bool(key_ids),
                     "key_env": provider.key_env,
+                    "key_url": provider.key_url,
+                    "free_note": provider.free_note,
                     "models": models,
                 }
             )

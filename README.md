@@ -41,7 +41,7 @@ Zhunt targets Python 3.12.
 python -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
 
-zhunt keys add groq        # hidden prompt; stored in ~/.zhunt/env (mode 0600)
+zhunt keys add groq        # hidden prompt; or paste it in the workspace's Connect window
 zhunt serve                # starts the daemon on localhost:4000
 zhunt open                 # opens the workspace in your browser, already signed in
 ```

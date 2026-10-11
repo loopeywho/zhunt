@@ -31,18 +31,18 @@
   var THEMES = ['catppuccin', 'catppuccin-latte', 'dark', 'everforest', 'flexoki-light', 'gruvbox', 'kanagawa', 'light', 'matte-black', 'nord', 'rose-pine', 'tokyo-night'];
 
   var CATALOG = [
-    { platform: 'groq', name: 'Groq', key_set: true, key_env: 'GROQ_API_KEY', models: [
+    { platform: 'groq', name: 'Groq', key_set: true, key_env: 'GROQ_API_KEY', key_url: 'https://console.groq.com/keys', free_note: 'Free tier, no card: fast open models (Llama, GPT-OSS, Qwen).', models: [
       { id: 'groq/openai/gpt-oss-120b', tiers: ['chat', 'coding', 'reasoning'], headroom: 0.82, reliability: 0.91 },
       { id: 'groq/llama-3.3-70b-versatile', tiers: ['chat', 'coding'], headroom: 0.45, reliability: 0.88 },
       { id: 'groq/qwen/qwen3.8-27b', tiers: ['chat', 'coding'], headroom: 0.15, reliability: 0.8 },
     ] },
-    { platform: 'cerebras', name: 'Cerebras', key_set: true, key_env: 'CEREBRAS_API_KEY', models: [
+    { platform: 'cerebras', name: 'Cerebras', key_set: false, key_env: 'CEREBRAS_API_KEY', key_url: 'https://cloud.cerebras.ai', free_note: 'Free tier, no card: very fast GPT-OSS and Qwen.', models: [
       { id: 'cerebras/gpt-oss-120b', tiers: ['chat', 'coding'], headroom: 0.05, reliability: 0.79, train: true },
     ] },
-    { platform: 'google', name: 'Google AI Studio', key_set: true, key_env: 'GEMINI_API_KEY', models: [
+    { platform: 'google', name: 'Google AI Studio', key_set: true, key_env: 'GEMINI_API_KEY', key_url: 'https://aistudio.google.com/apikey', free_note: 'Free tier with a Google account.', models: [
       { id: 'google/gemini-3.8-flash', tiers: ['chat', 'long-context', 'reasoning'], headroom: 0.66, reliability: 0.93 },
     ] },
-    { platform: 'anthropic', name: 'Anthropic (premium)', key_set: false, key_env: 'ANTHROPIC_API_KEY', models: [
+    { platform: 'anthropic', name: 'Anthropic (premium)', key_set: false, key_env: 'ANTHROPIC_API_KEY', key_url: 'https://console.anthropic.com/settings/keys', free_note: 'Paid (Pro): Claude, billed by Anthropic.', models: [
       { id: 'anthropic/claude-sonnet-5-5', tiers: ['chat', 'coding', 'long-context', 'reasoning'], headroom: null, reliability: null, paid: true },
     ] },
   ];
@@ -59,7 +59,7 @@
   function status() {
     return { version: 'demo', policy: { allow_paid: false, allow_training: false, premium_reason: 'pro only' },
       spend: { month: new Date().toISOString().slice(0, 7), spent: 0, cap: 5 },
-      providers: CATALOG.map(function (p) { return { platform: p.platform, name: p.name, key_set: p.key_set, key_env: p.key_env, models: p.models.map(function (m) { return view(p, m); }) }; }) };
+      providers: CATALOG.map(function (p) { return { platform: p.platform, name: p.name, key_set: p.key_set, key_env: p.key_env, key_url: p.key_url || '', free_note: p.free_note || '', models: p.models.map(function (m) { return view(p, m); }) }; }) };
   }
   function usable(tier) {
     var out = [];
@@ -172,6 +172,18 @@
       return Promise.resolve(json(200, { themes: THEMES.map(function (n) { return { name: n, builtin: true }; }) }));
     }
     if (rest.indexOf('themes/') === 0) return realFetch('css/themes/' + encodeURIComponent(rest.slice(7)) + '.css');
+    if (rest === 'keys' && method === 'POST') {
+      var prov = CATALOG.filter(function (p) { return body && p.platform === body.platform; })[0];
+      if (!prov) return Promise.resolve(json(404, { detail: 'unknown provider' }));
+      if (!body.key || String(body.key).trim().length < 8 || /\s/.test(String(body.key).trim())) return Promise.resolve(json(400, { detail: 'that does not look like an API key (one line, no spaces)' }));
+      prov.key_set = true; // demo: the key is not kept anywhere
+      return Promise.resolve(json(200, { platform: prov.platform, key_set: true }));
+    }
+    if (rest.indexOf('keys/') === 0 && method === 'DELETE') {
+      var gone = CATALOG.filter(function (p) { return p.platform === rest.slice(5); })[0];
+      if (gone) gone.key_set = false;
+      return Promise.resolve(json(200, { platform: rest.slice(5), key_set: false }));
+    }
     if (rest === 'layouts') return Promise.resolve(json(200, { layouts: Object.keys(LAYOUTS).filter(function (n) { return n !== 'last'; }) }));
     if (rest.indexOf('layouts/') === 0) {
       var name = decodeURIComponent(rest.slice(8));

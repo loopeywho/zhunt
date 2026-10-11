@@ -5,11 +5,12 @@ import { providersTile } from './providers.js';
 import { logsTile } from './logs.js';
 import { foryouTile } from './foryou.js';
 import { panelsTile } from './panels.js';
+import { connectTile } from './connect.js';
 
-const FACTORIES = { chat: chatTile, foryou: foryouTile, panels: panelsTile, compare: compareTile, routing: routingTile, providers: providersTile, logs: logsTile };
+const FACTORIES = { chat: chatTile, foryou: foryouTile, panels: panelsTile, compare: compareTile, routing: routingTile, providers: providersTile, logs: logsTile, connect: connectTile };
 
 export const KIND_LABELS = {
-  chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing (why this model)', providers: 'Providers (keys and quota)', logs: 'Logs',
+  chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing (why this model)', providers: 'Providers (keys and quota)', logs: 'Logs', connect: 'Connect models (add free keys)',
 };
 
 // services: {store, toast, openWindow, openPlan}. Returns the factory the tiling manager calls.

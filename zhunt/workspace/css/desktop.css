@@ -154,3 +154,18 @@
   #topbar { flex-wrap: wrap; gap: 6px; padding: 8px 8px 0; }
   :root { --win-gap: 6px; }
 }
+
+/* connect window */
+.connect { display: flex; flex-direction: column; min-height: 0; font-family: var(--font-prose); font-size: 13.5px; }
+.connect-intro { margin: 0; padding: 10px 12px 0; color: var(--text-dim); }
+.connect-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; }
+.connect-h { margin: 6px 0 0; font-size: 11.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.connect-row { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
+.connect-row.is-set { border-left: 4px solid var(--ok); }
+.connect-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.connect-row .acts { margin-top: 2px; }
+.connect-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.connect-input { flex: 1 1 220px; min-width: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); font-family: var(--font-mono); font-size: 12.5px; }
+.connect-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.connect-note { flex-basis: 100%; }
+.connect-note:empty { display: none; }

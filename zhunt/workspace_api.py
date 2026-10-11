@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from zhunt.auth import remove_env_value, save_env_value
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
@@ -22,6 +23,8 @@ MAX_LAYOUT_BYTES = 64 * 1024
 MAX_COMPARE_MODELS = 4
 MAX_COMPARE_BYTES = 1024 * 1024
 _NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
+# API keys are printable ASCII without spaces; anything else is a paste mistake.
+_KEY = re.compile(r"[\x21-\x7e]{8,512}")
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class WorkspaceDirs:
     """Where the workspace keeps user files; ``static`` is the packaged UI (may be absent)."""
 
     layouts: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "layouts")
+    env_file: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "env")
     themes: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "themes")
     static: Path = Path(__file__).parent / "workspace"
 
@@ -94,6 +98,32 @@ def build_router(
     @router.get("/status")
     def status() -> dict[str, Any]:
         return hook.status()
+
+    @router.post("/keys")
+    async def add_key(request: Request) -> dict[str, Any]:
+        """Save a provider key pasted in the Connect window. It goes to ~/.zhunt/env
+        (owner-only) and the environment of this process; it is never echoed back."""
+
+        body = await _json_body(request, limit=4096)
+        platform = body.get("platform") if isinstance(body, dict) else None
+        key = body.get("key") if isinstance(body, dict) else None
+        provider = hook.catalog.providers.get(platform) if isinstance(platform, str) else None
+        if provider is None:
+            raise HTTPException(404, "unknown provider")
+        if not isinstance(key, str) or not _KEY.fullmatch(key.strip()):
+            raise HTTPException(400, "that does not look like an API key (one line, no spaces)")
+        save_env_value(provider.key_env, key.strip(), dirs.env_file)
+        hook.reload_keys()
+        return {"platform": provider.platform, "key_set": True}
+
+    @router.delete("/keys/{platform}")
+    def remove_key(platform: str) -> dict[str, Any]:
+        provider = hook.catalog.providers.get(platform)
+        if provider is None:
+            raise HTTPException(404, "unknown provider")
+        remove_env_value(provider.key_env, dirs.env_file)
+        hook.reload_keys()
+        return {"platform": provider.platform, "key_set": False}
 
     @router.get("/plan")
     def get_plan() -> dict[str, Any]:

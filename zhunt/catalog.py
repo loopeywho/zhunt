@@ -38,6 +38,9 @@ class Provider:
     verified_on: date
     # LiteLLM's name for this provider when it differs from the platform id.
     litellm_provider: str
+    # Where a user gets a key, and a one-line plain-language note on what is free.
+    key_url: str = ""
+    free_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,8 @@ class Catalog:
                     if "litellm_provider" in raw
                     else platform
                 ),
+                key_url=_optional_string(raw, "key_url", platform),
+                free_note=_optional_string(raw, "free_note", platform),
             )
             raw_models = raw.get("models")
             if not isinstance(raw_models, list) or not raw_models:
@@ -172,6 +177,15 @@ def _parse_limits(raw: Any, owner: str) -> Limits:
             raise CatalogError(f"model {owner!r} has invalid {key} limit")
         values[key] = value
     return Limits(**values)
+
+
+def _optional_string(raw: Mapping[str, Any], field: str, owner: str) -> str:
+    value = raw.get(field, "")
+    if not isinstance(value, str):
+        raise CatalogError(f"provider {owner!r} {field} must be a string")
+    if field == "key_url" and value and not value.startswith("https://"):
+        raise CatalogError(f"provider {owner!r} key_url must be an https:// link")
+    return value
 
 
 def _parse_cost(raw: Mapping[str, Any], field: str, owner: str) -> Decimal:

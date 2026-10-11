@@ -16,6 +16,8 @@
 providers:
   groq:
     name: Groq
+    key_url: https://console.groq.com/keys
+    free_note: "Free tier, no card: fast open models (Llama, GPT-OSS, Qwen)."
     base_url: https://api.groq.com/openai/v1
     key_env: GROQ_API_KEY
     verified_on: 2026-10-10
@@ -69,6 +71,8 @@ providers:
 
   google:
     name: Google AI Studio (Gemini API)
+    key_url: https://aistudio.google.com/apikey
+    free_note: "Free tier with a Google account; Google may use free-tier prompts to improve its products."
     litellm_provider: gemini
     base_url: https://generativelanguage.googleapis.com
     key_env: GEMINI_API_KEY
@@ -109,6 +113,8 @@ providers:
 
   cerebras:
     name: Cerebras
+    key_url: https://cloud.cerebras.ai
+    free_note: "Free tier, no card: very fast GPT-OSS and Qwen; prompt use for training unconfirmed."
     base_url: https://api.cerebras.ai/v1
     key_env: CEREBRAS_API_KEY
     verified_on: 2026-10-10
@@ -148,6 +154,8 @@ providers:
   # Gemini API paid-services terms).
   anthropic:
     name: Anthropic (premium)
+    key_url: https://console.anthropic.com/settings/keys
+    free_note: "Paid (Pro): Claude, billed by Anthropic to your account."
     base_url: https://api.anthropic.com
     key_env: ANTHROPIC_API_KEY
     verified_on: 2026-10-11
@@ -172,6 +180,8 @@ providers:
         out: 0.00001
   openai:
     name: OpenAI (premium)
+    key_url: https://platform.openai.com/api-keys
+    free_note: "Paid (Pro): GPT models, billed by OpenAI to your account."
     base_url: https://api.openai.com/v1
     key_env: OPENAI_API_KEY
     verified_on: 2026-10-11
@@ -196,6 +206,8 @@ providers:
         out: 0.00001
   google-paid:
     name: Google Gemini (premium)
+    key_url: https://aistudio.google.com/apikey
+    free_note: "Paid (Pro): a key from a Google Cloud project with billing turned on."
     base_url: https://generativelanguage.googleapis.com
     # A key from a Google Cloud project with billing turned on. Kept apart from
     # the free GEMINI_API_KEY so free-tier prompts and paid usage never mix.

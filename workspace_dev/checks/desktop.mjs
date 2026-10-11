@@ -41,7 +41,7 @@ const opts = { openWindow() {}, now };
   ] };
   const cards = buildCards(s, ds, opts);
   check('cards come in priority order', ids(cards).join() === 'key-groq,cooling,low,rescued,privacy', ids(cards).join());
-  check('missing key card gives the terminal command, never asks for the key', cards[0].code === 'zhunt keys add groq');
+  check('missing key card opens the Connect window', cards[0].actions[0].label === 'Connect' && !cards[0].code);
   check('cooldown is rounded up to whole minutes (stable between polls)', /within 3 min/.test(cards[1].detail), cards[1].detail);
 }
 {

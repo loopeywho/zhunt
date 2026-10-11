@@ -83,6 +83,19 @@ def read_master_key(env_path: Path | None = None) -> str | None:
     return None
 
 
+def remove_env_value(name: str, env_path: Path | None = None) -> bool:
+    """Delete one value from the env file and this process. False if it was not set."""
+
+    path = (env_path or Path.home() / ".zhunt" / "env").expanduser()
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    kept = [line for line in lines if line.partition("=")[0] != name]
+    os.environ.pop(name, None)
+    if len(kept) == len(lines):
+        return False
+    write_private_text(path, "\n".join(kept).rstrip("\n") + "\n" if kept else "")
+    return True
+
+
 def save_env_value(name: str, value: str, env_path: Path | None = None) -> None:
     """Persist one local configuration value without exposing it in logs."""
 

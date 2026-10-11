@@ -97,6 +97,10 @@ async function request(path, { method = 'GET', json, headers = {}, signal, text 
 export const api = {
   status: (signal) => request('/zhunt/api/status', { signal }),
   plan: () => request('/zhunt/api/plan'),
+  keys: {
+    add: (platform, key) => request('/zhunt/api/keys', { method: 'POST', json: { platform, key } }),
+    remove: (platform) => request('/zhunt/api/keys/' + encodeURIComponent(platform), { method: 'DELETE' }),
+  },
   decisions: ({ limit = 50, session } = {}, signal) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (session) q.set('session', session);

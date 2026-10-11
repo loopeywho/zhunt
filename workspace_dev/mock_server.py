@@ -55,12 +55,12 @@ DECISIONS = []  # newest last; served newest first
 COOLDOWNS = {"cerebras/gpt-oss-120b": time.time() + 47}
 
 CATALOG = [
-    {"platform": "groq", "name": "Groq", "key_set": True, "key_env": "GROQ_API_KEY", "models": [
+    {"platform": "groq", "name": "Groq", "key_set": True, "key_env": "GROQ_API_KEY", "key_url": "https://console.groq.com/keys", "free_note": "Free tier, no card: fast open models.", "models": [
         {"id": "groq/openai/gpt-oss-120b", "tiers": ["chat", "coding", "reasoning"], "headroom": 0.82, "reliability": 0.91},
         {"id": "groq/llama-3.3-70b-versatile", "tiers": ["chat", "coding"], "headroom": 0.45, "reliability": 0.88},
         {"id": "groq/qwen/qwen3-32b", "tiers": ["reasoning"], "headroom": 0.15, "reliability": 0.8},
     ]},
-    {"platform": "cerebras", "name": "Cerebras", "key_set": True, "key_env": "CEREBRAS_API_KEY", "models": [
+    {"platform": "cerebras", "name": "Cerebras", "key_set": False, "key_env": "CEREBRAS_API_KEY", "key_url": "https://cloud.cerebras.ai", "free_note": "Free tier, no card: very fast models.", "models": [
         {"id": "cerebras/gpt-oss-120b", "tiers": ["chat", "coding"], "headroom": 0.05, "reliability": 0.79},
         {"id": "cerebras/llama3.1-8b", "tiers": ["chat"], "headroom": 0.9, "reliability": 0.95},
     ]},
@@ -105,6 +105,7 @@ def status_payload():
         "policy": {"allow_paid": False, "allow_training": False},
         "providers": [
             {"platform": p["platform"], "name": p["name"], "key_set": p["key_set"], "key_env": p["key_env"],
+             "key_url": p.get("key_url", ""), "free_note": p.get("free_note", ""),
              "models": [model_view(p, m) for m in p["models"]]}
             for p in CATALOG
         ],
@@ -250,6 +251,12 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path.startswith("/zhunt/api/layouts/") and self._authed():
             return self._layouts("delete", u.path.rsplit("/", 1)[1])
+        if u.path.startswith("/zhunt/api/keys/") and self._authed():
+            prov = next((p for p in CATALOG if p["platform"] == u.path.rsplit("/", 1)[1]), None)
+            if prov is None:
+                return self._send(404, {"detail": "unknown provider"})
+            prov["key_set"] = False
+            return self._send(200, {"platform": prov["platform"], "key_set": False})
         self._send(404, {"detail": "not found"})
 
     def do_POST(self):
@@ -263,6 +270,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._chat()
         if u.path == "/zhunt/api/compare":
             return self._compare()
+        if u.path == "/zhunt/api/keys":
+            body = self._json_body() or {}
+            prov = next((p for p in CATALOG if p["platform"] == body.get("platform")), None)
+            if prov is None:
+                return self._send(404, {"detail": "unknown provider"})
+            if not isinstance(body.get("key"), str) or len(body["key"].strip()) < 8 or " " in body["key"].strip():
+                return self._send(400, {"detail": "that does not look like an API key (one line, no spaces)"})
+            prov["key_set"] = True  # the mock never stores the value
+            return self._send(200, {"platform": prov["platform"], "key_set": True})
         self._send(404, {"detail": "not found"})
 
     # ---- layouts / themes ----

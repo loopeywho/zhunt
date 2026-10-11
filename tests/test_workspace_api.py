@@ -76,7 +76,7 @@ def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None,
             (static_dir / "index.html").write_text("<h1>workspace</h1>")
             (static_dir / "css" / "themes" / "dark.css").write_text(":root{--bg:#000}")
             (static_dir / "css" / "themes" / "light.css").write_text(":root{--bg:#fff}")
-        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir)
+        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env")
         with patch.dict(os.environ, {**dict.fromkeys(ENV_NAMES, ""), **env}), patch(
             "litellm.acompletion", call
         ), patch("zhunt.workspace_api.current_plan", return_value=plan or FREE), patch(
@@ -189,6 +189,8 @@ def test_status_shape_and_blocked_reasons() -> None:
         "name": "Fake",
         "key_set": True,
         "key_env": "FAKE_API_KEY",
+        "key_url": "",
+        "free_note": "",
         "models": providers["alpha"]["models"],
     }
     assert providers["zeta"]["key_set"] is False
@@ -793,3 +795,34 @@ def test_premium_needs_pro_and_the_opt_in_and_stops_at_the_cap() -> None:
     assert capped["policy"]["premium_reason"] == "monthly cap reached"
     assert capped["spend"]["spent"] == 1.25 and capped["spend"]["cap"] == 1.0
     assert paid["blocked_reason"] == "monthly cap reached"
+
+
+def test_a_key_pasted_in_the_connect_window_is_saved_privately_and_used_at_once() -> None:
+    import stat
+
+    with workspace(AsyncMock(), env={}, data=solo_catalog()) as (client, hook):
+        before = status_models(client)["zeta/only"]["blocked_reason"]
+        saved = client.post("/zhunt/api/keys", headers=headers(), json={"platform": "zeta", "key": "zk-live-1234567890"})
+        after = status_models(client)["zeta/only"]
+        env_file = client.dirs.env_file
+        mode = stat.S_IMODE(env_file.stat().st_mode)
+        content = env_file.read_text()
+        removed = client.post("/zhunt/api/keys", headers=headers(), json={"platform": "zeta", "key": "bad key with spaces"})
+        unknown = client.post("/zhunt/api/keys", headers=headers(), json={"platform": "nope", "key": "zk-live-1234567890"})
+        deleted = client.delete("/zhunt/api/keys/zeta", headers=headers())
+        gone = status_models(client)["zeta/only"]["blocked_reason"]
+
+    assert before == "no key"
+    assert saved.status_code == 200 and "zk-live" not in saved.text  # never echoed back
+    assert after["allowed"] is True
+    assert mode == 0o600 and 'ZETA_API_KEY="zk-live-1234567890"' in content
+    assert removed.status_code == 400 and unknown.status_code == 404
+    assert deleted.status_code == 200 and gone == "no key"
+
+
+def test_the_key_endpoints_need_the_master_key() -> None:
+    with workspace(AsyncMock(), env={}, data=solo_catalog()) as (client, _):
+        response = client.post("/zhunt/api/keys", json={"platform": "zeta", "key": "zk-live-1234567890"})
+        written = client.dirs.env_file.exists()
+
+    assert response.status_code == 401 and not written

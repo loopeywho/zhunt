@@ -129,6 +129,15 @@ Themes are CSS files of custom properties. Built-ins ship in `zhunt/workspace/cs
 with the same name overrides the built-in). `GET /themes/{name}` → `text/css`. Every
 theme is free on every plan.
 
+## Keys: `POST /zhunt/api/keys`, `DELETE /zhunt/api/keys/{platform}`
+
+The Connect window. `POST {"platform": "groq", "key": "..."}` saves the key to
+`~/.zhunt/env` (mode 0600) and this process's environment, then reloads keys so the
+provider is usable at once; the response is `{"platform", "key_set": true}` and never
+contains the key. 400 for a value that is not one printable line of 8-512 characters,
+404 for an unknown provider. `DELETE` removes it. `/status` providers carry `key_url`
+(where to get a key) and `free_note` (one plain-language line) from the catalog.
+
 ## Plan: `GET /zhunt/api/plan`
 
 ```json

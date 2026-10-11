@@ -33,15 +33,15 @@ export function buildCards(status, decisions, { openWindow, openPlan, plan = nul
     cards.push({
       id: 'premium-keys', tone: 'accent', title: 'Connect premium models',
       detail: `Pro can step up to ${n} premium models when every free model is busy. Add your own paid key from any of ${premium.map((p) => (p.name || p.platform).replace(' (premium)', '')).join(', ')}, then turn premium on with a monthly cap:`,
-      code: `zhunt keys add ${premium[0].platform}   # or ${premium.slice(1).map((p) => p.platform).join(', ')}\nzhunt premium on --cap 5`, actions: [],
+      code: 'zhunt premium on --cap 5', actions: [{ label: 'Connect', run: () => openWindow('connect') }],
     });
   }
   for (const p of providers.filter((x) => !x.key_set && !premiumOnly(x))) {
     const n = (p.models || []).length;
     cards.push({
       id: 'key-' + p.platform, tone: 'accent', title: `Add your free ${p.name || p.platform} key`,
-      detail: `${n} free model${n === 1 ? '' : 's'} ready to use once zhunt has a key. Run this in a terminal (the key is typed there, never here):`,
-      code: `zhunt keys add ${p.platform}`, actions: [],
+      detail: `${n} free model${n === 1 ? '' : 's'} ready once zhunt has a key. Getting one takes about a minute.`,
+      actions: [{ label: 'Connect', run: () => openWindow('connect') }],
     });
   }
   // premium models only count while premium is allowed
