@@ -4,13 +4,15 @@ import pytest
 
 from tests.catalog_fixtures import FakeClock, catalog_data, model, provider
 from zhunt.brain import Tier
-from zhunt.catalog import Catalog
+from zhunt.catalog import Catalog, Limits
 from zhunt.quota import FailureKind, QuotaTracker
 from zhunt.selection import (
     NoCandidateError,
+    Penalties,
     Reliability,
     SelectionPolicy,
     Selector,
+    headroom_factor,
 )
 
 KEYS = {"alpha": ["a1"], "beta": ["b1"], "gamma": ["g1"], "delta": ["d1"]}
@@ -152,12 +154,84 @@ def test_a_second_key_takes_over_when_the_first_is_limited() -> None:
     data["providers"]["alpha"]["models"][0]["limits"] = {"rpm": 1}
     selector, *_ = build(keys={**KEYS, "alpha": ["a1", "a2"]}, data=data)
 
+    only_chat_fast = frozenset({"alpha/coder"})
     served = [
         (c.model.id, c.key_id)
-        for c, _ in (selector.acquire(Tier.CHAT, tokens=1) for _ in range(2))
+        for c, _ in (
+            selector.acquire(Tier.CHAT, tokens=1, exclude=only_chat_fast)
+            for _ in range(2)
+        )
     ]
 
-    assert len(set(served)) == 2
+    assert sorted(served) == [("alpha/chat-fast", "a1"), ("alpha/chat-fast", "a2")]
+
+
+@pytest.mark.parametrize(
+    ("remaining", "factor"),
+    [(1.0, 1.0), (0.5, 1.0), (0.2, 1.0), (0.1, 0.55), (0.0, 0.1), (-1.0, 0.1)],
+)
+def test_headroom_only_demotes_a_model_in_its_last_fifth(remaining, factor) -> None:
+    assert headroom_factor(remaining) == pytest.approx(factor)
+
+
+def test_a_half_used_model_keeps_its_full_score() -> None:
+    selector, quota, *_ = build()
+    before = selector.ranked(Tier.REASONING)[0].score
+    quota.try_acquire(("delta/thinker", "d1"), Limits(rpd=2))  # rpd 2: half used
+
+    assert selector.ranked(Tier.REASONING)[0].score == pytest.approx(before)
+
+
+def test_penalty_adds_three_per_429_one_per_failure_and_caps_at_ten() -> None:
+    penalties = Penalties(clock=FakeClock())
+
+    penalties.record_failure("m", rate_limited=True)
+    penalties.record_failure("m", rate_limited=False)
+    assert penalties.penalty("m") == 4
+    assert penalties.factor("m") == pytest.approx(1 - 0.4 * 0.6)
+
+    for _ in range(5):
+        penalties.record_failure("m", rate_limited=True)
+    assert penalties.penalty("m") == 10
+    assert penalties.factor("m") == pytest.approx(0.4)
+
+
+def test_penalty_decays_one_point_every_two_minutes_and_on_success() -> None:
+    clock = FakeClock()
+    penalties = Penalties(clock=clock)
+    penalties.record_failure("m", rate_limited=True)
+    penalties.record_failure("m", rate_limited=True)  # 6
+
+    clock.advance(239)
+    assert penalties.penalty("m") == 5
+    clock.advance(1)
+    assert penalties.penalty("m") == 4
+    penalties.record_success("m")
+    assert penalties.penalty("m") == 3
+    clock.advance(6 * 120)
+    assert penalties.penalty("m") == 0
+    assert penalties.factor("m") == 1.0
+
+
+def test_a_rate_limited_model_sinks_below_a_peer_then_recovers() -> None:
+    clock = FakeClock()
+    penalties = Penalties(clock=clock)
+    quota = QuotaTracker(clock=clock)
+    selector = Selector(
+        Catalog.from_data(catalog_data()),
+        quota,
+        Reliability(clock=clock),
+        KEYS,
+        penalties=penalties,
+    )
+    assert ids(selector.ranked(Tier.CHAT))[0] == "alpha/coder"
+
+    for _ in range(3):
+        penalties.record_failure("alpha/coder", rate_limited=True)
+    assert ids(selector.ranked(Tier.CHAT))[0] == "alpha/chat-fast"
+
+    clock.advance(20 * 60)
+    assert ids(selector.ranked(Tier.CHAT))[0] == "alpha/coder"
 
 
 def test_invalid_weights_are_rejected() -> None:

@@ -452,6 +452,25 @@ def test_success_headers_lower_a_known_limit_but_never_raise_one() -> None:
     assert after_lower == Limits(rpm=4, tpm=1)
 
 
+def test_failures_and_successes_move_the_live_penalty() -> None:
+    call = AsyncMock(
+        side_effect=[
+            provider_error(),
+            provider_error(status=500, cls=litellm.InternalServerError),
+            ok(),
+        ]
+    )
+    env = {"FAKE_API_KEY": "k", "ZHUNT_ALLOW_TRAINING": "1"}
+    with daemon(call, env=env) as (client, hook):
+        post(client)
+        first, second, third = (c.kwargs["model"] for c in call.await_args_list)
+        penalties = hook.selector.penalties
+
+        assert penalties.penalty(first) == 3  # a 429
+        assert penalties.penalty(second) == 1  # a 5xx
+        assert penalties.penalty(third) == 0
+
+
 @pytest.mark.thompson
 def test_production_selection_samples_reliability_instead_of_using_the_mean() -> None:
     with daemon(AsyncMock(return_value=ok()), env={"FAKE_API_KEY": "k"}) as (_, hook):

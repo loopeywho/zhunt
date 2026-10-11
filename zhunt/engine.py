@@ -514,6 +514,7 @@ class EngineProxyHook(CustomLogger):
         )
         self.quota.record_success(slot)
         self.reliability.record(pending.candidate.model.id, success=True)
+        self.selector.penalties.record_success(pending.candidate.model.id)
         input_tokens, output_tokens = _usage_tokens(response)
         if input_tokens is not None and output_tokens is not None:
             self.quota.settle(pending.lease, input_tokens + output_tokens)
@@ -570,6 +571,10 @@ class EngineProxyHook(CustomLogger):
         every_key = [(model.id, key) for key in self.selector.key_ids(model.platform)]
         self.quota.record_model_failure(model.id, every_key or [(model.id, key_id)])
         self.reliability.record(model.id, success=False)
+        self.selector.penalties.record_failure(
+            model.id,
+            rate_limited=kind in (ProviderFailure.RATE_LIMIT, ProviderFailure.DAILY_QUOTA),
+        )
 
     def _learn_from_error(self, model: CatalogModel, error: BaseException) -> None:
         learned = limits_from_headers(model.platform, _error_headers(error))
@@ -793,6 +798,7 @@ class EngineProxyHook(CustomLogger):
         latency_ms = round((time.perf_counter() - started) * 1000)
         self.quota.record_success(slot)
         self.reliability.record(model.id, success=True)
+        self.selector.penalties.record_success(model.id)
         input_tokens, output_tokens = _usage_tokens(response)
         if input_tokens is not None and output_tokens is not None:
             self.quota.settle(lease, input_tokens + output_tokens)
