@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "zhunt"
-version = "0.1.0.dev0"
-description = "Route LLM requests to the cheapest capable model."
+version = "0.2.0.dev0"
+description = "Every AI model in one local workspace, free first: routes each prompt to the best available free-tier model and fails over automatically."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
@@ -16,6 +16,7 @@ dependencies = [
     "ruamel.yaml>=0.18,<1",
     "tomlkit>=0.13,<1",
     "typer>=0.16,<1",
+    "cryptography>=42",  # offline licence verification (zhunt/licence.py)
 ]
 
 [project.scripts]
