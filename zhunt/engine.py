@@ -52,6 +52,7 @@ from zhunt.server import (
     _telemetry_wire_dialect,
     _usage_tokens,
 )
+from zhunt.state import StateStore
 from zhunt.telemetry import TelemetryLogger
 
 # Original attempt plus up to this many failovers per client request.
@@ -714,10 +715,12 @@ def build_engine_hook(
     catalog_path: Path | None = None,
     telemetry_path: Path | None = None,
     env: Mapping[str, str] | None = None,
+    state_path: Path | None = None,
 ) -> EngineProxyHook:
     env = os.environ if env is None else env
     catalog = load_catalog(catalog_path)
-    quota = QuotaTracker()
+    # Defaults to ~/.zhunt/state.db (or $ZHUNT_STATE_DB); memory-only if unusable.
+    quota = QuotaTracker(store=StateStore.open(state_path))
     reliability = Reliability()
     keys = keys_from_env(catalog, env)
     policy = policy_from_env(env)

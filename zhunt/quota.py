@@ -10,6 +10,7 @@ from enum import Enum
 from threading import RLock
 
 from zhunt.catalog import Limits
+from zhunt.state import StateStore
 
 # One (model id, key id) pair is the unit that quotas and cooldowns apply to.
 Slot = tuple[str, str]
@@ -38,6 +39,7 @@ class _State:
     day_tokens: int = 0
     failures: int = 0
     cooldown_until: float = 0.0
+    cooldown_source: str = ""
 
 
 @dataclass
@@ -47,13 +49,25 @@ class Lease:
     slot: Slot
     day: int
     entry: list[float]
+    row_id: int | None = None
 
 
 class QuotaTracker:
-    def __init__(self, *, clock: Callable[[], float] = time.time) -> None:
+    """In-memory windows, optionally written through to a ``StateStore`` so
+    daily usage and cooldowns survive a restart."""
+
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], float] = time.time,
+        store: StateStore | None = None,
+    ) -> None:
         self._clock = clock
         self._states: dict[Slot, _State] = {}
         self._lock = RLock()
+        self._store = store
+        if store is not None:
+            self._load(store)
 
     def try_acquire(
         self,
@@ -84,7 +98,12 @@ class QuotaTracker:
             state.minute.append(entry)
             state.day_requests += 1
             state.day_tokens += tokens
-            return Lease(slot=slot, day=state.day, entry=entry)
+            row_id = (
+                self._store.add_request(slot[0], slot[1], now, tokens)
+                if self._store is not None
+                else None
+            )
+            return Lease(slot=slot, day=state.day, entry=entry, row_id=row_id)
 
     def settle(self, lease: Lease, actual_tokens: int) -> None:
         if actual_tokens < 0:
@@ -95,6 +114,8 @@ class QuotaTracker:
             state = self._states.get(lease.slot)
             if state is not None and state.day == lease.day:
                 state.day_tokens = max(state.day_tokens + delta, 0)
+            if self._store is not None and lease.row_id is not None:
+                self._store.set_tokens(lease.row_id, actual_tokens)
 
     def headroom(self, slot: Slot, limits: Limits) -> float:
         """Remaining fraction (0-1) of the tightest window; 1.0 when uncapped."""
@@ -142,6 +163,8 @@ class QuotaTracker:
                 step = max(state.failures - 1, 0) + _STEP_OFFSET.get(kind, 0)
                 duration = _COOLDOWN_STEPS[min(step, len(_COOLDOWN_STEPS) - 1)]
             state.cooldown_until = max(state.cooldown_until, now + duration)
+            state.cooldown_source = "heuristic"
+            self._persist_cooldown(slot, state)
             return state.cooldown_until - now
 
     def record_success(self, slot: Slot) -> None:
@@ -151,13 +174,44 @@ class QuotaTracker:
         with self._lock:
             now = self._clock()
             state = self._state(slot, now)
-            if state.cooldown_until <= now:
+            if state.cooldown_until <= now and state.failures:
                 state.failures = 0
+                self._persist_cooldown(slot, state)
 
     def cooldown_remaining(self, slot: Slot) -> float:
         with self._lock:
             now = self._clock()
             return max(self._state(slot, now).cooldown_until - now, 0.0)
+
+    def _persist_cooldown(self, slot: Slot, state: _State) -> None:
+        if self._store is not None:
+            self._store.save_cooldown(
+                slot[0],
+                slot[1],
+                state.cooldown_until,
+                state.failures,
+                state.cooldown_source,
+            )
+
+    def _load(self, store: StateStore) -> None:
+        """Rebuild today's counters, the live minute window and cooldowns."""
+
+        now = self._clock()
+        store.prune(now)
+        today = int(now // _DAY)
+        for model, key, _, ts, tokens in store.usage_since(today * _DAY - 1):
+            if int(ts // _DAY) != today:
+                continue
+            state = self._state((model, key), now)
+            state.day_requests += 1
+            state.day_tokens += tokens
+            if ts > now - _MINUTE:
+                state.minute.append([ts, float(tokens)])
+        for model, key, until, level, source in store.cooldowns():
+            state = self._state((model, key), now)
+            state.cooldown_until = until
+            state.failures = level
+            state.cooldown_source = source
 
     def _state(self, slot: Slot, now: float) -> _State:
         state = self._states.setdefault(slot, _State())
