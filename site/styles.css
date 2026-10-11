@@ -126,3 +126,7 @@ code { padding: 2px 5px; border-radius: 4px; background: rgba(255,255,255,.08); 
 .activate-title { margin: 10px 0 12px; font-size: clamp(30px, 5vw, 46px); font-weight: 560; letter-spacing: -.04em; }
 .activate-main .install-card { text-align: left; }
 .activate-main .hero-actions { margin-top: 14px; }
+.video-section { padding: 30px 0 50px; }
+.video-frame { max-width: 1040px; margin: 0 auto; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: #05070f; box-shadow: 0 30px 80px rgba(0,0,0,.45); }
+.video-frame video { display: block; width: 100%; height: auto; aspect-ratio: 1280 / 800; background: #05070f; }
+.video-section .section-note { text-align: center; }

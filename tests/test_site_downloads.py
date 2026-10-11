@@ -33,3 +33,11 @@ def test_activation_page_exchanges_the_checkout_session_for_a_key():
     assert "/api/licence?session_id=" in script
     assert "history.replaceState" in script  # session id leaves the address bar
     assert "zhunt licence activate" in page
+
+
+def test_homepage_shows_the_demo_video_without_preloading_it():
+    html = (SITE / "index.html").read_text(encoding="utf-8")
+
+    assert 'src="media/zhunt-demo.mp4"' in html and 'preload="none"' in html
+    assert (SITE / "media" / "zhunt-demo.mp4").stat().st_size < 10 * 1024 * 1024
+    assert (SITE / "media" / "zhunt-demo-poster.jpg").is_file()
