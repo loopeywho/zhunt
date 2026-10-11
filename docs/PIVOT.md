@@ -43,12 +43,18 @@ New:
   `may_train_on_prompts`, and a `verified_on` date. OpenRouter becomes one optional entry
   with no special handling. Limits are filled in from each provider's own docs when the
   catalog is built; none are assumed in this draft.
-- **Quota + cooldown engine**: per-key sliding windows; a benched `(model, key)` after
-  429/5xx/auth failure with escalating cooldown; a hard "can this request go out" check
-  separate from ranking.
+- **Quota + cooldown engine**: per-key sliding windows persisted in `~/.zhunt/state.db`
+  (survive restarts); a benched `(model, key)` after a failure: 90 s for a per-minute
+  429, the 2m/10m/1h/24h ladder only when the daily quota is spent (or 429s repeat with
+  no known daily cap, capped at 10 min), until the daily reset when the provider says so
+  (midnight Pacific for Google), fixed benches for 401/402/403/404, and a 10-minute
+  model-wide bench after 3 failures in 15 min. Limits stated in 429 bodies or
+  rate-limit headers are learned (only ever lowered). A hard "can this request go out"
+  check stays separate from ranking.
 - **Selection**: classification still picks the tier (chat / coding / long-context /
   reasoning). Within a tier, candidates are healthy free models ranked by reliability
-  (decayed success/failure posterior), speed and capability, scaled by remaining quota.
+  (Thompson sample of a decayed success/failure posterior), speed and capability,
+  demoted in the last 20% of quota and by a short-lived penalty after 429s/errors.
   Paid models are used only if the user enables a budget. When every free candidate is
   exhausted, serve the next tier down rather than fail ("degraded mode").
 - **Privacy gate**: models flagged `may_train_on_prompts` are excluded unless the user

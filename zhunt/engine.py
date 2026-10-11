@@ -1,9 +1,12 @@
+# Parts adapted from FreeLLMAPI (MIT, (c) 2026 Tashfeen Ahmed); see THIRD_PARTY_NOTICES.md
 """Free-tier engine: wires the catalog, quota tracker and selector into LiteLLM."""
 
 from __future__ import annotations
 
 import asyncio
 import os
+import random
+import re
 import time
 from collections import deque
 from collections.abc import Mapping, Sequence
@@ -52,6 +55,7 @@ from zhunt.server import (
     _telemetry_wire_dialect,
     _usage_tokens,
 )
+from zhunt.state import StateStore
 from zhunt.telemetry import TelemetryLogger
 
 # Original attempt plus up to this many failovers per client request.
@@ -160,21 +164,121 @@ def classify_failure(
 ) -> tuple[ProviderFailure | None, float | None]:
     """Map a provider error to a cooldown kind, or ``None`` for a client error.
 
-    A 4xx other than auth/credit/rate-limit is about this request (too long,
+    A 4xx other than those mapped here is about this request (too long,
     malformed), not about the model, so it must not bench the model.
     """
 
     status = getattr(error, "status_code", None)
     retry_after = _retry_after(error)
     if status == 429:
+        if _is_daily_quota_exhausted(str(error)):
+            return ProviderFailure.DAILY_QUOTA, retry_after
         return ProviderFailure.RATE_LIMIT, retry_after
-    if status == 402:
-        return ProviderFailure.CREDIT, retry_after
-    if status in (401, 403, 404):
-        return ProviderFailure.AUTH, retry_after
+    if status in _STATUS_FAILURES:
+        return _STATUS_FAILURES[status], retry_after
     if isinstance(status, int) and 400 <= status < 500 and status != 408:
         return None, None
     return ProviderFailure.SERVER, retry_after
+
+
+_STATUS_FAILURES = {
+    401: ProviderFailure.AUTH,
+    402: ProviderFailure.CREDIT,
+    403: ProviderFailure.FORBIDDEN,
+    404: ProviderFailure.NOT_FOUND,
+    410: ProviderFailure.NOT_FOUND,
+}
+# Providers whose daily free allowance resets at a fixed local midnight rather
+# than UTC (https://ai.google.dev/gemini-api/docs/rate-limits).
+_DAILY_RESET_ZONES = {"google": "America/Los_Angeles"}
+# Groq ends every limit error with "Upgrade to Dev Tier today": that "today" is
+# sales copy, not a window, so it is cut before looking for a daily marker.
+_UPGRADE_UPSELL = re.compile(r"\bupgrade to [^.?!]*?\btoday\b")
+_DAILY_MARKER = re.compile(r"daily|per[ _-]?day|\btoday\b")
+_QUOTA_MARKER = re.compile(r"allocation|quota|limit|exhaust|used up")
+
+
+# A provider-stated ceiling in a 429/413 body, e.g. Groq's "on tokens per minute
+# (TPM): Limit 6000, Used 5000, Requested 2000". Per-day axes are checked before
+# per-minute and tokens before requests so the more specific one wins.
+_LIMIT_VALUE = re.compile(r"\blimit[:\s]+([\d,]+)", re.IGNORECASE)
+_LIMIT_AXIS_PATTERNS = (
+    ("tpd", re.compile(r"tokens?\s*per\s*day|\btpd\b", re.IGNORECASE)),
+    ("tpm", re.compile(r"tokens?\s*per\s*min(?:ute)?|\btpm\b", re.IGNORECASE)),
+    ("rpd", re.compile(r"requests?\s*per\s*day|\brpd\b", re.IGNORECASE)),
+    ("rpm", re.compile(r"requests?\s*per\s*min(?:ute)?|\brpm\b", re.IGNORECASE)),
+)
+# Rate-limit headers by provider, as (header, axis). Groq's request header is a
+# daily count and Cerebras names its windows; anything else follows OpenAI's
+# per-minute convention, which errs high (harmless) if a provider means per day.
+_HEADER_LIMITS = {
+    "groq": (("x-ratelimit-limit-requests", "rpd"), ("x-ratelimit-limit-tokens", "tpm")),
+    "cerebras": (
+        ("x-ratelimit-limit-requests-day", "rpd"),
+        ("x-ratelimit-limit-tokens-minute", "tpm"),
+    ),
+}
+_DEFAULT_HEADER_LIMITS = (
+    ("x-ratelimit-limit-requests", "rpm"),
+    ("x-ratelimit-limit-tokens", "tpm"),
+)
+
+
+def parse_limit_from_error(message: str) -> tuple[str, int] | None:
+    """``(axis, cap)`` when a body states both a "Limit N" and a clear axis.
+    Guessing the axis would cap the wrong window, so anything vaguer is None."""
+
+    match = _LIMIT_VALUE.search(message)
+    if match is None:
+        return None
+    value = int(match.group(1).replace(",", "") or 0)
+    if value <= 0:
+        return None
+    for axis, pattern in _LIMIT_AXIS_PATTERNS:
+        if pattern.search(message):
+            return axis, value
+    return None
+
+
+def limits_from_headers(platform: str, headers: Any) -> list[tuple[str, int]]:
+    """``(axis, cap)`` pairs from provider rate-limit headers, raw or as LiteLLM
+    re-exposes them (``llm_provider-`` prefixed in a response's hidden params)."""
+
+    if headers is None:
+        return []
+    found = []
+    for name, axis in _HEADER_LIMITS.get(platform, _DEFAULT_HEADER_LIMITS):
+        for candidate in (name, f"llm_provider-{name}"):
+            try:
+                value = int(float(headers.get(candidate)))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if value > 0:
+                found.append((axis, value))
+                break
+    return found
+
+
+def _error_headers(error: BaseException) -> Any:
+    headers = getattr(error, "litellm_response_headers", None)
+    if headers is None:
+        headers = getattr(getattr(error, "response", None), "headers", None)
+    return headers
+
+
+def _response_headers(response: Any) -> Any:
+    hidden = getattr(response, "_hidden_params", None)
+    if isinstance(hidden, Mapping):
+        return hidden.get("additional_headers")
+    return None
+
+
+def _is_daily_quota_exhausted(message: str) -> bool:
+    """A 429 body that says the day's allowance is spent. Needs both a daily and
+    a quota marker so an ordinary per-minute 429 never matches."""
+
+    text = _UPGRADE_UPSELL.sub("", message.lower())
+    return bool(_DAILY_MARKER.search(text) and _QUOTA_MARKER.search(text))
 
 
 _MAX_RETRY_AFTER_SECONDS = 86_400.0
@@ -405,8 +509,13 @@ class EngineProxyHook(CustomLogger):
             pending, response, failure.value if failure is not None else None
         )
         slot = pending.candidate.slot
+        model = pending.candidate.model
+        self._learn_limits(
+            model, limits_from_headers(model.platform, _response_headers(response))
+        )
         self.quota.record_success(slot)
         self.reliability.record(pending.candidate.model.id, success=True)
+        self.selector.penalties.record_success(pending.candidate.model.id)
         input_tokens, output_tokens = _usage_tokens(response)
         if input_tokens is not None and output_tokens is not None:
             self.quota.settle(pending.lease, input_tokens + output_tokens)
@@ -437,18 +546,62 @@ class EngineProxyHook(CustomLogger):
         if kind is None:
             return
         candidate = pending.candidate
-        for slot in self._benched_slots(candidate.model, candidate.key_id, error):
-            self.quota.record_failure(slot, kind, retry_after=retry_after)
-        self.reliability.record(pending.candidate.model.id, success=False)
+        self._learn_from_error(candidate.model, error)
+        self._bench(candidate.model, candidate.key_id, kind, retry_after)
         self._queue_retry(pending, pending.decision, escalated=pending.escalated)
 
+    def _bench(
+        self,
+        model: CatalogModel,
+        key_id: str,
+        kind: ProviderFailure,
+        retry_after: float | None,
+    ) -> None:
+        """Cool down whatever the failure condemns and count it against the model."""
+
+        for slot in self._benched_slots(model, key_id, kind):
+            # Provider-wide kinds have fixed durations, so the failing model's
+            # limits are only consulted for its own slot.
+            self.quota.record_failure(
+                slot,
+                kind,
+                limits=model.limits,
+                retry_after=retry_after,
+                daily_reset_zone=_DAILY_RESET_ZONES.get(model.platform),
+            )
+        every_key = [(model.id, key) for key in self.selector.key_ids(model.platform)]
+        self.quota.record_model_failure(model.id, every_key or [(model.id, key_id)])
+        self.reliability.record(model.id, success=False)
+        self.selector.penalties.record_failure(
+            model.id,
+            rate_limited=kind in (ProviderFailure.RATE_LIMIT, ProviderFailure.DAILY_QUOTA),
+        )
+
+    def _learn_from_error(self, model: CatalogModel, error: BaseException) -> None:
+        learned = limits_from_headers(model.platform, _error_headers(error))
+        if getattr(error, "status_code", None) in (413, 429):
+            stated = parse_limit_from_error(str(error))
+            if stated is not None:
+                learned.append(stated)
+        self._learn_limits(model, learned)
+
+    def _learn_limits(
+        self, model: CatalogModel, learned: Sequence[tuple[str, int]]
+    ) -> None:
+        for axis, value in learned:
+            self.quota.learn_limit(model.id, model.limits, axis, value)
+
     def _benched_slots(
-        self, model: CatalogModel, key_id: str, error: BaseException
+        self, model: CatalogModel, key_id: str, kind: ProviderFailure
     ) -> list[Slot]:
         """A rejected key (401) or empty account (402) fails for every model on
-        that provider; any other failure is specific to the model that raised it."""
+        that provider; a model the provider no longer serves (404) fails on every
+        key; anything else (a 403 tier gate included) is this model and key only."""
 
-        if getattr(error, "status_code", None) not in (401, 402):
+        if kind is ProviderFailure.NOT_FOUND:
+            keys = self.selector.key_ids(model.platform) or (key_id,)
+            return [(model.id, key) for key in keys]
+        if kind not in (ProviderFailure.AUTH, ProviderFailure.CREDIT):
             return [(model.id, key_id)]
         return [
             (other.id, key_id)
@@ -563,8 +716,10 @@ class EngineProxyHook(CustomLogger):
                         "blocked_reason": reason,
                         "headroom": round(self.quota.headroom(slot, model.limits), 3),
                         "cooldown_remaining": round(self.quota.cooldown_remaining(slot), 1),
-                        "reliability": round(self.reliability.score(model.id), 3),
-                        "limits": asdict(model.limits),
+                        "reliability": round(self.reliability.mean(model.id), 3),
+                        "limits": asdict(
+                            self.quota.effective_limits(model.id, model.limits)
+                        ),
                     }
                 )
             providers.append(
@@ -638,13 +793,13 @@ class EngineProxyHook(CustomLogger):
             self.quota.settle(lease, 0)
             kind, retry_after = classify_failure(error)
             if kind is not None:
-                for bench in self._benched_slots(model, key_id, error):
-                    self.quota.record_failure(bench, kind, retry_after=retry_after)
-                self.reliability.record(model.id, success=False)
+                self._learn_from_error(model, error)
+                self._bench(model, key_id, kind, retry_after)
             return _compare_result(model.id, error=_error_text(error, api_key))
         latency_ms = round((time.perf_counter() - started) * 1000)
         self.quota.record_success(slot)
         self.reliability.record(model.id, success=True)
+        self.selector.penalties.record_success(model.id)
         input_tokens, output_tokens = _usage_tokens(response)
         if input_tokens is not None and output_tokens is not None:
             self.quota.settle(lease, input_tokens + output_tokens)
@@ -709,16 +864,28 @@ def _error_text(error: BaseException, secret: str | None) -> str:
     return text[:_ERROR_TEXT_LIMIT]
 
 
+def selection_rng() -> random.Random | None:
+    """The sampler for reliability scores; ``None`` means the posterior mean.
+    The test suite patches this to keep rankings deterministic."""
+
+    return random.Random()
+
+
 def build_engine_hook(
     *,
     catalog_path: Path | None = None,
     telemetry_path: Path | None = None,
     env: Mapping[str, str] | None = None,
+    state_path: Path | None = None,
+    rng: random.Random | None = None,
 ) -> EngineProxyHook:
     env = os.environ if env is None else env
     catalog = load_catalog(catalog_path)
-    quota = QuotaTracker()
-    reliability = Reliability()
+    # Defaults to ~/.zhunt/state.db (or $ZHUNT_STATE_DB); memory-only if unusable.
+    quota = QuotaTracker(store=StateStore.open(state_path))
+    # Thompson sampling: each pick draws from the posterior so a model with few
+    # samples still gets tried. Pass a seeded ``rng`` for reproducible tests.
+    reliability = Reliability(rng=rng or selection_rng())
     keys = keys_from_env(catalog, env)
     policy = policy_from_env(env)
     selector = Selector(catalog, quota, reliability, keys, policy=policy)

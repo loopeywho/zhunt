@@ -1,3 +1,4 @@
+# Parts adapted from FreeLLMAPI (MIT, (c) 2026 Tashfeen Ahmed); see THIRD_PARTY_NOTICES.md
 """Free-first model selection over the catalog, quota tracker and reliability."""
 
 from __future__ import annotations
@@ -13,7 +14,26 @@ from zhunt.catalog import Catalog, CatalogModel
 from zhunt.quota import Lease, QuotaTracker, Slot
 
 _HALF_LIFE_SECONDS = 2 * 86_400.0
-_HEADROOM_FLOOR = 0.05
+# Headroom has no say until only 20% of the tightest window is left, then the
+# score ramps linearly down to 10% of itself at zero.
+_HEADROOM_RAMP_START = 0.2
+_HEADROOM_FLOOR = 0.1
+# Live failure penalty: +3 per 429, +1 per other failure, capped at 10 and
+# decaying one point every 2 minutes. At the cap a model keeps 40% of its score.
+_PENALTY_RATE_LIMIT = 3.0
+_PENALTY_FAILURE = 1.0
+_PENALTY_MAX = 10.0
+_PENALTY_DECAY_SECONDS = 120.0
+_PENALTY_MAX_DAMP = 0.6
+
+
+def headroom_factor(remaining: float) -> float:
+    """Score multiplier for the remaining fraction (0-1) of the tightest window."""
+
+    remaining = min(max(remaining, 0.0), 1.0)
+    if remaining >= _HEADROOM_RAMP_START:
+        return 1.0
+    return _HEADROOM_FLOOR + (1 - _HEADROOM_FLOOR) * remaining / _HEADROOM_RAMP_START
 
 
 class NoCandidateError(RuntimeError):
@@ -46,10 +66,17 @@ class Reliability:
     def score(self, model_id: str) -> float:
         """Posterior mean, or one Thompson sample when an ``rng`` was supplied."""
 
+        if self._rng is None:
+            return self.mean(model_id)
         with self._lock:
             successes, failures, _ = self._decayed(model_id)
-        if self._rng is not None:
             return self._rng.betavariate(successes + 1, failures + 1)
+
+    def mean(self, model_id: str) -> float:
+        """Posterior mean: the stable figure to report, whatever ``score`` samples."""
+
+        with self._lock:
+            successes, failures, _ = self._decayed(model_id)
         return (successes + 1) / (successes + failures + 2)
 
     def _decayed(self, model_id: str) -> tuple[float, float, float]:
@@ -59,6 +86,51 @@ class Reliability:
             factor = 0.5 ** (elapsed / _HALF_LIFE_SECONDS)
             successes, failures = successes * factor, failures * factor
         return successes, failures, stamp
+
+
+class Penalties:
+    """Short-lived demotion of models that are failing right now.
+
+    Unlike ``Reliability`` (days of history), this reacts within minutes and
+    fades within minutes, so a burst of 429s sinks a model only briefly.
+    """
+
+    def __init__(self, *, clock: Callable[[], float] = time.time) -> None:
+        self._clock = clock
+        self._entries: dict[str, tuple[float, float]] = {}  # penalty, last hit
+        self._lock = RLock()
+
+    def record_failure(self, model_id: str, *, rate_limited: bool) -> None:
+        weight = _PENALTY_RATE_LIMIT if rate_limited else _PENALTY_FAILURE
+        with self._lock:
+            now = self._clock()
+            current = self._decayed(model_id, now)
+            self._entries[model_id] = (min(current + weight, _PENALTY_MAX), now)
+
+    def record_success(self, model_id: str) -> None:
+        with self._lock:
+            entry = self._entries.get(model_id)
+            if entry is None:
+                return
+            penalty, stamp = entry
+            if penalty <= 1:
+                del self._entries[model_id]
+            else:
+                self._entries[model_id] = (penalty - 1, stamp)
+
+    def penalty(self, model_id: str) -> float:
+        with self._lock:
+            return self._decayed(model_id, self._clock())
+
+    def factor(self, model_id: str) -> float:
+        """Score multiplier: 1.0 with no penalty, 0.4 at the cap."""
+
+        return 1 - (min(self.penalty(model_id), _PENALTY_MAX) / _PENALTY_MAX) * _PENALTY_MAX_DAMP
+
+    def _decayed(self, model_id: str, now: float) -> float:
+        penalty, stamp = self._entries.get(model_id, (0.0, now))
+        steps = max(now - stamp, 0.0) // _PENALTY_DECAY_SECONDS
+        return max(penalty - steps, 0.0)
 
 
 @dataclass(frozen=True)
@@ -90,6 +162,7 @@ class Selector:
         *,
         policy: SelectionPolicy = SelectionPolicy(),
         weights: tuple[float, float, float] = (0.5, 0.25, 0.25),
+        penalties: Penalties | None = None,
     ) -> None:
         if len(weights) != 3 or any(w < 0 for w in weights) or sum(weights) <= 0:
             raise ValueError("weights must be three non-negative numbers")
@@ -100,6 +173,7 @@ class Selector:
         self._policy = policy
         total = sum(weights)
         self._weights = tuple(w / total for w in weights)
+        self.penalties = penalties or Penalties()
 
     @property
     def policy(self) -> SelectionPolicy:
@@ -225,4 +299,4 @@ class Selector:
             + w_intelligence * model.intelligence / 100
         )
         headroom = self._quota.headroom(slot, model.limits)
-        return base * max(headroom, _HEADROOM_FLOOR)
+        return base * headroom_factor(headroom) * self.penalties.factor(model.id)
