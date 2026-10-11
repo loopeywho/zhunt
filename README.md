@@ -62,7 +62,7 @@ reorder or hide.
 
 Themes: dark and light (with a sky that follows the time of day), plus Tokyo Night,
 Catppuccin, Catppuccin Latte, Gruvbox, Nord, Everforest, Kanagawa, Rosé Pine, Matte Black
-and Flexoki Light, each with its own wallpaper (`Ctrl+Space t`). A theme is one CSS file of
+and Flexoki Light, each with its own wallpaper (`Ctrl+Space t`), all free. A theme is one CSS file of
 variables: copy one from `zhunt/workspace/css/themes/` to `~/.zhunt/themes/<name>.css` and
 edit it. Layouts, including window positions and style, are plain JSON in
 `~/.zhunt/layouts/`.
@@ -81,11 +81,10 @@ Cursor and VS Code have no environment or flag route for a custom endpoint, so
 
 ## Free and Pro
 
-zhunt is free and open source for free-tier models, the workspace and dark/light themes.
-**zhunt Pro** ($7/month after a 7-day trial) adds premium models (GPT, Claude, Gemini Pro,
-using your own paid keys) when every free model is busy, under a monthly spending cap, and
-the full theme pack. Licence keys are verified offline; zhunt never phones home to check
-them.
+zhunt is free and open source for free-tier models, the workspace and every theme.
+**zhunt Pro** ($7/month after a 7-day trial) adds premium models (Claude, GPT, Gemini,
+using your own paid keys) when every free model is busy, under a monthly spending cap.
+Licence keys are verified offline; zhunt never phones home to check them.
 
 ```console
 zhunt upgrade                 # pricing page

@@ -512,7 +512,7 @@ def test_a_spent_google_daily_quota_benches_until_pacific_midnight() -> None:
 # -- premium fallback (Pro) ------------------------------------------------
 
 PRO_PLAN = __import__("zhunt.licence", fromlist=["Plan"]).Plan(
-    name="pro", features=frozenset({"premium_fallback", "theme_pack"}), expires_at=2e9
+    name="pro", features=frozenset({"premium_fallback"}), expires_at=2e9
 )
 
 

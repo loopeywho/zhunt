@@ -53,10 +53,6 @@ export function createThemes({ toast, onChange }) {
       const isBuiltin = BUILTIN.some((b) => b.name === name);
       let css = null;
       try { css = await api.themes.css(name); } catch (err) {
-        if (err.status === 402) { // a Pro theme without Pro (e.g. the licence lapsed): keep the free default
-          toast?.(`"${name}" is a zhunt Pro theme; using dark`);
-          return themes.apply('dark', { persist: false });
-        }
         if (!isBuiltin) {
           toast?.(`theme "${name}" is not available (${err.message}); using dark`);
           return themes.apply('dark', { persist: false });
@@ -72,7 +68,7 @@ export function createThemes({ toast, onChange }) {
     },
 
     next() {
-      const names = list.filter((t) => !t.locked).map((t) => t.name);
+      const names = list.map((t) => t.name);
       const i = names.indexOf(pending || themes.current);
       return themes.apply(names[(i + 1) % names.length]);
     },

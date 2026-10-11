@@ -46,11 +46,9 @@ STATE = {
     "themes_dir": None,
     "plan": "free",  # free | pro  (--plan, or POST /mock/control {"plan": "pro"})
 }
-FREE_THEMES = {"dark", "light"}
-PLAN_FEATURES = {"free": [], "pro": ["premium_fallback", "theme_pack"]}
+PLAN_FEATURES = {"free": [], "pro": ["premium_fallback"]}
 FEATURE_LABELS = {
     "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
-    "theme_pack": "The full theme pack (Tokyo Night, Catppuccin, Gruvbox, Nord and more)",
 }
 LOCK = threading.Lock()
 DECISIONS = []  # newest last; served newest first
@@ -302,18 +300,13 @@ class Handler(BaseHTTPRequestHandler):
         names = {p.stem: True for p in (WORKSPACE_DIR / "css" / "themes").glob("*.css")}
         for p in Path(STATE["themes_dir"]).glob("*.css"):
             names[p.stem] = False  # a user theme replaces the built-in of the same name
-        unlocked = STATE["plan"] == "pro"
-        self._send(200, {"themes": [
-            {"name": n, "builtin": b, "pro": b and n not in FREE_THEMES, "locked": b and n not in FREE_THEMES and not unlocked}
-            for n, b in sorted(names.items())]})
+        self._send(200, {"themes": [{"name": n, "builtin": b} for n, b in sorted(names.items())]})
 
     def _theme_css(self, name):
         if not NAME_RE.match(name):
             return self._send(400, {"detail": "invalid theme name"})
         for base in (Path(STATE["themes_dir"]), WORKSPACE_DIR / "css" / "themes"):
             f = base / (name + ".css")
-            if f.is_file() and base != Path(STATE["themes_dir"]) and name not in FREE_THEMES and STATE["plan"] != "pro":
-                return self._send(402, {"detail": f"the {name!r} theme is part of zhunt Pro"})
             if f.is_file():
                 return self._send(200, f.read_bytes(), "text/css; charset=utf-8")
         self._send(404, {"detail": "theme not found"})

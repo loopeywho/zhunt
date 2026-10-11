@@ -89,13 +89,10 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
   async function themeMenu() {
     await themes.refresh();
     const current = themes.current;
-    const rank = (t) => (t.locked ? 2 : t.builtin ? 0 : 1); // usable first, then your own, then locked Pro themes
-    const items = [...themes.list].sort((a, b) => rank(a) - rank(b)).map((t) => ({
-      title: t.name, group: !t.builtin ? 'your theme' : t.pro ? 'pro theme' : 'theme',
-      hint: t.name === current ? 'current' : t.locked ? 'Pro' : '', name: t.name, locked: t.locked,
+    const items = themes.list.map((t) => ({
+      title: t.name, group: t.builtin ? 'theme' : 'your theme', hint: t.name === current ? 'current' : '', name: t.name,
     }));
     const picked = await overlays.palette(items, { placeholder: 'choose a theme' });
-    if (picked?.locked) { toast(`"${picked.name}" is in the zhunt Pro theme pack`); planSheet(); return; }
     if (picked) { await themes.apply(picked.name); toast(`theme ${picked.name}`); }
   }
 

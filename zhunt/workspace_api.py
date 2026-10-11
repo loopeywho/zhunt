@@ -22,9 +22,6 @@ MAX_LAYOUT_BYTES = 64 * 1024
 MAX_COMPARE_MODELS = 4
 MAX_COMPARE_BYTES = 1024 * 1024
 _NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
-# Built-in themes anyone gets; the rest of the shipped pack needs Pro. Themes the user
-# writes in ~/.zhunt/themes are always free, whatever they are called.
-FREE_THEMES = frozenset({"dark", "light"})
 
 
 @dataclass(frozen=True)
@@ -157,16 +154,10 @@ def build_router(
     def list_themes() -> dict[str, Any]:
         user = set(_names(dirs.themes, ".css"))
         builtin = set(_names(dirs.static / "css" / "themes", ".css"))
-        unlocked = plan().has("theme_pack")
         # A user theme replaces the built-in of the same name, so it is listed as theirs.
         return {
             "themes": [
-                {
-                    "name": name,
-                    "builtin": name not in user,
-                    "pro": name not in user and name not in FREE_THEMES,
-                    "locked": name not in user and name not in FREE_THEMES and not unlocked,
-                }
+                {"name": name, "builtin": name not in user}
                 for name in sorted(user | builtin)
             ]
         }
@@ -174,10 +165,6 @@ def build_router(
     @router.get("/themes/{name}")
     def get_theme(name: str) -> PlainTextResponse:
         for folder in (dirs.themes, dirs.static / "css" / "themes"):
-            if folder != dirs.themes and name not in FREE_THEMES and not plan().has("theme_pack"):
-                if _path(folder, name, ".css").is_file():
-                    raise HTTPException(402, f"the {name!r} theme is part of zhunt Pro")
-                continue
             candidate = _path(folder, name, ".css")
             try:
                 if candidate.is_symlink():  # never follow a link out of the themes dir

@@ -34,7 +34,7 @@ class VerifyTests(unittest.TestCase):
     def test_a_valid_key_grants_pro_features(self) -> None:
         plan = lic.verify(make_key(), now=NOW, public_keys=KEYS)
         self.assertEqual(plan.name, "pro")
-        self.assertTrue(plan.has("premium_fallback") and plan.has("theme_pack"))
+        self.assertTrue(plan.has("premium_fallback"))
         self.assertFalse(plan.in_grace)
 
     def test_forged_tampered_or_foreign_keys_are_refused(self) -> None:

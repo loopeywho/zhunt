@@ -38,11 +38,10 @@ PUBLIC_KEYS: dict[str, str] = {
 
 FEATURES = {
     "free": frozenset(),
-    "pro": frozenset({"premium_fallback", "theme_pack"}),
+    "pro": frozenset({"premium_fallback"}),
 }
 FEATURE_LABELS = {
     "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
-    "theme_pack": "The full theme pack (Tokyo Night, Catppuccin, Gruvbox, Nord and more)",
 }
 
 

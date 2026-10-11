@@ -730,10 +730,7 @@ def test_builtin_themes_are_listed_and_served_as_css() -> None:
         listed = client.get("/zhunt/api/themes", headers=headers()).json()
         dark = client.get("/zhunt/api/themes/dark", headers=headers())
 
-    assert listed == {"themes": [
-        {"name": "dark", "builtin": True, "pro": False, "locked": False},
-        {"name": "light", "builtin": True, "pro": False, "locked": False},
-    ]}
+    assert listed == {"themes": [{"name": "dark", "builtin": True}, {"name": "light", "builtin": True}]}
     assert dark.status_code == 200
     assert dark.headers["content-type"].startswith("text/css")
     assert dark.text == ":root{--bg:#000}"
@@ -768,37 +765,16 @@ def test_missing_or_invalid_theme_names() -> None:
 PRO = Plan(name="pro", features=FEATURES["pro"], expires_at=2e9)
 
 
-def test_pack_themes_are_locked_on_free_and_served_on_pro() -> None:
-    with workspace(AsyncMock(), env=ENV) as (client, _):
-        pack = client.dirs.static / "css" / "themes" / "nord.css"
-        pack.write_text(":root{--bg:#2e3440}")
-        with patch("zhunt.workspace_api.current_plan", return_value=FREE):
-            free_list = {t["name"]: t for t in client.get("/zhunt/api/themes", headers=headers()).json()["themes"]}
-            free_get = client.get("/zhunt/api/themes/nord", headers=headers())
-            plan = client.get("/zhunt/api/plan", headers=headers()).json()
-        with patch("zhunt.workspace_api.current_plan", return_value=PRO):
-            pro_list = {t["name"]: t for t in client.get("/zhunt/api/themes", headers=headers()).json()["themes"]}
-            pro_get = client.get("/zhunt/api/themes/nord", headers=headers())
-
-    assert free_list["nord"] == {"name": "nord", "builtin": True, "pro": True, "locked": True}
-    assert free_list["dark"]["locked"] is False
-    assert free_get.status_code == 402
-    assert plan["plan"] == "free" and plan["features"] == [] and plan["upgrade_url"].startswith("https://")
-    assert pro_list["nord"]["locked"] is False
-    assert pro_get.status_code == 200 and pro_get.text == ":root{--bg:#2e3440}"
-
-
-def test_a_users_own_theme_is_free_even_if_named_like_a_pack_theme() -> None:
+def test_every_shipped_theme_is_free() -> None:
     with workspace(AsyncMock(), env=ENV) as (client, _):
         (client.dirs.static / "css" / "themes" / "nord.css").write_text(":root{--bg:#2e3440}")
-        client.dirs.themes.mkdir(parents=True)
-        (client.dirs.themes / "nord.css").write_text(":root{--bg:#abc}")
-        with patch("zhunt.workspace_api.current_plan", return_value=FREE):
-            listed = {t["name"]: t for t in client.get("/zhunt/api/themes", headers=headers()).json()["themes"]}
-            served = client.get("/zhunt/api/themes/nord", headers=headers())
+        listed = {t["name"]: t for t in client.get("/zhunt/api/themes", headers=headers()).json()["themes"]}
+        served = client.get("/zhunt/api/themes/nord", headers=headers())
+        plan = client.get("/zhunt/api/plan", headers=headers()).json()
 
-    assert listed["nord"]["locked"] is False and listed["nord"]["builtin"] is False
-    assert served.status_code == 200 and served.text == ":root{--bg:#abc}"
+    assert listed["nord"] == {"name": "nord", "builtin": True}
+    assert served.status_code == 200 and served.text == ":root{--bg:#2e3440}"
+    assert plan["plan"] == "free" and plan["features"] == [] and plan["upgrade_url"].startswith("https://")
 
 
 def test_premium_needs_pro_and_the_opt_in_and_stops_at_the_cap() -> None:

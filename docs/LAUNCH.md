@@ -20,8 +20,8 @@ useful because free tiers do most everyday work.
 | T3 Chat | ~$8 /month | limited | hosted, rate-limits premium models |
 | Poe | ~$20 /month | limited | hosted, points system |
 | OpenRouter | pay per token | 50 req/day | API only, needs a separate chat app |
-| **zhunt Free** | $0 | yes | local, free-tier models, user's free keys |
-| **zhunt Pro** | $7 /month, 7-day trial | | adds premium fallback (user's paid keys) and theme pack |
+| **zhunt Free** | $0 | yes | local, free-tier models, user's free keys, all themes |
+| **zhunt Pro** | $7 /month, 7-day trial | | adds premium fallback (user's paid keys) |
 | **zhunt Cloud** (phase 2) | $12 /month (proposed) | | hosted, premium credits included: the full ChatLLM model |
 
 ## 2. Plans and what is built
@@ -32,7 +32,7 @@ useful because free tiers do most everyday work.
 | Workspace, floating/tiled, dark/light | yes | yes | yes |
 | Own themes and layouts (files) | yes | yes | yes |
 | Premium fallback (GPT, Claude, Gemini Pro) with monthly cap | | yes, user's own paid keys | yes, included credits |
-| Theme pack (10 Omarchy-style themes) | | yes | yes |
+| All 12 themes (incl. 10 Omarchy-style) | yes | yes | yes |
 | Nothing to install | | | yes |
 
 How Pro is delivered (all in the repo):
@@ -113,7 +113,7 @@ Owner = you unless marked. Order matters.
    `https://zhunt.kindredwildcat.com/activate?session_id={CHECKOUT_SESSION_ID}`.
    Turn on the customer portal (cancellation) and link it from emails.
 7. End-to-end test in Stripe test mode first: test-mode payment link → activate page →
-   `zhunt licence activate` → `zhunt licence status` shows Pro → theme pack unlocks →
+   `zhunt licence activate` → `zhunt licence status` shows Pro →
    `zhunt keys add anthropic` + `zhunt premium on --cap 1` → a request with free keys
    removed is answered by a premium model and the spend shows in Panels.
 8. Publish privacy policy and terms, linked from the site footer and checkout. Drafts written
