@@ -30,9 +30,13 @@
   var BOTS = {};
   var AVATARS = {};
   // demo pictures: drawn in the page (the real app asks Cloudflare's FLUX model)
+  var WALLPAPER = null;
   function demoPicture(prompt) {
+    var wide = /wallpaper/i.test(prompt);
     var c = document.createElement('canvas');
-    c.width = c.height = 256;
+    c.width = wide ? 1280 : 256;
+    c.height = wide ? 800 : 256;
+    if (wide) return demoLandscape(c, prompt);
     var g = c.getContext('2d');
     var seed = 0;
     for (var i = 0; i < prompt.length; i++) seed = (seed * 31 + prompt.charCodeAt(i)) >>> 0;
@@ -49,6 +53,25 @@
     g.fillStyle = '#fff'; g.beginPath(); g.arc(98, 112, 14, 0, 7); g.arc(158, 112, 14, 0, 7); g.fill();
     g.strokeStyle = '#fff'; g.lineWidth = 8; g.lineCap = 'round'; g.beginPath(); g.arc(128, 150, 34, 0.2, Math.PI - 0.2); g.stroke();
     return c.toDataURL('image/png');
+  }
+  function demoLandscape(c, prompt) {
+    var g = c.getContext('2d');
+    var seed = 7;
+    for (var i = 0; i < prompt.length; i++) seed = (seed * 31 + prompt.charCodeAt(i)) >>> 0;
+    var rnd = function () { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+    var hue = Math.floor(rnd() * 360);
+    var sky = g.createLinearGradient(0, 0, 0, 800);
+    sky.addColorStop(0, 'hsl(' + hue + ',45%,12%)');
+    sky.addColorStop(1, 'hsl(' + ((hue + 40) % 360) + ',55%,38%)');
+    g.fillStyle = sky; g.fillRect(0, 0, 1280, 800);
+    g.fillStyle = 'hsla(' + ((hue + 180) % 360) + ',80%,75%,0.9)'; g.beginPath(); g.arc(940, 230, 70, 0, 7); g.fill();
+    for (var k = 0; k < 4; k++) {
+      g.fillStyle = 'hsla(' + ((hue + k * 25) % 360) + ',40%,' + (30 - k * 6) + '%,0.92)';
+      g.beginPath(); g.moveTo(0, 800);
+      for (var x = 0; x <= 1280; x += 80) g.lineTo(x, 470 + k * 80 + Math.sin(x / 140 + k * 2 + rnd()) * (70 - k * 10));
+      g.lineTo(1280, 800); g.closePath(); g.fill();
+    }
+    return c.toDataURL('image/jpeg', 0.85);
   }
   var PLAN = 'free';
   var ALLOW_TRAINING = false;
@@ -233,6 +256,11 @@
       return new Promise(function (resolve) { setTimeout(function () { resolve(json(200, { text: 'Write a regex for UK postcodes' })); }, 700); });
     }
     if (rest === 'bots') return Promise.resolve(json(200, { bots: Object.keys(BOTS).sort().map(function (k) { var b = Object.assign({}, BOTS[k]); b.avatar = !!AVATARS[k]; return b; }) }));
+    if (rest === 'wallpaper') {
+      if (method === 'PUT') { WALLPAPER = body && body.image; return Promise.resolve(json(200, { wallpaper: true })); }
+      if (method === 'DELETE') { WALLPAPER = null; return Promise.resolve(json(200, { wallpaper: false })); }
+      return Promise.resolve(WALLPAPER ? json(200, { image: WALLPAPER }) : json(404, { detail: 'no personal wallpaper' }));
+    }
     if (rest === 'images/status') return Promise.resolve(json(200, { connected: true, provider: 'Cloudflare Workers AI', key_url: 'https://dash.cloudflare.com/profile/api-tokens', note: 'Demo: pictures are drawn in your browser. The real app uses Cloudflare\'s free FLUX model.' }));
     if (rest === 'images' && method === 'POST') {
       return new Promise(function (resolve) { setTimeout(function () { resolve(json(200, { image: demoPicture(String((body && body.prompt) || '')) })); }, 1200); });

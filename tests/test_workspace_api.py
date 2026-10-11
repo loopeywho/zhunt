@@ -78,7 +78,7 @@ def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None,
             (static_dir / "index.html").write_text("<h1>workspace</h1>")
             (static_dir / "css" / "themes" / "dark.css").write_text(":root{--bg:#000}")
             (static_dir / "css" / "themes" / "light.css").write_text(":root{--bg:#fff}")
-        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env", bots=root / "home" / "bots")
+        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env", bots=root / "home" / "bots", wallpaper=root / "home" / "wallpaper")
         with patch.dict(os.environ, {**dict.fromkeys(ENV_NAMES, ""), **env}), patch(
             "litellm.acompletion", call
         ), patch("zhunt.workspace_api.current_plan", return_value=plan or FREE), patch(
@@ -955,3 +955,19 @@ def test_bot_pictures_round_trip_and_are_checked() -> None:
     assert listed is True and got == png
     assert svg.status_code == 400  # SVG can carry script: not accepted
     assert gone.status_code == 404
+
+
+def test_a_personal_wallpaper_round_trips_and_clears() -> None:
+    import base64 as b64
+
+    jpeg = "data:image/jpeg;base64," + b64.b64encode(b"\xff\xd8\xff wallpaper").decode()
+    with workspace(AsyncMock(), env=ENV) as (client, _):
+        none = client.get("/zhunt/api/wallpaper", headers=headers())
+        put = client.put("/zhunt/api/wallpaper", headers=headers(), json={"image": jpeg})
+        got = client.get("/zhunt/api/wallpaper", headers=headers()).json()["image"]
+        bad = client.put("/zhunt/api/wallpaper", headers=headers(), json={"image": "data:text/html;base64,PGI+"})
+        client.delete("/zhunt/api/wallpaper", headers=headers())
+        gone = client.get("/zhunt/api/wallpaper", headers=headers())
+
+    assert none.status_code == 404 and put.json() == {"wallpaper": True} and got == jpeg
+    assert bad.status_code == 400 and gone.status_code == 404

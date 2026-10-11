@@ -27,6 +27,7 @@ BOT_ALIASES = ("zhunt-auto", "zhunt-chat", "zhunt-coding", "zhunt-long-context",
 MAX_BOT_INSTRUCTIONS = 4000
 _COLOR = re.compile(r"#[0-9a-fA-F]{6}")
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
+MAX_WALLPAPER_BYTES = 6 * 1024 * 1024
 _DATA_URL = re.compile(r"data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)")
 _AVATAR_EXT = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_COMPARE_MODELS = 4
@@ -50,6 +51,8 @@ class WorkspaceDirs:
     layouts: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "layouts")
     env_file: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "env")
     bots: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "bots")
+    # a personal wallpaper (AI-generated or uploaded): <wallpaper>.jpg|png|webp
+    wallpaper: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "wallpaper")
     themes: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "themes")
     static: Path = Path(__file__).parent / "workspace"
 
@@ -307,6 +310,26 @@ def build_router(
             raise HTTPException(error.status, str(error)) from None
         return {"image": "data:image/jpeg;base64," + base64.b64encode(data).decode()}
 
+    @router.get("/wallpaper")
+    def get_wallpaper() -> dict[str, Any]:
+        found = _picture_file(dirs.wallpaper)
+        if found is None:
+            raise HTTPException(404, "no personal wallpaper: the theme's own is used")
+        mime, path = found
+        return {"image": f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()}
+
+    @router.put("/wallpaper")
+    async def put_wallpaper(request: Request) -> dict[str, Any]:
+        mime, data = _picture_body(await _json_body(request, limit=MAX_WALLPAPER_BYTES * 4 // 3 + 1024), MAX_WALLPAPER_BYTES)
+        _remove_pictures(dirs.wallpaper)
+        _write_private(dirs.wallpaper.with_suffix(_AVATAR_EXT[mime]), data)
+        return {"wallpaper": True}
+
+    @router.delete("/wallpaper")
+    def delete_wallpaper() -> dict[str, Any]:
+        _remove_pictures(dirs.wallpaper)
+        return {"wallpaper": False}
+
     @router.get("/bots/{handle}/avatar")
     def get_avatar(handle: str) -> dict[str, Any]:
         _path(dirs.bots, handle, ".json")  # validates the handle
@@ -368,6 +391,31 @@ def build_router(
         raise HTTPException(404, f"no theme named {name!r}")
 
     return router
+
+
+def _picture_file(stem: Path) -> tuple[str, Path] | None:
+    for mime, ext in _AVATAR_EXT.items():
+        path = stem.with_suffix(ext)
+        if path.is_file() and not path.is_symlink():
+            return mime, path
+    return None
+
+
+def _picture_body(body: Any, limit: int) -> tuple[str, bytes]:
+    """(mime, bytes) from {"image": "data:image/...;base64,..."}; JPEG, PNG or WebP only."""
+
+    match = _DATA_URL.fullmatch(str(body.get("image", ""))) if isinstance(body, dict) else None
+    if not match:
+        raise HTTPException(400, "send a JPEG, PNG or WebP picture")
+    data = base64.b64decode(match.group(2))
+    if len(data) > limit:
+        raise HTTPException(413, f"pictures can be at most {limit // (1024 * 1024)} MB")
+    return match.group(1), data
+
+
+def _remove_pictures(stem: Path) -> None:
+    for ext in _AVATAR_EXT.values():
+        stem.with_suffix(ext).unlink(missing_ok=True)
 
 
 def _bot(handle: str, body: Any) -> dict[str, Any]:

@@ -87,14 +87,47 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
     if (picked) { if (['chat', 'compare'].includes(picked.kind)) ws.splitAuto(picked.kind); else ws.openKind(picked.kind); }
   }
 
+  // A personal wallpaper (AI-generated) sits over whatever the theme provides, until cleared.
+  let customWallpaper = false;
+  function applyWallpaper(image) {
+    customWallpaper = !!image;
+    appEl.style.background = image ? `url("${image}") center / cover no-repeat` : '';
+  }
+  api.wallpaper.get().then((r) => applyWallpaper(r.image), () => {});
+
+  async function generateWallpaper() {
+    const theme = themes.current;
+    const description = await overlays.prompt('describe your wallpaper (AI)', {
+      initial: `Calm desktop wallpaper in ${theme.replace(/-/g, ' ')} colours: a minimal landscape, soft light, no text, no people`,
+      hint: 'Made with your free Cloudflare connection (Connect window > AI pictures)',
+    });
+    if (!description) return;
+    toast('generating your wallpaper...');
+    try {
+      const { image } = await api.images.generate(description);
+      await api.wallpaper.put(image);
+      applyWallpaper(image);
+      toast('wallpaper set');
+    } catch (err) {
+      if (err.status === 409) { toast('AI wallpapers need a free Cloudflare token: open Connect models > AI pictures', true); ws.openKind('connect'); }
+      else toast(err.message || String(err), true);
+    }
+  }
+
   async function themeMenu() {
     await themes.refresh();
     const current = themes.current;
     const items = themes.list.map((t) => ({
       title: t.name, group: t.builtin ? 'theme' : 'your theme', hint: t.name === current ? 'current' : '', name: t.name,
     }));
-    const picked = await overlays.palette(items, { placeholder: 'choose a theme' });
-    if (picked) { await themes.apply(picked.name); toast(`theme ${picked.name}`); }
+    items.push({ title: 'Generate a wallpaper with AI...', group: 'wallpaper', action: 'generate' });
+    if (customWallpaper) items.push({ title: "Use the theme's wallpaper again", group: 'wallpaper', action: 'clear' });
+    const picked = await overlays.palette(items, { placeholder: 'choose a theme or a wallpaper' });
+    if (!picked) return;
+    if (picked.action === 'generate') return generateWallpaper();
+    if (picked.action === 'clear') { await api.wallpaper.remove().catch(() => {}); applyWallpaper(null); toast("theme wallpaper restored"); return; }
+    await themes.apply(picked.name);
+    toast(`theme ${picked.name}`);
   }
 
   function refresh() {
