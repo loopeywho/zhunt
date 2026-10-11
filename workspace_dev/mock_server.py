@@ -270,6 +270,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._chat()
         if u.path == "/zhunt/api/compare":
             return self._compare()
+        if u.path == "/zhunt/api/transcribe":
+            n = int(self.headers.get("Content-Length") or 0)
+            self.rfile.read(n)
+            return self._send(200, {"text": "Write a regex for UK postcodes"})
         if u.path == "/zhunt/api/keys":
             body = self._json_body() or {}
             prov = next((p for p in CATALOG if p["platform"] == body.get("platform")), None)

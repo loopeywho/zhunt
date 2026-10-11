@@ -120,6 +120,24 @@ export const api = {
   },
 };
 
+// Voice input: send a recording to the local daemon, which transcribes it with Groq Whisper.
+export async function transcribe(blob) {
+  const key = getKey();
+  let res;
+  try {
+    res = await fetch('/zhunt/api/transcribe', {
+      method: 'POST', body: blob, cache: 'no-store', credentials: 'omit',
+      headers: { 'Content-Type': (blob.type || 'audio/webm').split(';')[0], ...(key ? { Authorization: 'Bearer ' + key } : {}) },
+    });
+  } catch (err) {
+    throw new ApiError(0, 'cannot reach the zhunt daemon (' + (err.message || 'network error') + ')');
+  }
+  if (res.status === 401) { unauthorizedHandler(); throw new ApiError(401, 'invalid Zhunt master key'); }
+  const body = await readBody(res);
+  if (!res.ok) throw new ApiError(res.status, detailOf(body, 'HTTP ' + res.status), body);
+  return (body && body.text) || '';
+}
+
 // Streaming chat. Calls onDelta(textChunk) as tokens arrive; resolves with {text, model}.
 // Also copes with a plain JSON (non-SSE) reply.
 export async function streamChat({ model, messages, session, signal, onDelta }) {

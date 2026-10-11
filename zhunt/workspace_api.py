@@ -22,6 +22,13 @@ from zhunt.server import _authenticate_local_request
 MAX_LAYOUT_BYTES = 64 * 1024
 MAX_COMPARE_MODELS = 4
 MAX_COMPARE_BYTES = 1024 * 1024
+# Voice input: Groq's free Whisper, on the user's own Groq key.
+TRANSCRIBE_MODEL = "groq/whisper-large-v3-turbo"
+MAX_AUDIO_BYTES = 10 * 1024 * 1024
+_AUDIO_TYPES = {
+    "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a",
+    "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
+}
 _NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
 # API keys are printable ASCII without spaces; anything else is a paste mistake.
 _KEY = re.compile(r"[\x21-\x7e]{8,512}")
@@ -124,6 +131,38 @@ def build_router(
         remove_env_value(provider.key_env, dirs.env_file)
         hook.reload_keys()
         return {"platform": provider.platform, "key_set": False}
+
+    @router.post("/transcribe")
+    async def transcribe(request: Request) -> dict[str, Any]:
+        """Speech to text for the chat microphone. Audio goes to Groq, nowhere else."""
+
+        import litellm
+
+        key = os.environ.get("GROQ_API_KEY")
+        if not key:
+            raise HTTPException(409, "voice input uses Groq's free Whisper: connect a Groq key first")
+        ctype = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        ext = _AUDIO_TYPES.get(ctype)
+        if ext is None:
+            raise HTTPException(415, "send webm, ogg, m4a, mp3 or wav audio")
+        if int(request.headers.get("content-length") or 0) > MAX_AUDIO_BYTES:
+            raise HTTPException(413, "recording too long (10 MB maximum)")
+        audio = await request.body()
+        if not audio:
+            raise HTTPException(400, "no audio received")
+        if len(audio) > MAX_AUDIO_BYTES:
+            raise HTTPException(413, "recording too long (10 MB maximum)")
+        try:
+            result = await litellm.atranscription(
+                model=TRANSCRIBE_MODEL, file=(f"speech.{ext}", audio, ctype),
+                api_key=key, max_retries=0, timeout=60,
+            )
+        except litellm.RateLimitError:
+            raise HTTPException(429, "Groq's free voice limit is reached; try again shortly") from None
+        except Exception as error:  # never let provider text (which may echo the key) through unchecked
+            detail = str(error).replace(key, "***")[:200]
+            raise HTTPException(502, f"transcription failed: {detail}") from None
+        return {"text": (getattr(result, "text", "") or "").strip()}
 
     @router.get("/plan")
     def get_plan() -> dict[str, Any]:

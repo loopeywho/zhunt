@@ -184,6 +184,10 @@
       if (gone) gone.key_set = false;
       return Promise.resolve(json(200, { platform: rest.slice(5), key_set: false }));
     }
+    if (rest === 'transcribe') {
+      // demo: the recording is ignored (never uploaded); a fixed sentence comes back
+      return new Promise(function (resolve) { setTimeout(function () { resolve(json(200, { text: 'Write a regex for UK postcodes' })); }, 700); });
+    }
     if (rest === 'layouts') return Promise.resolve(json(200, { layouts: Object.keys(LAYOUTS).filter(function (n) { return n !== 'last'; }) }));
     if (rest.indexOf('layouts/') === 0) {
       var name = decodeURIComponent(rest.slice(8));

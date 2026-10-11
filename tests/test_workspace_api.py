@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 """Workspace API (docs/WORKSPACE_API.md) driven through the real daemon app."""
 
 import asyncio
@@ -826,3 +827,28 @@ def test_the_key_endpoints_need_the_master_key() -> None:
         written = client.dirs.env_file.exists()
 
     assert response.status_code == 401 and not written
+
+
+def test_voice_input_goes_to_groq_whisper_with_the_users_key() -> None:
+    transcription = AsyncMock(return_value=SimpleNamespace(text=" write a regex for postcodes "))
+    with patch("litellm.atranscription", transcription), workspace(AsyncMock(), env={**ENV, "GROQ_API_KEY": "gsk-user-123456"}) as (client, _):
+        ok = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"\x1aE\xdf\xa3fake")
+        wrong = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "text/plain"}), content=b"hi")
+        empty = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"")
+
+    assert ok.status_code == 200 and ok.json() == {"text": "write a regex for postcodes"}
+    kwargs = transcription.await_args.kwargs
+    assert kwargs["model"] == "groq/whisper-large-v3-turbo" and kwargs["api_key"] == "gsk-user-123456"
+    assert kwargs["file"][0] == "speech.webm"
+    assert wrong.status_code == 415 and empty.status_code == 400
+
+
+def test_voice_input_without_a_groq_key_says_how_to_fix_it_and_errors_hide_the_key() -> None:
+    failing = AsyncMock(side_effect=RuntimeError("bad key gsk-user-123456 rejected"))
+    with workspace(AsyncMock(), env={}) as (client, _):
+        missing = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"x")
+    with patch("litellm.atranscription", failing), workspace(AsyncMock(), env={**ENV, "GROQ_API_KEY": "gsk-user-123456"}) as (client, _):
+        failed = client.post("/zhunt/api/transcribe", headers=headers(**{"content-type": "audio/webm"}), content=b"x")
+
+    assert missing.status_code == 409 and "Groq" in missing.json()["detail"]
+    assert failed.status_code == 502 and "gsk-user-123456" not in failed.text

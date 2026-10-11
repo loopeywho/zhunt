@@ -2,7 +2,7 @@
 
 import { h, uid, fmtMs, fmtNum } from '../dom.js';
 import { renderMarkdown } from '../md.js';
-import { api, streamChat, ApiError } from '../api.js';
+import { api, streamChat, transcribe, ApiError } from '../api.js';
 import { tierChip, modelLabel, errorBox, chip } from './util.js';
 
 export const ALIASES = [
@@ -41,7 +41,51 @@ export function chatTile(svc, state, ctx) {
     placeholder: 'Ask zhunt anything  (Enter sends, Shift+Enter new line)',
   });
   const sendBtn = h('button', { class: 'btn primary', type: 'submit' }, 'send');
-  const form = h('form', { class: 'composer', onsubmit: (e) => { e.preventDefault(); if (busy) stop(); else send(); } }, input, sendBtn);
+  const micBtn = canRecord() ? h('button', {
+    class: 'btn mic', type: 'button', 'aria-label': 'Speak your message', title: 'Speak (free Groq Whisper)', 'aria-pressed': 'false',
+    onclick: () => (recorder ? recorder.stop() : record()),
+  }, 'mic') : null;
+  let recorder = null;
+  const form = h('form', { class: 'composer', onsubmit: (e) => { e.preventDefault(); if (busy) stop(); else send(); } }, input, micBtn, sendBtn);
+
+  function canRecord() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  }
+
+  // Record until the button is pressed again (or 60 s), then put the transcript in the box.
+  async function record() {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch {
+      svc.toast('microphone not available (permission denied or blocked)', true);
+      return;
+    }
+    const chunks = [];
+    recorder = new MediaRecorder(stream);
+    const limit = setTimeout(() => recorder?.stop(), 60000);
+    recorder.addEventListener('dataavailable', (e) => { if (e.data.size) chunks.push(e.data); });
+    recorder.addEventListener('stop', async () => {
+      clearTimeout(limit);
+      stream.getTracks().forEach((t) => t.stop());
+      const type = recorder.mimeType;
+      recorder = null;
+      micBtn.textContent = '...';
+      micBtn.setAttribute('aria-pressed', 'false');
+      micBtn.classList.remove('recording');
+      try {
+        const text = await transcribe(new Blob(chunks, { type }));
+        if (text) { input.value = (input.value ? input.value + ' ' : '') + text; autosize(); input.focus(); }
+        else svc.toast('no speech heard');
+      } catch (err) {
+        svc.toast(err.message || String(err), true);
+      } finally {
+        micBtn.textContent = 'mic';
+      }
+    });
+    recorder.start();
+    micBtn.textContent = 'stop';
+    micBtn.setAttribute('aria-pressed', 'true');
+    micBtn.classList.add('recording');
+  }
   const el = h('div', { class: 'chat' }, msgs, form, live);
 
   function paintEmpty() {
@@ -237,6 +281,6 @@ export function chatTile(svc, state, ctx) {
     header,
     getState: () => ({ alias }),
     focusPrimary: () => input.focus(),
-    destroy() { destroyed = true; generation += 1; controller?.abort(); },
+    destroy() { destroyed = true; generation += 1; controller?.abort(); recorder?.stop(); },
   };
 }
