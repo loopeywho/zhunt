@@ -120,8 +120,23 @@ Layouts are plain JSON files in `~/.zhunt/layouts/<name>.json` (hand-editable).
 
 Themes are CSS files of custom properties. Built-ins ship in `zhunt/workspace/css/`
 (`themes/dark.css`, `themes/light.css`); users add `~/.zhunt/themes/<name>.css`.
-`GET /themes` → `{"themes": [{"name": "dark", "builtin": true}, ...]}` (user theme
-with the same name overrides the built-in). `GET /themes/{name}` → `text/css`.
+`GET /themes` → `{"themes": [{"name": "dark", "builtin": true, "pro": false, "locked": false}, ...]}`
+(user theme with the same name overrides the built-in). `GET /themes/{name}` → `text/css`.
+Built-in themes other than `dark` and `light` are the Pro theme pack: `pro: true`, and on
+the Free plan `locked: true` and `GET /themes/{name}` → 402. Themes in `~/.zhunt/themes`
+are never locked.
+
+## Plan: `GET /zhunt/api/plan`
+
+```json
+{"plan": "free", "email": null, "expires_at": null, "in_grace": false,
+ "problem": null, "features": [], "feature_labels": {"premium_fallback": "...", "theme_pack": "..."},
+ "upgrade_url": "https://zhunt.kindredwildcat.com/#pricing"}
+```
+
+Read from `~/.zhunt/licence` on every request (verified offline, see `zhunt/licence.py`),
+so `zhunt licence activate` takes effect without a restart. `problem` explains why a stored
+key is not in effect (expired, altered). Pro has `features: ["premium_fallback", "theme_pack"]`.
 Same name rule as layouts.
 
 ## Auth failures
