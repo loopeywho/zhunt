@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import os
 import random
 import re
@@ -420,8 +419,6 @@ class EngineProxyHook(CustomLogger):
             )
         data["model"] = f"{provider.litellm_provider}/{candidate.model.model_id}"
         data["api_key"] = api_key
-        # fixed per-provider settings from the catalog (client copies were scrubbed above)
-        data.update(copy.deepcopy(dict(provider.request_params)))
         decision = replace(decision, model=candidate.model.id)
 
         call_id = _call_id(data)
@@ -842,7 +839,6 @@ class EngineProxyHook(CustomLogger):
                 api_key=api_key,
                 timeout=_COMPARE_TIMEOUT_SECONDS,
                 max_retries=0,
-                **copy.deepcopy(dict(provider.request_params)),
             )
         except Exception as error:
             self.quota.settle(lease, 0)

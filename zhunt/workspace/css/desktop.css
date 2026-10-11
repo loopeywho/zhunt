@@ -108,7 +108,7 @@
 .card.tone-info { border-left-color: var(--info); }
 .card-title { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
 .card-detail { margin: 0; color: var(--text-dim); line-height: 1.45; }
-.card-code { display: block; margin-top: 7px; padding: 5px 9px; border-radius: 7px; font-size: 12px; background: var(--surface); user-select: all; overflow-wrap: anywhere; }
+.card-code { display: block; white-space: pre-wrap; margin-top: 7px; padding: 5px 9px; border-radius: 7px; font-size: 12px; background: var(--surface); user-select: all; overflow-wrap: anywhere; }
 .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .act {
   font: inherit; font-size: 12.5px; padding: 3px 11px; border-radius: 999px; cursor: pointer;

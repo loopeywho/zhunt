@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from importlib import resources
@@ -38,9 +38,6 @@ class Provider:
     verified_on: date
     # LiteLLM's name for this provider when it differs from the platform id.
     litellm_provider: str
-    # Fixed settings sent with every request to this provider (only ``extra_body``),
-    # e.g. OpenRouter's per-request refusal of providers that collect data.
-    request_params: Mapping[str, Any] = field(default_factory=dict, hash=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -111,7 +108,6 @@ class Catalog:
                     if "litellm_provider" in raw
                     else platform
                 ),
-                request_params=_request_params(raw.get("request_params"), platform),
             )
             raw_models = raw.get("models")
             if not isinstance(raw_models, list) or not raw_models:
@@ -176,16 +172,6 @@ def _parse_limits(raw: Any, owner: str) -> Limits:
             raise CatalogError(f"model {owner!r} has invalid {key} limit")
         values[key] = value
     return Limits(**values)
-
-
-def _request_params(raw: Any, platform: str) -> dict[str, Any]:
-    if raw is None:
-        return {}
-    if not isinstance(raw, Mapping) or set(raw) - {"extra_body"}:
-        raise CatalogError(f"provider {platform!r} request_params may only set extra_body")
-    if not isinstance(raw.get("extra_body", {}), Mapping):
-        raise CatalogError(f"provider {platform!r} extra_body must be a mapping")
-    return {"extra_body": dict(raw["extra_body"])} if "extra_body" in raw else {}
 
 
 def _parse_cost(raw: Mapping[str, Any], field: str, owner: str) -> Decimal:

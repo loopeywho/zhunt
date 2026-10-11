@@ -25,19 +25,19 @@ export function buildCards(status, decisions, { openWindow, openPlan, plan = nul
   const s = status.data;
   if (!s) return cards;
   const providers = s.providers || [];
-  for (const p of providers.filter((x) => !x.key_set)) {
+  // premium-only providers (Anthropic, OpenAI, paid Gemini): one card, for Pro users, until any key is added
+  const premiumOnly = (p) => (p.models || []).length && p.models.every((m) => !m.free);
+  const premium = providers.filter(premiumOnly);
+  if (plan && plan.plan !== 'free' && premium.length && !premium.some((p) => p.key_set)) {
+    const n = premium.reduce((a, p) => a + p.models.length, 0);
+    cards.push({
+      id: 'premium-keys', tone: 'accent', title: 'Connect premium models',
+      detail: `Pro can step up to ${n} premium models when every free model is busy. Add your own paid key from any of ${premium.map((p) => (p.name || p.platform).replace(' (premium)', '')).join(', ')}, then turn premium on with a monthly cap:`,
+      code: `zhunt keys add ${premium[0].platform}   # or ${premium.slice(1).map((p) => p.platform).join(', ')}\nzhunt premium on --cap 5`, actions: [],
+    });
+  }
+  for (const p of providers.filter((x) => !x.key_set && !premiumOnly(x))) {
     const n = (p.models || []).length;
-    if (n && p.models.every((m) => !m.free)) {
-      // a premium-only provider: only worth a card for Pro users
-      if (plan && plan.plan !== 'free') {
-        cards.push({
-          id: 'premium-key-' + p.platform, tone: 'accent', title: 'Connect premium models',
-          detail: `Pro can step up to ${n} premium models when every free model is busy. Add your paid ${p.name || p.platform} key, then turn it on with a monthly cap:`,
-          code: `zhunt keys add ${p.platform} && zhunt premium on --cap 5`, actions: [],
-        });
-      }
-      continue;
-    }
     cards.push({
       id: 'key-' + p.platform, tone: 'accent', title: `Add your free ${p.name || p.platform} key`,
       detail: `${n} free model${n === 1 ? '' : 's'} ready to use once zhunt has a key. Run this in a terminal (the key is typed there, never here):`,

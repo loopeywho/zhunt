@@ -109,7 +109,7 @@ def upgrade() -> None:
 
 
 premium_app = typer.Typer(
-    help="Pro: use premium models (via your OpenRouter key) when every free model is busy, under a monthly cap.",
+    help="Pro: use premium models (your own Anthropic, OpenAI or Google key) when every free model is busy, under a monthly cap.",
     no_args_is_help=True,
 )
 
@@ -118,11 +118,27 @@ def _env_file() -> Path:
     return Path.home() / ".zhunt" / "env"
 
 
+def _premium_keys(env: dict[str, str]) -> list[str]:
+    """Names of the premium providers whose paid key is stored or exported."""
+
+    import os
+
+    from zhunt.catalog import load_catalog
+
+    catalog = load_catalog()
+    return [
+        p.name
+        for p in catalog.providers.values()
+        if any(not m.free for m in catalog.models if m.platform == p.platform)
+        and (env.get(p.key_env) or os.environ.get(p.key_env))
+    ]
+
+
 @premium_app.command("on")
 def premium_on(
     cap: float = typer.Option(DEFAULT_MONTHLY_CAP, help="Most you allow per month, in USD (provider prices)."),
 ) -> None:
-    """Allow premium models up to CAP dollars a month. Needs Pro and an OpenRouter key."""
+    """Allow premium models up to CAP dollars a month. Needs Pro and at least one paid key."""
 
     if cap <= 0:
         raise typer.BadParameter("the cap must be more than 0", param_hint="--cap")
@@ -131,8 +147,8 @@ def premium_on(
     typer.echo(f"Premium fallback on, capped at ${cap:.2f} a month. Restart `zhunt serve` to apply.")
     if not lic.current_plan().has("premium_fallback"):
         typer.echo("Note: this needs zhunt Pro. See `zhunt upgrade`.")
-    if not read_env_values(_env_file()).get("OPENROUTER_API_KEY"):
-        typer.echo("Add your paid OpenRouter key: zhunt keys add openrouter")
+    if not _premium_keys(read_env_values(_env_file())):
+        typer.echo("Add at least one paid key: zhunt keys add anthropic  (or openai, google-paid)")
 
 
 @premium_app.command("off")
@@ -153,5 +169,6 @@ def premium_status() -> None:
     typer.echo(f"Plan:     {plan.name}{'' if plan.has('premium_fallback') else '  (premium needs Pro: zhunt upgrade)'}")
     typer.echo(f"Opted in: {'yes' if opted else 'no (zhunt premium on)'}")
     typer.echo(f"Cap:      ${float(env.get(MONTHLY_CAP_ENV) or DEFAULT_MONTHLY_CAP):.2f} a month")
-    typer.echo(f"Key:      {'OPENROUTER_API_KEY set' if env.get('OPENROUTER_API_KEY') else 'no OpenRouter key (zhunt keys add openrouter)'}")
+    keys = _premium_keys(env)
+    typer.echo(f"Keys:     {', '.join(keys) if keys else 'none (zhunt keys add anthropic, openai or google-paid)'}")
     typer.echo("Spend so far this month is in the workspace (Panels and For you).")

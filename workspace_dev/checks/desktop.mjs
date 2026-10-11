@@ -84,12 +84,15 @@ const opts = { openWindow() {}, now };
   check('Pro users are not upsold', !ids(buildCards(s2, failed, { ...opts, plan: { plan: 'pro' } })).includes('upsell'));
 }
 {
-  const premium = { platform: 'openrouter', name: 'OpenRouter', key_set: false, models: [model('openrouter/x', { free: false, allowed: false, blocked_reason: 'pro only' })] };
+  const premium = { platform: 'anthropic', name: 'Anthropic (premium)', key_set: false, models: [model('anthropic/x', { free: false, allowed: false, blocked_reason: 'pro only' })] };
+  const premium2 = { platform: 'openai', name: 'OpenAI (premium)', key_set: false, models: [model('openai/y', { free: false, allowed: false, blocked_reason: 'pro only' })] };
   const free = { platform: 'groq', name: 'Groq', key_set: true, models: [model('groq/a')] };
-  const freeUser = ids(buildCards(status([free, premium]), { data: [] }, { ...opts, plan: { plan: 'free' } }));
-  const proUser = buildCards(status([free, premium]), { data: [] }, { ...opts, plan: { plan: 'pro' } });
+  const freeUser = ids(buildCards(status([free, premium, premium2]), { data: [] }, { ...opts, plan: { plan: 'free' } }));
+  const proUser = buildCards(status([free, premium, premium2]), { data: [] }, { ...opts, plan: { plan: 'pro' } });
+  const proWithKey = ids(buildCards(status([free, { ...premium, key_set: true }, premium2]), { data: [] }, { ...opts, plan: { plan: 'pro' } }));
   check('Free users get no card for a premium-only provider', !freeUser.some((i) => i.startsWith('key-') || i.startsWith('premium-key')), freeUser.join());
-  check('Pro users are shown how to connect premium models', proUser[0].id === 'premium-key-openrouter' && /zhunt premium on/.test(proUser[0].code));
+  check('Pro users get one card naming every premium provider', proUser[0].id === 'premium-keys' && /Anthropic, OpenAI/.test(proUser[0].detail) && /zhunt premium on/.test(proUser[0].code) && proUser.filter((c) => c.id.startsWith('premium')).length === 1, proUser[0].detail);
+  check('the card goes once any premium key is added', !proWithKey.includes('premium-keys'));
 }
 check('sky follows the hour', [4, 6, 12, 18, 22].map(skyFor).join() === 'night,dawn,day,dusk,night');
 

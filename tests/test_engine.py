@@ -115,14 +115,16 @@ def test_packaged_catalog_covers_every_tier_with_tool_capable_models() -> None:
         "groq",
         "google",
         "cerebras",
-        "openrouter",
+        "anthropic",
+        "openai",
+        "google-paid",
     }
-    # premium models live only on the Pro-only OpenRouter entry, which refuses data collection
+    # premium models come only from the companies themselves, never a reseller
     paid = [m for m in catalog.models if not m.free]
-    assert paid and all(m.platform == "openrouter" for m in paid)
-    assert catalog.providers["openrouter"].request_params == {
-        "extra_body": {"provider": {"data_collection": "deny"}}
-    }
+    assert {m.platform for m in paid} == {"anthropic", "openai", "google-paid"}
+    assert not any(m.may_train_on_prompts for m in paid)
+    # paid Gemini uses its own key, never the free-tier one
+    assert catalog.providers["google-paid"].key_env != catalog.providers["google"].key_env
     for tier in Tier:
         assert any(m.free for m in catalog.models_for_tier(tier)), f"no free model for {tier.value}"
     assert registry_from_catalog(catalog).model_ids()
@@ -515,7 +517,7 @@ PRO_PLAN = __import__("zhunt.licence", fromlist=["Plan"]).Plan(
 
 
 def premium_catalog() -> dict:
-    """One free model and one premium model whose provider refuses data collection."""
+    """One free model and one premium model on its own key."""
 
     return {
         "providers": {
@@ -523,7 +525,6 @@ def premium_catalog() -> dict:
             "router": provider(
                 [model("premium", ["chat"], intelligence=95, speed=60, **{"in": 0.001, "out": 0.002})],
                 key_env="ROUTER_API_KEY",
-                request_params={"extra_body": {"provider": {"data_collection": "deny"}}},
             ),
         }
     }
@@ -552,7 +553,6 @@ def test_premium_takes_over_when_free_models_fail_and_its_cost_is_recorded() -> 
     assert response.status_code == 200
     paid_call = call.await_args.kwargs
     assert paid_call["model"].endswith("premium") and paid_call["api_key"] == "paid-key"
-    assert paid_call["extra_body"] == {"provider": {"data_collection": "deny"}}
     assert spent == pytest.approx(100 * 0.001 + 50 * 0.002)
 
 

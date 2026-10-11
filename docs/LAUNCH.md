@@ -37,11 +37,12 @@ useful because free tiers do most everyday work.
 
 How Pro is delivered (all in the repo):
 
-- Premium fallback: five OpenRouter models in `zhunt/catalog.yaml` (Claude Haiku/Sonnet
-  5.5, GPT-5.6 Luna/Sol, Gemini 3.8 Flash), used only after every free model is busy,
-  only with Pro **and** an explicit `zhunt premium on --cap N`, stopping at the monthly
-  cap (spend kept in `~/.zhunt/state.db`). Every OpenRouter request sets
-  `provider.data_collection=deny`. One paid OpenRouter key reaches all of them.
+- Premium fallback: five premium models in `zhunt/catalog.yaml`, called directly with the
+  user's own paid keys: Anthropic (Claude Haiku/Sonnet 5.5), OpenAI (GPT-5.6 Luna/Sol)
+  and Google (Gemini 3.8 Flash, on a separate billing-enabled key). Each provider is
+  optional. Used only after every free model is busy, only with Pro **and** an explicit
+  `zhunt premium on --cap N`, stopping at the monthly cap (spend kept in
+  `~/.zhunt/state.db`). No reseller sits between zhunt and the model company.
 
 - `zhunt/licence.py`: Ed25519-signed keys verified **offline** (zhunt never phones home).
   `zhunt licence activate|status|renew|remove`, `zhunt upgrade`.
@@ -68,8 +69,7 @@ trials convert, 6% monthly churn → about 30 new paying users a month, settling
 ~500 subscribers, about **$3,250/month net**. The levers are installs and trial→paid.
 
 **Cloud ($12/month proposed, credits included).** This is the ChatLLM model and it has
-real cost of goods: premium tokens bought from providers (or OpenRouter at cost plus its
-~5.5% credit fee). Budget about $5 of model spend per user per month at $12, routed
+real cost of goods: premium tokens bought from the model companies on paid accounts. Budget about $5 of model spend per user per month at $12, routed
 free-first so most turns cost nothing, with a hard monthly credit cap per user. Margin
 depends entirely on that routing; measure it in Pro first (telemetry of how often premium
 fallback fires) before committing to a Cloud price.
@@ -113,7 +113,7 @@ Owner = you unless marked. Order matters.
    Turn on the customer portal (cancellation) and link it from emails.
 7. End-to-end test in Stripe test mode first: test-mode payment link → activate page →
    `zhunt licence activate` → `zhunt licence status` shows Pro → theme pack unlocks →
-   `zhunt keys add openrouter` + `zhunt premium on --cap 1` → a request with free keys
+   `zhunt keys add anthropic` + `zhunt premium on --cap 1` → a request with free keys
    removed is answered by a premium model and the spend shows in Panels.
 8. Publish privacy policy and terms, linked from the site footer and checkout. Drafts written
    from what the code actually does are in `docs/legal/privacy.md` and `docs/legal/terms.md`:

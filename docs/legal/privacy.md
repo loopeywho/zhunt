@@ -19,7 +19,7 @@ address and subscription status, via Stripe.
 
 - **Prompts and responses.** Zhunt classifies a request locally and sends it directly to
   the AI provider it selects (for example Groq, Google AI Studio, Cerebras or, on Pro with
-  your opt-in, OpenRouter). That provider receives your prompt under its own terms and
+  your opt-in, Anthropic, OpenAI or Google's paid Gemini API). That provider receives your prompt under its own terms and
   privacy policy, just as if you had used it directly.
 - **Provider API keys**, stored in `~/.zhunt/env` readable only by your user account.
 - **Usage records**, in `~/.zhunt/telemetry.jsonl` and `~/.zhunt/state.db`: time, model,
@@ -31,9 +31,9 @@ You can delete any of these files at any time.
 ## AI providers that may train on prompts
 
 Some free tiers say they may use prompts to improve their services. Zhunt does not send
-requests to those providers unless you turn on `ZHUNT_ALLOW_TRAINING`. Requests to
-OpenRouter ask it to use only providers that do not collect data
-(`data_collection: deny`).
+requests to those providers unless you turn on `ZHUNT_ALLOW_TRAINING`. Premium (Pro)
+requests go directly to Anthropic, OpenAI or Google on your paid API key, whose terms say
+paid API traffic is not used for training by default.
 
 ## What we receive when you buy Pro
 
