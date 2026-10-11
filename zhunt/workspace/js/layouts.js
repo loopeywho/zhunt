@@ -1,9 +1,13 @@
 // Layout persistence. A layout document is plain JSON, versioned, and hand-editable:
 //
-//   { "version": 1, "kind": "zhunt-layout", "saved_at": "...", "focus": 0,
+//   { "version": 1, "kind": "zhunt-layout", "saved_at": "...", "focus": 0, "mode": "floating",
 //     "tree": { "type": "split", "dir": "row", "ratio": 0.6,
 //               "a": { "type": "tile", "kind": "chat", "state": {"alias": "zhunt-auto"} },
-//               "b": { "type": "tile", "kind": "routing", "state": {} } } }
+//               "b": { "type": "tile", "kind": "routing", "state": {},
+//                      "win": { "x": 0.74, "y": 0.02, "w": 0.25, "h": 0.47, "min": false } } } }
+//
+// "mode" is "floating" or "tiled" (missing = tiled, as written before floating windows existed);
+// "win" is the window's floating rectangle as fractions of the desktop.
 //
 // Named layouts go to the daemon (/zhunt/api/layouts/<name>); if it is unreachable they are kept in
 // localStorage instead. The working layout is autosaved as the layout called "last" (and mirrored
@@ -19,13 +23,16 @@ const LS_LAST = 'zhunt.layout.last';
 const LS_NAMED = 'zhunt.layouts.named';
 
 export const PRESETS = {
+  desktop: () => T.split('row', T.split('col', T.tile('foryou'), T.tile('panels'), 0.6), T.tile('chat', { alias: 'zhunt-auto' }), 0.3),
   'single-chat': () => T.tile('chat', { alias: 'zhunt-auto' }),
   'chat-routing': () => T.split('row', T.tile('chat', { alias: 'zhunt-auto' }), T.tile('routing'), 0.62),
   'chat-compare-providers': () => T.split('row',
     T.tile('chat', { alias: 'zhunt-auto' }),
     T.split('col', T.tile('compare'), T.tile('providers'), 0.5), 0.4),
 };
-export const DEFAULT_PRESET = 'chat-routing';
+export const DEFAULT_PRESET = 'desktop';
+// presets that open as floating windows; the rest open tiled
+const FLOATING_PRESETS = new Set(['desktop']);
 
 function lsGet(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } }
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch { return false; } }
@@ -39,7 +46,7 @@ export function parseDoc(doc) {
   // future migrations for version < LAYOUT_VERSION go here
   const tree = T.sanitize(doc.tree);
   if (!tree) throw new Error('layout contains no usable tiles');
-  return { tree, focus: Number.isInteger(doc.focus) ? doc.focus : 0 };
+  return { tree, focus: Number.isInteger(doc.focus) ? doc.focus : 0, mode: doc.mode === 'floating' ? 'floating' : 'tiled' };
 }
 
 export function createLayouts({ workspace, toast }) {
@@ -52,11 +59,11 @@ export function createLayouts({ workspace, toast }) {
 
   const makeDoc = () => {
     const s = workspace.serialize();
-    return { version: LAYOUT_VERSION, kind: 'zhunt-layout', saved_at: new Date().toISOString(), focus: s.focus, tree: s.tree };
+    return { version: LAYOUT_VERSION, kind: 'zhunt-layout', saved_at: new Date().toISOString(), focus: s.focus, mode: s.mode, tree: s.tree };
   };
 
-  function apply({ tree, focus }, name) {
-    workspace.setRoot(tree, focus);
+  function apply({ tree, focus, mode }, name) {
+    workspace.setRoot(tree, focus, mode);
     currentName = name;
     for (const fn of listeners) fn(currentName);
   }
@@ -145,7 +152,7 @@ export function createLayouts({ workspace, toast }) {
     loadPreset(name) {
       const make = PRESETS[name];
       if (!make) throw new Error('unknown preset ' + name);
-      apply({ tree: make(), focus: 0 }, null);
+      apply({ tree: make(), focus: 0, mode: FLOATING_PRESETS.has(name) ? 'floating' : 'tiled' }, null);
       toast?.(`preset ${name}`);
     },
 
@@ -170,7 +177,7 @@ export function createLayouts({ workspace, toast }) {
         if (!doc) continue;
         try { apply(parseDoc(doc), null); return true; } catch (err) { console.warn('layout restore skipped:', err.message); }
       }
-      apply({ tree: PRESETS[DEFAULT_PRESET](), focus: 0 }, null);
+      apply({ tree: PRESETS[DEFAULT_PRESET](), focus: 2, mode: 'floating' }, null); // focus the chat window
       return false;
     },
   };

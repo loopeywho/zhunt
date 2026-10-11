@@ -1,0 +1,38 @@
+/* zhunt theme: everforest (Everforest palette by sainnhe (MIT)). Same variable set as dark.css, plus a wallpaper.
+   Copy to ~/.zhunt/themes/<name>.css and change any value to make your own. */
+[data-theme="everforest"] {
+  color-scheme: dark;
+
+  --bg: #232a2e;
+  --surface: #2d353b;
+  --surface-2: #343f44;
+  --surface-3: #3d484d;
+  --border: #3d484d;
+  --border-strong: #4f585e;
+
+  --text: #d3c6aa;
+  --text-dim: #b8ad93;
+  --text-faint: #859289;
+
+  --accent: #a7c080;
+  --accent-fg: #232a2e;
+  --accent-soft: rgba(167, 192, 128, 0.16);
+  --focus: #a7c080;
+
+  --ok: #a7c080;
+  --warn: #dbbc7f;
+  --err: #e67e80;
+  --info: #7fbbb3;
+
+  --tier-chat: #7fbbb3;
+  --tier-coding: #a7c080;
+  --tier-long-context: #d699b6;
+  --tier-reasoning: #e69875;
+
+  --selection: rgba(167, 192, 128, 0.28);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  --wallpaper: radial-gradient(ellipse at 20% 20%, rgba(167,192,128,0.28), transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(131,192,146,0.22), transparent 55%), linear-gradient(165deg, #232a2e 0%, #2d353b 60%, #3d484d 100%);
+  --wallpaper-ink: #d3c6aa;
+}

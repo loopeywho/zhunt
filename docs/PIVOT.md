@@ -8,7 +8,7 @@ Status (2026-10-10): **milestones 1-5 built and tested** on branch
 | --- | --- |
 | 1 Engine core | Done |
 | 2 Real providers | Wired and exercised with fake keys against the real APIs; **the live per-tier check with real keys is still pending** (`scripts/live_tier_check.py`) |
-| 3 Workspace | Backend API and frontend done; driven in the browser against the real daemon |
+| 3 Workspace | Backend API and frontend done; driven in the browser against the real daemon. floating/tiled window styles, For you and Panels windows and the theme pack added 2026-10-11 (checked against the mock daemon) |
 | 4 Connect | `launch`/`doctor`/`open` done for Codex and Hermes; Codex from docs only (not installed here), Hermes not run live. Claude Code support (launcher and install recipe) removed 2026-10-11 at the owner's request |
 | 5 Remove v1 | Done; the public `site/` and native installers are still v1 and are not rebuilt |
 
@@ -61,6 +61,12 @@ New:
 Served by the daemon at `127.0.0.1`, talking to the daemon's own OpenAI-compatible
 endpoint.
 
+- **Window styles** (added 2026-10-11): *floating* (Hark-style glass windows over a
+  wallpaper: drag, resize, overlap, minimise to a dock) or *tiled* (Omarchy/Hyprland split
+  grid), switchable at any time over the same live windows. Hark itself is a closed cloud
+  agent product; only its interface ideas (proactive cards, panels, calm full-screen look)
+  are borrowed, as the *For you* and *Panels* windows. Omarchy's theme palettes ship as
+  theme files with wallpapers.
 - **Tiles**: chat · compare (same prompt, several models side by side) · routing
   decision ("why this model") · quota & keys · logs. Split, close, swap, resize.
 - **Keyboard-first**: a leader key and a command palette; tile focus and layout actions
@@ -106,4 +112,4 @@ endpoint.
 2. Privacy default: exclude prompt-training providers entirely, or only for the coding
    tier?
 3. Paid fallback: off by default (free only) or on with a monthly cap?
-4. The Hark interface: needs a link or screenshot before the tile design is fixed.
+4. ~~The Hark interface~~: researched from Hark Pro's launch coverage (no link was supplied); see Window styles above.

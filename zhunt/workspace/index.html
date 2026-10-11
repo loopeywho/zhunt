@@ -14,10 +14,12 @@
   <link rel="stylesheet" href="css/tiling.css">
   <link rel="stylesheet" href="css/tiles.css">
   <link rel="stylesheet" href="css/overlay.css">
+  <link rel="stylesheet" href="css/desktop.css">
 </head>
 <body>
   <div id="app">
-    <div id="stage-wrap"><main id="stage" aria-label="Tiles"></main></div>
+    <header id="topbar" aria-label="Desktop"></header>
+    <div id="stage-wrap"><main id="stage" aria-label="Windows"></main><nav id="dock" aria-label="Open windows" hidden></nav></div>
     <footer id="statusbar" aria-label="Status"></footer>
   </div>
   <div id="overlay-root"></div>

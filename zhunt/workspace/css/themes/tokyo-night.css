@@ -1,0 +1,38 @@
+/* zhunt theme: tokyo-night (Tokyo Night palette by enkia (MIT)). Same variable set as dark.css, plus a wallpaper.
+   Copy to ~/.zhunt/themes/<name>.css and change any value to make your own. */
+[data-theme="tokyo-night"] {
+  color-scheme: dark;
+
+  --bg: #16161e;
+  --surface: #1a1b26;
+  --surface-2: #1f2335;
+  --surface-3: #292e42;
+  --border: #292e42;
+  --border-strong: #414868;
+
+  --text: #c0caf5;
+  --text-dim: #a9b1d6;
+  --text-faint: #787c99;
+
+  --accent: #7aa2f7;
+  --accent-fg: #16161e;
+  --accent-soft: rgba(122, 162, 247, 0.16);
+  --focus: #7aa2f7;
+
+  --ok: #9ece6a;
+  --warn: #e0af68;
+  --err: #f7768e;
+  --info: #7dcfff;
+
+  --tier-chat: #7dcfff;
+  --tier-coding: #9ece6a;
+  --tier-long-context: #bb9af7;
+  --tier-reasoning: #ff9e64;
+
+  --selection: rgba(122, 162, 247, 0.28);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  --wallpaper: radial-gradient(ellipse at 20% 15%, rgba(122,162,247,0.35), transparent 55%), radial-gradient(ellipse at 85% 80%, rgba(187,154,247,0.30), transparent 55%), linear-gradient(160deg, #16161e 0%, #1a1b26 55%, #24283b 100%);
+  --wallpaper-ink: #c0caf5;
+}

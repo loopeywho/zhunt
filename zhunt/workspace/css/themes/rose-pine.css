@@ -1,0 +1,38 @@
+/* zhunt theme: rose-pine (Rose Pine palette (MIT)). Same variable set as dark.css, plus a wallpaper.
+   Copy to ~/.zhunt/themes/<name>.css and change any value to make your own. */
+[data-theme="rose-pine"] {
+  color-scheme: dark;
+
+  --bg: #13111c;
+  --surface: #191724;
+  --surface-2: #1f1d2e;
+  --surface-3: #26233a;
+  --border: #26233a;
+  --border-strong: #403d52;
+
+  --text: #e0def4;
+  --text-dim: #c7c3dc;
+  --text-faint: #908caa;
+
+  --accent: #ebbcba;
+  --accent-fg: #191724;
+  --accent-soft: rgba(235, 188, 186, 0.16);
+  --focus: #ebbcba;
+
+  --ok: #9ccfd8;
+  --warn: #f6c177;
+  --err: #eb6f92;
+  --info: #31748f;
+
+  --tier-chat: #9ccfd8;
+  --tier-coding: #31748f;
+  --tier-long-context: #c4a7e7;
+  --tier-reasoning: #eb6f92;
+
+  --selection: rgba(235, 188, 186, 0.28);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  --wallpaper: radial-gradient(ellipse at 20% 15%, rgba(235,188,186,0.25), transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(196,167,231,0.28), transparent 55%), linear-gradient(165deg, #13111c 0%, #191724 55%, #26233a 100%);
+  --wallpaper-ink: #e0def4;
+}

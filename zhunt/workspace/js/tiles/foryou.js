@@ -1,0 +1,133 @@
+// "For you" window (after Hark Pro's proactive cards): what needs attention right now, each with
+// one-tap actions. Derived from /status and /decisions; it never asks for or shows a key value.
+
+import { h, splitModel } from '../dom.js';
+import { groupRequests } from './routing.js';
+import { swapIfChanged } from './util.js';
+
+const DISMISS_STORE = 'zhunt.foryou.dismissed';
+const shortModel = (id) => splitModel(id).name.split('/').pop();
+
+function lsGet(key, fallback) { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; } }
+function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch { /* storage blocked: lasts until reload */ } }
+
+// Cards, most useful first. Each: {id, tone, title, detail, code?, actions: [{label, run}]}
+export function buildCards(status, decisions, { openWindow, now = Date.now() }) {
+  const cards = [];
+  if (status.error && !status.data) {
+    cards.push({
+      id: 'offline', tone: 'err', title: 'zhunt is not answering',
+      detail: 'The local daemon is unreachable. Start it again in a terminal:', code: 'zhunt serve', actions: [],
+    });
+    return cards;
+  }
+  const s = status.data;
+  if (!s) return cards;
+  const providers = s.providers || [];
+  for (const p of providers.filter((x) => !x.key_set)) {
+    const n = (p.models || []).length;
+    cards.push({
+      id: 'key-' + p.platform, tone: 'accent', title: `Add your free ${p.name || p.platform} key`,
+      detail: `${n} free model${n === 1 ? '' : 's'} ready to use once zhunt has a key. Run this in a terminal (the key is typed there, never here):`,
+      code: `zhunt keys add ${p.platform}`, actions: [],
+    });
+  }
+  const models = providers.flatMap((p) => p.models || []);
+  const cooling = models.filter((m) => m.allowed && m.cooldown_remaining > 0)
+    .sort((a, b) => a.cooldown_remaining - b.cooldown_remaining);
+  if (cooling.length) {
+    const left = Math.max(0, cooling[0].cooldown_remaining - (now - status.at) / 1000);
+    cards.push({
+      id: 'cooling', tone: 'warn',
+      title: cooling.length === 1 ? `${shortModel(cooling[0].id)} is resting` : `${cooling.length} models are resting`,
+      // whole minutes, so the card does not change (and repaint) on every poll
+      detail: `Free limit reached; the first is back within ${Math.max(1, Math.ceil(left / 60))} min. zhunt is answering with the others meanwhile.`,
+      actions: [{ label: 'See models', run: () => openWindow('providers') }],
+    });
+  }
+  const low = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0) && m.headroom !== null && m.headroom !== undefined && m.headroom < 0.2);
+  if (low.length) {
+    cards.push({
+      id: 'low', tone: 'warn',
+      title: low.length === 1 ? `${shortModel(low[0].id)} is almost out of free quota` : `${low.length} models are almost out of free quota`,
+      detail: 'zhunt will move to the next free model on its own when they run dry.',
+      actions: [{ label: 'See models', run: () => openWindow('providers') }],
+    });
+  }
+  const hourAgo = now / 1000 - 3600;
+  const recent = groupRequests((decisions.data || []).filter((d) => d.ts > hourAgo));
+  const rescued = recent.filter((g) => g.attempts.length > 1 && g.attempts.some((a) => a.success));
+  if (rescued.length) {
+    cards.push({
+      id: 'rescued-' + Math.floor(now / 3600000), tone: 'ok',
+      title: `zhunt rescued ${rescued.length} request${rescued.length === 1 ? '' : 's'} this hour`,
+      detail: 'A model hit a limit or failed, and the request was retried on another model before you saw an error.',
+      actions: [{ label: 'Show why', run: () => openWindow('routing') }],
+    });
+  }
+  const privacy = models.filter((m) => m.blocked_reason === 'may train on prompts');
+  if (privacy.length && !s.policy?.allow_training) {
+    cards.push({
+      id: 'privacy', tone: 'info',
+      title: `${privacy.length} model${privacy.length === 1 ? ' is' : 's are'} skipped for privacy`,
+      detail: 'Their providers may train on prompts. To allow them, start zhunt with this set:',
+      code: 'ZHUNT_ALLOW_TRAINING=1', actions: [],
+    });
+  }
+  if (!cards.length) {
+    const usable = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0)).length;
+    cards.push({
+      id: 'all-good', tone: 'ok', title: 'All set',
+      detail: `${usable} free model${usable === 1 ? '' : 's'} ready. Nothing needs you right now.`, actions: [],
+    });
+  }
+  return cards;
+}
+
+export function foryouTile(svc) {
+  const dismissed = new Set(lsGet(DISMISS_STORE, []));
+  let status = svc.store.get('status');
+  let decisions = svc.store.get('decisions');
+  const feed = h('div', { class: 'feed', 'aria-live': 'polite' });
+  feed.dataset.keepScroll = '1';
+  const el = h('div', { class: 'foryou' }, feed);
+
+  function paint() {
+    const cards = buildCards(status, decisions, { openWindow: svc.openWindow }).filter((c) => !dismissed.has(c.id));
+    swapIfChanged(feed, cards.length ? cards.map(cardEl) : [h('p', { class: 'quiet' }, 'Nothing new.')]);
+  }
+
+  function cardEl(c) {
+    const actions = c.actions.map((a) => h('button', { class: 'act', type: 'button', onclick: a.run }, a.label));
+    if (c.code) actions.unshift(h('button', { class: 'act primary', type: 'button', onclick: () => copy(c.code) }, 'Copy'));
+    if (c.id !== 'offline') {
+      actions.push(h('button', { class: 'act ghost', type: 'button', 'aria-label': 'Dismiss: ' + c.title, onclick: () => dismiss(c.id) }, 'Dismiss'));
+    }
+    return h('article', { class: 'card tone-' + c.tone },
+      h('h3', { class: 'card-title' }, c.title),
+      h('p', { class: 'card-detail' }, c.detail),
+      c.code ? h('code', { class: 'card-code' }, c.code) : null,
+      actions.length ? h('div', { class: 'acts' }, actions) : null);
+  }
+
+  function dismiss(id) {
+    dismissed.add(id);
+    lsSet(DISMISS_STORE, [...dismissed].slice(-50));
+    paint();
+  }
+
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); svc.toast('copied: ' + text); } catch { svc.toast('copy failed; select the text instead', true); }
+  }
+
+  const unsubS = svc.store.subscribe('status', (snap) => { status = snap; paint(); });
+  const unsubD = svc.store.subscribe('decisions', (snap) => { decisions = snap; paint(); });
+  paint();
+
+  return {
+    el,
+    getState: () => ({}),
+    focusPrimary: () => (feed.querySelector('button') || el.closest('.pane'))?.focus(),
+    destroy() { unsubS(); unsubD(); },
+  };
+}

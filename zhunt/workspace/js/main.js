@@ -10,6 +10,7 @@ import { createStatusbar } from './statusbar.js';
 import { createKeys } from './keys.js';
 import { buildCommands, leaderLabel } from './commands.js';
 import { leaves } from './tree.js';
+import { createDesktop } from './desktop.js';
 
 let authShown = false; // module scope: the fatal-error handler at the bottom must know whether the auth screen is up
 let store = null;
@@ -49,15 +50,17 @@ async function boot() {
   themes.refresh().then(() => themes.apply(themes.current, { persist: false }));
 
   let layouts = null;
+  let desktop = null;
   const updateWhere = () => {
+    desktop?.refresh();
     const all = leaves(ws.root);
     const i = all.findIndex((n) => n.id === ws.focusedId);
     const node = all[i];
-    statusbar.setWhere(`[${i + 1}/${all.length} ${node ? node.kind : ''}]${ws.zoomId ? ' zoom' : ''} ${layouts?.currentName ? 'layout:' + layouts.currentName : 'layout:unsaved'}`);
+    statusbar.setWhere(`[${i + 1}/${all.length} ${node ? node.kind : ''}]${ws.zoomId ? ' zoom' : ''} ${ws.mode} ${layouts?.currentName ? 'layout:' + layouts.currentName : 'layout:unsaved'}`);
   };
   const ws = createWorkspace(stage, {
-    makeTile: createTileFactory({ store, toast }),
-    onChange: () => { layouts?.queueAutosave(); },
+    makeTile: createTileFactory({ store, toast, openWindow: (kind) => ws.openKind(kind) }),
+    onChange: () => { layouts?.queueAutosave(); desktop?.refresh(); },
     onFocus: updateWhere,
     toast,
   });
@@ -65,6 +68,11 @@ async function boot() {
   layouts.onName(updateWhere);
 
   const app = { ws, layouts, themes, overlays, toast, store, openPalette: () => openPalette(), openHelp: () => openHelp() };
+  desktop = createDesktop({
+    appEl: document.getElementById('app'), topbar: document.getElementById('topbar'), dock: document.getElementById('dock'),
+    ws, store, themes, overlays, toast, openPalette: () => openPalette(),
+  });
+  app.desktop = desktop;
   const getCommands = () => buildCommands(app);
 
   function openPalette() {
@@ -83,7 +91,7 @@ async function boot() {
   function openHelp() {
     const groups = new Map();
     for (const c of getCommands()) {
-      if (c.id.startsWith('split-right-') || c.id.startsWith('split-down-') || c.id.startsWith('theme-') && c.id !== 'theme-next') continue;
+      if (c.id.startsWith('split-right-') || c.id.startsWith('split-down-') || c.id.startsWith('theme-') && c.id !== 'theme-menu') continue;
       const keys = [c.leader ? 'Leader ' + c.leader.slice(0, 2).join(' / ') : null, c.direct].filter(Boolean).join('   ');
       if (!keys) continue;
       if (!groups.has(c.group)) groups.set(c.group, []);
@@ -97,7 +105,8 @@ async function boot() {
         ['Ctrl+K  (or Cmd+K)', 'Command palette: every action, searchable'],
         ['Esc', 'Leave a text field; focus returns to the tile (normal mode)'],
         ['h j k l / arrows', 'Normal mode (tile focused, not typing): move focus. H J K L swaps. i or Enter types. z zooms.'],
-        ['Drag a divider', 'Resize. Double-click resets it. With a divider focused, arrows resize too.'],
+        ['Drag a divider', 'Tiled: resize. Double-click resets it. With a divider focused, arrows resize too.'],
+        ['Drag a window header', 'Floating: move the window. Drag its bottom-right corner to resize; double-click the header to maximise.'],
       ],
     });
     overlays.help(rows);

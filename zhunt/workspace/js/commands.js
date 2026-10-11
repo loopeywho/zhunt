@@ -77,8 +77,14 @@ export function buildCommands(app) {
     },
   });
 
+  // ---- windows ----
+  add({ id: 'mode', group: 'Window', title: 'Switch floating / tiled windows', leader: ['g'], run: () => { ws.setMode(ws.mode === 'floating' ? 'tiled' : 'floating'); toast(ws.mode + ' windows'); } });
+  add({ id: 'minimize', group: 'Window', title: 'Minimise window to the dock (floating)', leader: ['m'], run: () => ws.minimize() });
+  add({ id: 'new-window', group: 'Window', title: 'Open a new window...', leader: ['n'], run: () => app.desktop.newWindowMenu() });
+
   // ---- themes ----
-  add({ id: 'theme-next', group: 'Theme', title: 'Next theme', leader: ['t'], run: () => themes.next() });
+  add({ id: 'theme-menu', group: 'Theme', title: 'Choose theme...', leader: ['t'], run: () => app.desktop.themeMenu() });
+  add({ id: 'theme-next', group: 'Theme', title: 'Next theme', run: () => themes.next() });
   for (const t of themes.list) add({ id: 'theme-' + t.name, group: 'Theme', title: t.name + (t.builtin ? '' : '  (user)'), run: () => themes.apply(t.name) });
 
   // ---- misc ----

@@ -14,6 +14,7 @@ export const ALIASES = [
 ];
 
 const MAX_HISTORY = 24;
+const SUGGESTIONS = ['Explain this error message', 'Write a regex for UK postcodes', 'Plan a 3-day trip to Penang', 'Summarise a long article'];
 
 export function chatTile(svc, state, ctx) {
   const session = 'ui-' + Math.random().toString(36).slice(2, 8);
@@ -37,7 +38,7 @@ export function chatTile(svc, state, ctx) {
   const live = h('div', { class: 'sr-only', role: 'status' });
   const input = h('textarea', {
     class: 'composer-input', rows: '1', 'aria-label': 'Message', spellcheck: 'false',
-    placeholder: 'message  (Enter sends, Shift+Enter newline, Esc leaves)',
+    placeholder: 'Ask zhunt anything  (Enter sends, Shift+Enter new line)',
   });
   const sendBtn = h('button', { class: 'btn primary', type: 'submit' }, 'send');
   const form = h('form', { class: 'composer', onsubmit: (e) => { e.preventDefault(); if (busy) stop(); else send(); } }, input, sendBtn);
@@ -45,9 +46,13 @@ export function chatTile(svc, state, ctx) {
 
   function paintEmpty() {
     if (msgs.childElementCount) return;
+    const hour = new Date().getHours();
+    const greeting = hour >= 5 && hour < 12 ? 'Good morning.' : hour >= 12 && hour < 18 ? 'Good afternoon.' : hour >= 18 ? 'Good evening.' : 'Hello.';
     msgs.append(h('div', { class: 'empty chat-empty' },
-      h('p', { class: 'empty-title' }, 'Ask anything.'),
-      h('p', { class: 'empty-detail' }, 'zhunt picks the best available free model and fails over if it runs dry. After each reply the routing line shows which model actually answered.')));
+      h('p', { class: 'chat-greet' }, greeting),
+      h('p', { class: 'empty-detail' }, 'Ask anything. zhunt picks the best free model available and switches if one runs dry; the line under each reply says which model answered.'),
+      h('div', { class: 'suggest', 'aria-label': 'Suggestions' }, SUGGESTIONS.map((text) =>
+        h('button', { class: 'suggest-btn', type: 'button', onclick: () => { input.value = text; autosize(); input.focus(); } }, text)))));
   }
   paintEmpty();
 

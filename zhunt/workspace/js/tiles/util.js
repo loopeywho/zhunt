@@ -59,3 +59,19 @@ export function liveToggle(initiallyPaused, onToggle) {
   paint();
   return b;
 }
+
+// Live tiles repaint on every poll. Replace a container's children only when the markup actually
+// changed, and put keyboard focus back on the equivalent button, so content does not flicker and a
+// keyboard user is not thrown out mid-tab.
+export function swapIfChanged(container, nodes) {
+  const sig = nodes.map((n) => n.outerHTML).join('');
+  if (container.dataset.sig === sig) return;
+  container.dataset.sig = sig;
+  const active = container.contains(document.activeElement) ? document.activeElement : null;
+  const key = active && active.tagName === 'BUTTON' ? (active.getAttribute('aria-label') || '') + '|' + active.textContent : null;
+  container.replaceChildren(...nodes);
+  if (key) {
+    const again = [...container.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') || '') + '|' + b.textContent === key);
+    (again || container.closest('.pane'))?.focus({ preventScroll: true });
+  }
+}

@@ -1,12 +1,13 @@
 // Pure binary split-tree operations. No DOM here, so it can be unit-tested in node.
 //
-//   tile  : { type: 'tile',  id, kind, state }
+//   tile  : { type: 'tile',  id, kind, state, win? }
+//           win = floating-mode window {x, y, w, h, min} as fractions of the desktop (0..1)
 //   split : { type: 'split', dir: 'row' | 'col', ratio, a, b }
 //
 // 'row' puts a|b side by side (vertical divider); 'col' stacks a over b.
 // Operations mutate the tree in place and return the (possibly new) root.
 
-export const KINDS = ['chat', 'compare', 'routing', 'providers', 'logs'];
+export const KINDS = ['chat', 'foryou', 'panels', 'compare', 'routing', 'providers', 'logs'];
 export const MAX_TILES = 12;
 export const MAX_DEPTH = 8;
 export const MIN_RATIO = 0.08;
@@ -188,7 +189,10 @@ export function sanitize(raw) {
           if (s.length <= 4096) state = JSON.parse(s);
         } catch { /* ignore */ }
       }
-      return tile(n.kind, state);
+      const t = tile(n.kind, state);
+      const win = sanitizeWin(n.win);
+      if (win) t.win = win;
+      return t;
     }
     if (n.type === 'split' && (n.dir === 'row' || n.dir === 'col')) {
       const a = walk(n.a, depth + 1);
@@ -204,10 +208,28 @@ export function sanitize(raw) {
   return walk(raw, 0);
 }
 
+// A floating window rectangle from untrusted JSON, or null. Kept inside the desktop and not too small.
+export function sanitizeWin(w) {
+  if (!w || typeof w !== 'object') return null;
+  const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+  let [x, y, wd, ht] = [num(w.x), num(w.y), num(w.w), num(w.h)];
+  if (x === null || y === null || wd === null || ht === null) return null;
+  wd = Math.min(1, Math.max(0.1, wd));
+  ht = Math.min(1, Math.max(0.1, ht));
+  x = Math.min(1 - wd, Math.max(0, x));
+  y = Math.min(1 - ht, Math.max(0, y));
+  return { x, y, w: wd, h: ht, min: w.min === true };
+}
+
 // Plain-JSON copy of the tree for saving. `stateOf(id)` supplies live tile state.
 export function toJSON(node, stateOf) {
   if (isTile(node)) {
-    return { type: 'tile', id: node.id, kind: node.kind, state: stateOf ? stateOf(node.id) : node.state };
+    const out = { type: 'tile', id: node.id, kind: node.kind, state: stateOf ? stateOf(node.id) : node.state };
+    if (node.win) {
+      const r = (v) => Math.round(v * 1000) / 1000;
+      out.win = { x: r(node.win.x), y: r(node.win.y), w: r(node.win.w), h: r(node.win.h), min: !!node.win.min };
+    }
+    return out;
   }
   return {
     type: 'split',

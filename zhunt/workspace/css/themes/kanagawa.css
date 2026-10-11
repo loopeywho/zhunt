@@ -1,0 +1,38 @@
+/* zhunt theme: kanagawa (Kanagawa palette by rebelot (MIT)). Same variable set as dark.css, plus a wallpaper.
+   Copy to ~/.zhunt/themes/<name>.css and change any value to make your own. */
+[data-theme="kanagawa"] {
+  color-scheme: dark;
+
+  --bg: #16161d;
+  --surface: #1f1f28;
+  --surface-2: #2a2a37;
+  --surface-3: #363646;
+  --border: #2a2a37;
+  --border-strong: #54546d;
+
+  --text: #dcd7ba;
+  --text-dim: #c8c093;
+  --text-faint: #9a9888;
+
+  --accent: #7e9cd8;
+  --accent-fg: #16161d;
+  --accent-soft: rgba(126, 156, 216, 0.16);
+  --focus: #7e9cd8;
+
+  --ok: #98bb6c;
+  --warn: #e6c384;
+  --err: #e46876;
+  --info: #7fb4ca;
+
+  --tier-chat: #7fb4ca;
+  --tier-coding: #98bb6c;
+  --tier-long-context: #957fb8;
+  --tier-reasoning: #ffa066;
+
+  --selection: rgba(126, 156, 216, 0.28);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  --wallpaper: radial-gradient(ellipse at 15% 20%, rgba(126,156,216,0.30), transparent 55%), radial-gradient(ellipse at 85% 80%, rgba(210,126,153,0.22), transparent 55%), linear-gradient(165deg, #16161d 0%, #1f1f28 55%, #2a2a37 100%);
+  --wallpaper-ink: #dcd7ba;
+}

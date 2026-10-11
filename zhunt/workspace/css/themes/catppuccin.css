@@ -1,0 +1,38 @@
+/* zhunt theme: catppuccin (Catppuccin Mocha palette (MIT)). Same variable set as dark.css, plus a wallpaper.
+   Copy to ~/.zhunt/themes/<name>.css and change any value to make your own. */
+[data-theme="catppuccin"] {
+  color-scheme: dark;
+
+  --bg: #11111b;
+  --surface: #1e1e2e;
+  --surface-2: #181825;
+  --surface-3: #313244;
+  --border: #313244;
+  --border-strong: #45475a;
+
+  --text: #cdd6f4;
+  --text-dim: #bac2de;
+  --text-faint: #9399b2;
+
+  --accent: #cba6f7;
+  --accent-fg: #11111b;
+  --accent-soft: rgba(203, 166, 247, 0.16);
+  --focus: #cba6f7;
+
+  --ok: #a6e3a1;
+  --warn: #f9e2af;
+  --err: #f38ba8;
+  --info: #89dceb;
+
+  --tier-chat: #89b4fa;
+  --tier-coding: #a6e3a1;
+  --tier-long-context: #b4befe;
+  --tier-reasoning: #f5c2e7;
+
+  --selection: rgba(203, 166, 247, 0.28);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  --wallpaper: radial-gradient(ellipse at 15% 20%, rgba(203,166,247,0.35), transparent 55%), radial-gradient(ellipse at 90% 85%, rgba(245,194,231,0.28), transparent 55%), linear-gradient(165deg, #11111b 0%, #1e1e2e 60%, #313244 100%);
+  --wallpaper-ink: #cdd6f4;
+}

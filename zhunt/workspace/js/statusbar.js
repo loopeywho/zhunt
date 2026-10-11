@@ -32,7 +32,7 @@ export function createStatusbar(root, { store }) {
         hints.append(h('span', { class: 'hint' }, h('kbd', {}, leaderLabel(c)), ' ' + c.title.toLowerCase().replace(/ \(.*\)/, '').replace('...', '')));
       }
       hints.append(h('span', { class: 'hint' }, h('kbd', {}, 'hjkl'), ' focus'), h('span', { class: 'hint' }, h('kbd', {}, 'HJKL'), ' swap'),
-        h('span', { class: 'hint' }, h('kbd', {}, '1-5'), ' tile type'), h('span', { class: 'hint' }, h('kbd', {}, 'Esc'), ' cancel'));
+        h('span', { class: 'hint' }, h('kbd', {}, '1-7'), ' tile type'), h('span', { class: 'hint' }, h('kbd', {}, 'Esc'), ' cancel'));
     } else {
       hints.append(...idleHints());
     }

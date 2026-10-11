@@ -1,0 +1,38 @@
+/* zhunt theme: matte-black (after Omarchy Matte Black). Same variable set as dark.css, plus a wallpaper.
+   Copy to ~/.zhunt/themes/<name>.css and change any value to make your own. */
+[data-theme="matte-black"] {
+  color-scheme: dark;
+
+  --bg: #0b0b0b;
+  --surface: #121212;
+  --surface-2: #181818;
+  --surface-3: #222222;
+  --border: #222222;
+  --border-strong: #3a3a3a;
+
+  --text: #d6d6d6;
+  --text-dim: #a8a8a8;
+  --text-faint: #7c7c7c;
+
+  --accent: #e8a33d;
+  --accent-fg: #141008;
+  --accent-soft: rgba(232, 163, 61, 0.16);
+  --focus: #e8a33d;
+
+  --ok: #8fbf7a;
+  --warn: #e8c15a;
+  --err: #e06c5f;
+  --info: #8ab4c8;
+
+  --tier-chat: #8ab4c8;
+  --tier-coding: #8fbf7a;
+  --tier-long-context: #b9a0d8;
+  --tier-reasoning: #d88aa8;
+
+  --selection: rgba(232, 163, 61, 0.28);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  --wallpaper: radial-gradient(ellipse at 50% 120%, rgba(232,163,61,0.12), transparent 60%), linear-gradient(180deg, #0b0b0b 0%, #101010 100%);
+  --wallpaper-ink: #d6d6d6;
+}

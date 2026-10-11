@@ -2,7 +2,7 @@
 
 Zhunt (pronounced “shunt” with a z) is a local, open-source router that sends each
 prompt to the best *available* free-tier model and switches automatically when one
-runs out of quota or fails. Use it from its own tiling workspace, or as an endpoint
+runs out of quota or fails. Use it from its own workspace, or as an endpoint
 for coding tools such as Codex and Hermes.
 
 > **Status: v2 pre-release.** The engine, daemon, workspace API and app launchers
@@ -38,6 +38,27 @@ zhunt keys add groq        # hidden prompt; stored in ~/.zhunt/env (mode 0600)
 zhunt serve                # starts the daemon on localhost:4000
 zhunt open                 # opens the workspace in your browser, already signed in
 ```
+
+The workspace is its own desktop rather than a sidebar-and-chat app. Pick a window style
+in the top bar (or `Ctrl+Space g`):
+
+- **Floating** (after Hark): glass windows over a wallpaper that you drag by the header,
+  resize from the corner, overlap, maximise (double-click) and minimise to the dock.
+- **Tiled** (after Omarchy / Hyprland): the same windows fill the screen in a split grid,
+  driven from the keyboard.
+
+Both styles share the same windows (Chat, For you, Panels, Compare, Routing, Providers,
+Logs), so switching keeps every conversation and half-typed message. *For you* shows cards
+for what needs attention (a missing free key, a model resting after its limit, requests
+zhunt rescued by failing over) with one-tap actions; *Panels* are small dashboards you can
+reorder or hide.
+
+Themes: dark and light (with a sky that follows the time of day), plus Tokyo Night,
+Catppuccin, Catppuccin Latte, Gruvbox, Nord, Everforest, Kanagawa, Rosé Pine, Matte Black
+and Flexoki Light, each with its own wallpaper (`Ctrl+Space t`). A theme is one CSS file of
+variables: copy one from `zhunt/workspace/css/themes/` to `~/.zhunt/themes/<name>.css` and
+edit it. Layouts, including window positions and style, are plain JSON in
+`~/.zhunt/layouts/`.
 
 Run a tool through Zhunt for that one process only, with no config file edited:
 

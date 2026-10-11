@@ -1,0 +1,38 @@
+/* zhunt theme: gruvbox (Gruvbox palette by morhetz (MIT)). Same variable set as dark.css, plus a wallpaper.
+   Copy to ~/.zhunt/themes/<name>.css and change any value to make your own. */
+[data-theme="gruvbox"] {
+  color-scheme: dark;
+
+  --bg: #1d2021;
+  --surface: #282828;
+  --surface-2: #32302f;
+  --surface-3: #3c3836;
+  --border: #3c3836;
+  --border-strong: #665c54;
+
+  --text: #ebdbb2;
+  --text-dim: #d5c4a1;
+  --text-faint: #a89984;
+
+  --accent: #fabd2f;
+  --accent-fg: #1d2021;
+  --accent-soft: rgba(250, 189, 47, 0.16);
+  --focus: #fabd2f;
+
+  --ok: #b8bb26;
+  --warn: #fe8019;
+  --err: #fb4934;
+  --info: #83a598;
+
+  --tier-chat: #83a598;
+  --tier-coding: #b8bb26;
+  --tier-long-context: #d3869b;
+  --tier-reasoning: #8ec07c;
+
+  --selection: rgba(250, 189, 47, 0.28);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+
+  --wallpaper: radial-gradient(ellipse at 20% 20%, rgba(250,189,47,0.25), transparent 55%), radial-gradient(ellipse at 85% 85%, rgba(254,128,25,0.22), transparent 55%), linear-gradient(160deg, #1d2021 0%, #282828 60%, #3c3836 100%);
+  --wallpaper-ink: #ebdbb2;
+}
