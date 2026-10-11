@@ -71,13 +71,12 @@ CATALOG = [
         {"id": "google/gemini-2.5-pro", "tiers": ["long-context", "reasoning"], "headroom": 0.3, "reliability": 0.9,
          "may_train_on_prompts": True},
     ]},
-    {"platform": "mistral", "name": "Mistral", "key_set": True, "key_env": "MISTRAL_API_KEY", "models": [
-        {"id": "mistral/codestral-latest", "tiers": ["coding"], "headroom": 0.7, "reliability": 0.86},
-        {"id": "mistral/mistral-large-latest", "tiers": ["chat", "reasoning"], "headroom": None, "reliability": None, "free": False},
+    {"platform": "anthropic", "name": "Anthropic (premium)", "key_set": False, "key_env": "ANTHROPIC_API_KEY", "models": [
+        {"id": "anthropic/claude-haiku-5-5", "tiers": ["chat", "coding"], "headroom": None, "reliability": None, "free": False},
+        {"id": "anthropic/claude-sonnet-5-5", "tiers": ["chat", "coding", "long-context", "reasoning"], "headroom": None, "reliability": None, "free": False},
     ]},
-    {"platform": "openrouter", "name": "OpenRouter", "key_set": False, "key_env": "OPENROUTER_API_KEY", "models": [
-        {"id": "openrouter/deepseek/deepseek-r1:free", "tiers": ["reasoning"], "headroom": None, "reliability": None},
-        {"id": "openrouter/meta-llama/llama-3.3-70b-instruct:free", "tiers": ["chat", "coding"], "headroom": None, "reliability": None},
+    {"platform": "openai", "name": "OpenAI (premium)", "key_set": False, "key_env": "OPENAI_API_KEY", "models": [
+        {"id": "openai/gpt-5.6-sol", "tiers": ["chat", "coding", "long-context", "reasoning"], "headroom": None, "reliability": None, "free": False},
     ]},
 ]
 
@@ -91,7 +90,7 @@ def model_view(provider, m):
     elif train:
         reason = "may train on prompts"
     elif not free:
-        reason = "paid"
+        reason = "premium off" if STATE["plan"] == "pro" else "pro only"
     cd = max(0, int(COOLDOWNS.get(m["id"], 0) - time.time()))
     return {
         "id": m["id"], "tiers": m["tiers"], "free": free, "may_train_on_prompts": train,
