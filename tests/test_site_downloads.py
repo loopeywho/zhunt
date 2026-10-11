@@ -18,7 +18,7 @@ def test_install_section_points_at_the_v2_package_not_v1_installers():
 def test_public_checkout_uses_usd_payment_link():
     html = (SITE / "index.html").read_text(encoding="utf-8")
 
-    assert html.count(PAYMENT_LINK) == 3  # nav, checkout card, closing call to action
+    assert html.count(PAYMENT_LINK) == 2  # Pro plan card and the checkout disclosure
     assert "$7/month" in html
     assert "$7/mo" in html
     assert "£" not in html
