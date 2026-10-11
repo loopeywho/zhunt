@@ -1,6 +1,6 @@
 /* Banner for the public demo build (scripts/build_site.py). */
 .demo-banner {
-  position: fixed; z-index: 2000; left: 50%; top: 8px; transform: translateX(-50%);
+  position: fixed; z-index: 2000; left: 130px; top: 7px;
   display: flex; gap: 10px; align-items: center; padding: 6px 14px; border-radius: 999px;
   font: 12.5px/1.3 ui-sans-serif, system-ui, -apple-system, sans-serif; white-space: nowrap;
   background: rgba(10, 15, 13, 0.82); color: #f2f4ee; border: 1px solid rgba(217, 255, 99, 0.35);
@@ -8,4 +8,6 @@
 }
 .demo-banner a { color: #d9ff63; text-decoration: none; font-weight: 600; }
 .demo-banner a:hover { text-decoration: underline; }
-@media (max-width: 640px) { .demo-banner { top: auto; bottom: 64px; font-size: 11.5px; } }
+/* too narrow for the top bar's free space: sit at the bottom-right above the status bar */
+@media (max-width: 1180px) { .demo-banner { top: auto; left: auto; right: 12px; bottom: 34px; font-size: 11.5px; } }
+@media (max-width: 640px) { .demo-banner { right: 8px; left: 8px; bottom: 70px; white-space: normal; } }

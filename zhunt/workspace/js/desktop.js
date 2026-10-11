@@ -83,7 +83,8 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
 
   async function newWindowMenu() {
     const picked = await overlays.palette(KINDS.map((k) => ({ title: KIND_LABELS[k], group: 'window', kind: k })), { placeholder: 'open which window?' });
-    if (picked) ws.split('row', picked.kind);
+    // one-of-a-kind windows come forward instead of opening twice; chat and compare can repeat
+    if (picked) { if (['chat', 'compare'].includes(picked.kind)) ws.splitAuto(picked.kind); else ws.openKind(picked.kind); }
   }
 
   async function themeMenu() {

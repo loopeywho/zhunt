@@ -460,6 +460,14 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
     if (next) setFocus(next, { dom: true }); else stage.focus?.();
   };
 
+  // Open a window next to the focused one, splitting along its longer side (Hyprland's
+  // "dwindle"), so repeated opens make a spiral of usable tiles instead of thin strips.
+  ws.splitAuto = (kind) => {
+    const { rects } = T.computeLayout(root, stage.clientWidth || 1000, stage.clientHeight || 1000, gap);
+    const r = rects.get(focusedId);
+    ws.split(r && r.h > r.w ? 'col' : 'row', kind);
+  };
+
   // Bring a window of this kind forward (restoring it if minimised), or open one.
   ws.openKind = (kind) => {
     const existing = T.leaves(root).find((n) => n.kind === kind);
@@ -469,7 +477,7 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
       layout(true);
       return;
     }
-    ws.split('row', kind);
+    ws.splitAuto(kind);
   };
 
   ws.windows = () => T.leaves(root).map((n) => ({ id: n.id, kind: n.kind, min: !!(floating() && n.win?.min), focused: n.id === focusedId }));
