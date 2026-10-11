@@ -115,8 +115,10 @@ Owner = you unless marked. Order matters.
    `zhunt licence activate` → `zhunt licence status` shows Pro → theme pack unlocks →
    `zhunt keys add openrouter` + `zhunt premium on --cap 1` → a request with free keys
    removed is answered by a premium model and the spend shows in Panels.
-8. Publish privacy policy and terms (subscription, cancellation, refunds, acceptable use),
-   linked from the site footer and checkout.
+8. Publish privacy policy and terms, linked from the site footer and checkout. Drafts written
+   from what the code actually does are in `docs/legal/privacy.md` and `docs/legal/terms.md`:
+   fill in the bracketed items (legal name, jurisdiction, refund policy) and have them
+   reviewed, then publish them as `site/privacy.html` and `site/terms.html`.
 
 **C. Launch (week 1–2)**
 9. 60–90 s demo video: a prompt hits a rate limit, zhunt fails over, the routing window
