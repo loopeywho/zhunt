@@ -13,3 +13,4 @@ HANDOFF.md
 CLAUDE_AUDIT_BRIEF.md
 AUDIT_REQUEST
 .audit_requested*
+dist/
