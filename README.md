@@ -14,12 +14,19 @@ for coding tools such as Codex and Hermes.
 
 1. Each request is classified into a tier: chat, coding, long-context or reasoning.
 2. Zhunt ranks the models in that tier that are allowed and have quota left:
-   free models first, ordered by observed reliability, speed, capability and
-   remaining headroom. Paid models are used only if you turn them on.
+   free models first, ordered by observed reliability (sampled, so new models get
+   tried), speed and capability. A model is demoted only in the last 20% of its
+   quota, and briefly after recent 429s or errors. Paid models are used only if
+   you turn them on.
 3. If a call fails, the model is benched and the request is retried on the next
-   candidate (up to three failovers). Cooldowns escalate: 2 minutes, 10 minutes,
-   1 hour, then 24 hours. A rejected key (401) or empty account (402) benches every
-   model from that provider; a provider's own `retry-after` is honoured.
+   candidate (up to three failovers). A per-minute 429 benches for 90 seconds; a
+   spent daily quota benches until the provider's daily reset; repeated failures
+   escalate 2 minutes, 10 minutes, 1 hour, then 24 hours. A rejected key (401, 5
+   minutes) or empty account (402, 24 hours) benches every model from that
+   provider; a 403 or 404 benches only that model. A provider's `retry-after` is
+   a floor. Limits that providers state in errors or rate-limit headers are
+   learned, and usage, cooldowns and learned limits survive a restart
+   (`~/.zhunt/state.db`).
 4. If every model in a tier is out, the request drops to the next tier down
    instead of failing.
 
@@ -165,4 +172,5 @@ smoke test. Details are in `packaging/linux/README.md`.
 
 The quota, cooldown and failover ideas follow
 [FreeLLMAPI](https://github.com/tashfeenahmed/freellmapi) (MIT); Zhunt's
-implementation is written from scratch in Python.
+implementation is written in Python, with some selection logic adapted from it
+(see `THIRD_PARTY_NOTICES.md`).

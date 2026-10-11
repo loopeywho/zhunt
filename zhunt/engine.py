@@ -1,3 +1,4 @@
+# Parts adapted from FreeLLMAPI (MIT, (c) 2026 Tashfeen Ahmed); see THIRD_PARTY_NOTICES.md
 """Free-tier engine: wires the catalog, quota tracker and selector into LiteLLM."""
 
 from __future__ import annotations
