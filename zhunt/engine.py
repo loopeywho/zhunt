@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import random
 import re
 import time
 from collections import deque
@@ -709,7 +710,7 @@ class EngineProxyHook(CustomLogger):
                         "blocked_reason": reason,
                         "headroom": round(self.quota.headroom(slot, model.limits), 3),
                         "cooldown_remaining": round(self.quota.cooldown_remaining(slot), 1),
-                        "reliability": round(self.reliability.score(model.id), 3),
+                        "reliability": round(self.reliability.mean(model.id), 3),
                         "limits": asdict(
                             self.quota.effective_limits(model.id, model.limits)
                         ),
@@ -856,18 +857,28 @@ def _error_text(error: BaseException, secret: str | None) -> str:
     return text[:_ERROR_TEXT_LIMIT]
 
 
+def selection_rng() -> random.Random | None:
+    """The sampler for reliability scores; ``None`` means the posterior mean.
+    The test suite patches this to keep rankings deterministic."""
+
+    return random.Random()
+
+
 def build_engine_hook(
     *,
     catalog_path: Path | None = None,
     telemetry_path: Path | None = None,
     env: Mapping[str, str] | None = None,
     state_path: Path | None = None,
+    rng: random.Random | None = None,
 ) -> EngineProxyHook:
     env = os.environ if env is None else env
     catalog = load_catalog(catalog_path)
     # Defaults to ~/.zhunt/state.db (or $ZHUNT_STATE_DB); memory-only if unusable.
     quota = QuotaTracker(store=StateStore.open(state_path))
-    reliability = Reliability()
+    # Thompson sampling: each pick draws from the posterior so a model with few
+    # samples still gets tried. Pass a seeded ``rng`` for reproducible tests.
+    reliability = Reliability(rng=rng or selection_rng())
     keys = keys_from_env(catalog, env)
     policy = policy_from_env(env)
     selector = Selector(catalog, quota, reliability, keys, policy=policy)

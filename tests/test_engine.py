@@ -452,6 +452,16 @@ def test_success_headers_lower_a_known_limit_but_never_raise_one() -> None:
     assert after_lower == Limits(rpm=4, tpm=1)
 
 
+@pytest.mark.thompson
+def test_production_selection_samples_reliability_instead_of_using_the_mean() -> None:
+    with daemon(AsyncMock(return_value=ok()), env={"FAKE_API_KEY": "k"}) as (_, hook):
+        draws = {hook.reliability.score("alpha/coder") for _ in range(20)}
+        mean = hook.reliability.mean("alpha/coder")
+
+    assert len(draws) > 1  # Thompson samples vary; the mean would not
+    assert mean == 0.5
+
+
 def test_a_spent_google_daily_quota_benches_until_pacific_midnight() -> None:
     import time
 

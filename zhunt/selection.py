@@ -46,10 +46,17 @@ class Reliability:
     def score(self, model_id: str) -> float:
         """Posterior mean, or one Thompson sample when an ``rng`` was supplied."""
 
+        if self._rng is None:
+            return self.mean(model_id)
         with self._lock:
             successes, failures, _ = self._decayed(model_id)
-        if self._rng is not None:
             return self._rng.betavariate(successes + 1, failures + 1)
+
+    def mean(self, model_id: str) -> float:
+        """Posterior mean: the stable figure to report, whatever ``score`` samples."""
+
+        with self._lock:
+            successes, failures, _ = self._decayed(model_id)
         return (successes + 1) / (successes + failures + 2)
 
     def _decayed(self, model_id: str) -> tuple[float, float, float]:

@@ -29,6 +29,7 @@ dev = [
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+markers = ["thompson: keep the engine's production Thompson sampling in this test"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["zhunt"]

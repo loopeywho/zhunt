@@ -386,7 +386,7 @@ def test_compare_runs_models_concurrently_with_each_providers_own_key() -> None:
         response = compare(client, ["alpha/coder", "zeta/z1"], "what is 2+2?")
         by_model = results(response)
         decision_count = len(decisions(client))
-        served = hook.reliability.score("zeta/z1")
+        served = hook.reliability.mean("zeta/z1")
 
     assert peak == 2
     assert set(by_model) == {"alpha/coder", "zeta/z1"}
@@ -467,7 +467,7 @@ def test_compare_failure_benches_the_model_and_the_next_compare_is_blocked() -> 
         first = results(compare(client, ["zeta/z1"]))["zeta/z1"]
         second = results(compare(client, ["zeta/z1"]))["zeta/z1"]
         cooldown = hook.quota.cooldown_remaining(("zeta/z1", "default"))
-        reliability = hook.reliability.score("zeta/z1")
+        reliability = hook.reliability.mean("zeta/z1")
         listed = status_models(client)["zeta/z1"]
 
     assert first["ok"] is False and first["error"].startswith("429:")
