@@ -15,6 +15,7 @@ Implements docs/WORKSPACE_API.md with realistic fake data (stdlib only):
                                         one model blocked for training, one paid)
   POST /zhunt/api/compare               parallel fake results incl. a blocked and a rate-limited model
   *    /zhunt/api/layouts[/name]        backed by a temp dir
+  *    /zhunt/api/catalog[/update(s)]   the bundled catalog; switch is Pro-only; nothing is fetched
   GET  /zhunt/api/themes[/name]         built-ins from the workspace dir + a user theme from a temp dir
   POST /mock/control                    {"layouts_broken": bool, "status_down": bool, "plan": "free"|"pro"} (no auth), test hook
 
@@ -46,11 +47,29 @@ STATE = {
     "themes_dir": None,
     "allow_training": False,
     "plan": "free",  # free | pro  (--plan, or POST /mock/control {"plan": "pro"})
+    "catalog_updates": False,
 }
-PLAN_FEATURES = {"free": [], "pro": ["premium_fallback"]}
+PLAN_FEATURES = {"free": [], "pro": ["premium_fallback", "catalog_live"]}
 FEATURE_LABELS = {
     "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
+    "catalog_live": "Live free-model catalog: newly verified free models every 12 hours, when you switch it on",
 }
+
+
+def catalog_payload(**extra):
+    """GET /zhunt/api/catalog: the bundled list; the mock never fetches anything."""
+
+    pro = STATE["plan"] == "pro"
+    channel = "latest" if pro else "monthly"
+    return {
+        "active": {"version": 202610100000, "source": "bundled", "channel": None, "issued_at": None,
+                   "expires_at": None, "note": None, "providers": len(CATALOG),
+                   "models": sum(len(p["models"]) for p in CATALOG)},
+        "updates": {"switched_on": STATE["catalog_updates"], "available": pro,
+                    "enabled": pro and STATE["catalog_updates"], "channel": channel,
+                    "url": f"https://zhunt.kindredwildcat.com/catalog/{channel}.json", "every_hours": 12},
+        "last_checked": None, "last_status": None, "last_message": None, **extra,
+    }
 LOCK = threading.Lock()
 BOTS = {}
 TEAM = {
@@ -248,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
                 "features": PLAN_FEATURES[STATE["plan"]], "feature_labels": FEATURE_LABELS,
                 "upgrade_url": "https://zhunt.kindredwildcat.com/#pricing",
             })
+        if u.path == "/zhunt/api/catalog":
+            return self._send(200, catalog_payload())
         if u.path == "/zhunt/api/themes":
             return self._themes_list()
         if u.path.startswith("/zhunt/api/themes/"):
@@ -266,6 +287,14 @@ class Handler(BaseHTTPRequestHandler):
             BOTS[handle] = {"handle": handle, "name": str(body["name"]).strip(), "instructions": str(body.get("instructions", "")),
                             "alias": body.get("alias", "zhunt-auto"), "color": body.get("color", "#7aa2f7")}
             return self._send(200, BOTS[handle])
+        if u.path == "/zhunt/api/catalog/updates" and self._authed():
+            enabled = (self._json_body() or {}).get("enabled")
+            if not isinstance(enabled, bool):
+                return self._send(400, {"detail": "send enabled true or false"})
+            if enabled and STATE["plan"] != "pro":
+                return self._send(403, {"detail": "automatic catalog updates are part of zhunt Pro"})
+            STATE["catalog_updates"] = enabled
+            return self._send(200, catalog_payload(status="current", message="catalog version 202610100000 is up to date"))
         if u.path == "/zhunt/api/policy/training" and self._authed():
             allow = (self._json_body() or {}).get("allow")
             if not isinstance(allow, bool):
@@ -300,6 +329,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._chat()
         if u.path == "/zhunt/api/compare":
             return self._compare()
+        if u.path == "/zhunt/api/catalog/update":
+            return self._send(200, catalog_payload(status="current", message="catalog version 202610100000 is up to date"))
         if u.path == "/zhunt/api/transcribe":
             n = int(self.headers.get("Content-Length") or 0)
             self.rfile.read(n)
