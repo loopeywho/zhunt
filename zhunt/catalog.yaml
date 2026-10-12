@@ -12,6 +12,11 @@
 # - `may_train_on_prompts: true` means the provider says it may use prompts on
 #   this tier, or we could not confirm that it does not. The privacy gate keeps
 #   those models off unless the user opts in.
+#
+# `version` (UTC YYYYMMDDHHMM) is set by `scripts/catalog_tool.py publish`. A signed
+# feed is used only when its version is newer than this one (zhunt/catalog_feed.py).
+
+version: 202610100000
 
 providers:
   groq:
