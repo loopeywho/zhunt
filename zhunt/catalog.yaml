@@ -25,30 +25,18 @@ providers:
     free_note: "Free tier, no card: fast open models (Llama, GPT-OSS, Qwen)."
     base_url: https://api.groq.com/openai/v1
     key_env: GROQ_API_KEY
-    verified_on: 2026-10-10
+    verified_on: 2026-10-12
+    # Llama 3.1 8B, Llama 3.3 70B and MiniMax M2.7 removed 2026-10-12: Groq's /models
+    # no longer lists them for a free key and calls return model_not_found.
     # Free-plan limits are not on Groq's public rate-limits page (it shows the
     # Developer plan), so none are listed.
     # Training: Groq docs say customer data is not retained for inference by
     # default (console.groq.com/docs/your-data).
     models:
-      - id: llama-3.1-8b-instant
-        tiers: [chat]
-        intelligence: 25
-        speed: 95
-        context_window: 131072
-        supports_tools: true
-        may_train_on_prompts: false
       - id: openai/gpt-oss-20b
         tiers: [chat, coding]
         intelligence: 50
         speed: 90
-        context_window: 131072
-        supports_tools: true
-        may_train_on_prompts: false
-      - id: llama-3.3-70b-versatile
-        tiers: [chat, coding]
-        intelligence: 60
-        speed: 80
         context_window: 131072
         supports_tools: true
         may_train_on_prompts: false
@@ -64,13 +52,6 @@ providers:
         intelligence: 60
         speed: 70
         context_window: 131072
-        supports_tools: true
-        may_train_on_prompts: false
-      - id: minimaxai/minimax-m2.7  # preview
-        tiers: [coding, long-context]
-        intelligence: 70
-        speed: 60
-        context_window: 196608
         supports_tools: true
         may_train_on_prompts: false
 
