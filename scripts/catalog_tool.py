@@ -149,6 +149,8 @@ STALE_DAYS = 7
 # Gateways that also list paid models: only ids that say they are free become candidates
 # (FreeLLMAPI does the same with a short approved list instead of trusting /models).
 FREE_ONLY = {"kilo"}
+# Lists that also carry speech, image and embedding models, which report no output tokens.
+CHAT_ONLY = {"ovh"}
 
 
 def _keys() -> dict[str, str]:
@@ -169,7 +171,8 @@ def list_models(platform: str, provider: dict[str, Any], key: str, client: httpx
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         response = client.get(f"{provider['base_url'].rstrip('/')}/models", headers=headers)
         response.raise_for_status()
-        ids = {m["id"] for m in response.json().get("data", []) if isinstance(m, dict) and "id" in m}
+        ids = {m["id"] for m in response.json().get("data", []) if isinstance(m, dict) and "id" in m
+               and (platform not in CHAT_ONLY or m.get("max_completion_tokens"))}
     if platform in FREE_ONLY:
         ids = {i for i in ids if i.endswith(":free") or i.endswith("/free")}
     return ids

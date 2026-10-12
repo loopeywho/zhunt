@@ -111,6 +111,9 @@ def test_packaged_catalog_covers_every_tier_with_tool_capable_models() -> None:
         "cerebras",
         "kilo",
         "zai",
+        "mistral",
+        "sambanova",
+        "ovh",
         "anthropic",
         "openai",
         "google-paid",
@@ -271,13 +274,22 @@ def test_no_provider_key_means_no_call_and_a_503() -> None:
     call.assert_not_awaited()
 
 
+def packaged_with_keys_only() -> dict:
+    """The packaged catalog without the providers that answer with no key at all."""
+
+    data = yaml.safe_load((Path(__file__).parents[1] / "zhunt" / "catalog.yaml").read_text())
+    data["providers"] = {k: v for k, v in data["providers"].items() if not v.get("keyless")}
+    return data
+
+
 def test_prompt_training_provider_needs_opt_in_and_uses_the_gemini_route() -> None:
     call = AsyncMock(return_value=ok())
     only_google = {"GEMINI_API_KEY": "g-key"}
+    catalog = packaged_with_keys_only()
 
-    with daemon(call, env=only_google, catalog=False) as (client, _):
+    with daemon(call, env=only_google, catalog=catalog) as (client, _):
         blocked = post(client)
-    with daemon(call, env={**only_google, "ZHUNT_ALLOW_TRAINING": "1"}, catalog=False) as (
+    with daemon(call, env={**only_google, "ZHUNT_ALLOW_TRAINING": "1"}, catalog=catalog) as (
         client,
         _,
     ):
@@ -288,6 +300,16 @@ def test_prompt_training_provider_needs_opt_in_and_uses_the_gemini_route() -> No
     kwargs = call.await_args.kwargs
     assert kwargs["model"].startswith("gemini/gemini-3.")
     assert kwargs["api_key"] == "g-key"
+
+
+def test_with_no_keys_and_no_opt_in_a_keyless_no_training_provider_answers() -> None:
+    call = AsyncMock(return_value=ok())
+    with daemon(call, env={}, catalog=False) as (client, _):
+        response = post(client)
+
+    assert response.status_code == 200
+    assert call.await_args.kwargs["model"].startswith("openai/")
+    assert call.await_args.kwargs["api_base"] == "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
 
 
 def test_requests_with_tools_only_go_to_tool_capable_models() -> None:

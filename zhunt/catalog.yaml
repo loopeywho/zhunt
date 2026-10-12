@@ -200,6 +200,132 @@ providers:
         supports_tools: true
         may_train_on_prompts: true
 
+  # Mistral "Free mode": the default for new accounts, with included monthly usage
+  # within limits shown per workspace on the console Limits page; no card
+  # (docs.mistral.ai/admin/billing-usage/usage-limits and .../subscriptions,
+  # 2026-10-12). Sign-up needs a verified phone number (one per account, per
+  # third-party guides; Mistral's help article on it has moved). No caps published,
+  # so none listed. Training: Mistral's help centre says Free-mode inputs and
+  # outputs may be used to train its models unless the user opts out in the admin
+  # Privacy settings. Ids are Mistral's `-latest` aliases (docs.mistral.ai/inference/
+  # model-lifecycle); Small 4 and Medium 3.5 both list 256k context. Needs a live check.
+  mistral:
+    name: Mistral
+    base_url: https://api.mistral.ai/v1
+    key_env: MISTRAL_API_KEY
+    litellm_provider: openai
+    key_url: https://console.mistral.ai/api-keys
+    free_note: "Free mode with a phone-verified account, no card; may train on prompts unless you opt out in Privacy settings."
+    verified_on: 2026-10-12
+    models:
+      - id: mistral-small-latest
+        tiers: [chat, coding, long-context]
+        intelligence: 65
+        speed: 75
+        context_window: 256000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: mistral-medium-latest
+        tiers: [chat, coding, long-context, reasoning]
+        intelligence: 78
+        speed: 60
+        context_window: 256000
+        supports_tools: true
+        may_train_on_prompts: true
+
+  # SambaNova Cloud Free tier: applies while no payment method is linked
+  # (docs.sambanova.ai/docs/en/models/rate-limits, 2026-10-12): 20 requests/min,
+  # 20 requests/day and 200K tokens/day per production model. Preview models
+  # (DeepSeek-V3.2, gemma-4-31B-it) are evaluation-only and left out. Context from
+  # docs.sambanova.ai/docs/en/models/sambacloud-models; tool calling from
+  # .../features/function-calling. Training: only a staff forum reply says API
+  # prompts are not stored or used for training by default
+  # (community.sambanova.ai/t/data-handling-and-retention/1314), not the terms, so
+  # treated as possible.
+  sambanova:
+    name: SambaNova Cloud
+    base_url: https://api.sambanova.ai/v1
+    key_env: SAMBANOVA_API_KEY
+    litellm_provider: openai
+    key_url: https://cloud.sambanova.ai/apis
+    free_note: "Free tier with no card: fast DeepSeek, Llama and GPT-OSS, but only 20 requests a day per model."
+    verified_on: 2026-10-12
+    models:
+      - id: DeepSeek-V3.1
+        tiers: [chat, coding, reasoning]
+        limits: {rpm: 20, rpd: 20, tpd: 200000}
+        intelligence: 78
+        speed: 75
+        context_window: 128000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: gpt-oss-120b
+        tiers: [chat, coding, reasoning]
+        limits: {rpm: 20, rpd: 20, tpd: 200000}
+        intelligence: 75
+        speed: 85
+        context_window: 128000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: Meta-Llama-3.3-70B-Instruct
+        tiers: [chat, coding]
+        limits: {rpm: 20, rpd: 20, tpd: 200000}
+        intelligence: 60
+        speed: 85
+        context_window: 128000
+        supports_tools: true
+        may_train_on_prompts: true
+
+  # No key needed: OVHcloud AI Endpoints serves anonymous callers at 2 requests/min
+  # per IP and per model (docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/
+  # ai-endpoints-capabilities). With an access key it bills the user's Public Cloud
+  # project, so zhunt should be used here without one. Hosted in France; OVHcloud
+  # says user data is "never stored or used for model training"
+  # (ovhcloud.com/en/public-cloud/free-ai-api). Ids and context from its live /models
+  # and one anonymous tool call per model on 2026-10-12.
+  ovh:
+    name: OVHcloud AI Endpoints (no key needed)
+    base_url: https://oai.endpoints.kepler.ai.cloud.ovh.net/v1
+    key_env: OVH_AI_ENDPOINTS_ACCESS_TOKEN
+    litellm_provider: openai
+    keyless: true
+    key_url: https://www.ovhcloud.com/en/public-cloud/ai-endpoints/
+    free_note: "Works with no key, hosted in the EU, no training on prompts; 2 requests a minute per model. Adding a key makes it paid."
+    verified_on: 2026-10-12
+    models:
+      - id: gpt-oss-120b
+        tiers: [chat, coding, reasoning]
+        limits: {rpm: 2}
+        intelligence: 75
+        speed: 55
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: Qwen3.8-27B
+        tiers: [chat, coding, long-context]
+        limits: {rpm: 2}
+        intelligence: 60
+        speed: 50
+        context_window: 262144
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: Meta-Llama-3_3-70B-Instruct
+        tiers: [chat, coding]
+        limits: {rpm: 2}
+        intelligence: 60
+        speed: 50
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: Mistral-Small-3.2-24B-Instruct-2506
+        tiers: [chat]
+        limits: {rpm: 2}
+        intelligence: 50
+        speed: 55
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+
   # Premium models for zhunt Pro's fallback, called directly with the user's own
   # paid key for each company (each provider is optional). Used only after every
   # free model is busy, only with Pro and `zhunt premium on`, under a monthly cap.

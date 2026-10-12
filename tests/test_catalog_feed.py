@@ -451,3 +451,19 @@ def test_check_is_quiet_when_lists_match_and_flags_stale_terms(tmp_path):
     assert not attention and "Nothing needs a look." in report
     report, attention = _check(transport, {}, tmp_path, verified="2026-09-01")
     assert attention and "not re-read for 41 days" in report
+
+
+def test_check_ignores_speech_and_embedding_models_in_chat_only_lists(tmp_path):
+    import httpx
+    from datetime import date
+
+    path = tmp_path / "catalog.yaml"
+    path.write_text(
+        "version: 1\nproviders:\n"
+        "  ovh: {name: OVH, base_url: 'https://o.test/v1', key_env: OVH_KEY, keyless: true, verified_on: 2026-10-12, models: [{id: chat}]}\n"
+    )
+    listed = [{"id": "chat", "max_completion_tokens": 131072}, {"id": "whisper", "max_completion_tokens": 0}, {"id": "bge-m3"}]
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"data": listed}))
+    with httpx.Client(transport=transport) as client:
+        report, attention = catalog_tool.check(path, today=date(2026, 10, 12), keys={}, client=client)
+    assert not attention and "Model list matches (1 models)" in report
