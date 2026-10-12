@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -18,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from zhunt.auth import remove_env_value, save_env_value
 from zhunt import images, llm
 from zhunt.agent.runner import AgentRunner, parse_interval
-from zhunt.agent.tools import AgentSettings
+from zhunt.agent import email_tools
+from zhunt.agent.tools import AgentSettings, ToolError
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
@@ -385,6 +387,41 @@ def build_router(
         if not runner.remove_loop(loop_id):
             raise HTTPException(404, "no such loop")
         return {"id": loop_id}
+
+    @router.get("/email/status")
+    def email_status() -> dict[str, Any]:
+        return email_tools.status()
+
+    @router.put("/email/connect")
+    async def email_connect(request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=2048)
+        if not isinstance(body, dict):
+            raise HTTPException(400, "send a JSON object")
+        address, password = str(body.get("address", "")).strip(), str(body.get("password", "")).replace(" ", "").strip()
+        preset = email_tools.PRESETS.get(str(body.get("provider", "")))
+        imap = preset["imap"] if preset else str(body.get("imap", "")).strip()
+        smtp = preset["smtp"] if preset else str(body.get("smtp", "")).strip()
+        if "@" not in address or len(address) > 254:
+            raise HTTPException(400, "enter your email address")
+        if not 4 <= len(password) <= 200:
+            raise HTTPException(400, "enter the app password from your email account's security settings")
+        if not (email_tools.valid_hostport(imap) and email_tools.valid_hostport(smtp)):
+            raise HTTPException(400, "choose a provider, or give the IMAP and SMTP servers as host:port")
+        account = email_tools.EmailAccount(address, password, imap, smtp)
+        try:
+            await asyncio.to_thread(email_tools.check_login, account)
+        except ToolError as error:
+            raise HTTPException(400, str(error)) from None
+        for name, value in ((email_tools.ADDRESS_ENV, address), (email_tools.PASSWORD_ENV, password),
+                            (email_tools.IMAP_ENV, imap), (email_tools.SMTP_ENV, smtp)):
+            save_env_value(name, value, dirs.env_file)
+        return {"connected": True, "address": address}
+
+    @router.delete("/email/connect")
+    def email_disconnect() -> dict[str, Any]:
+        for name in (email_tools.ADDRESS_ENV, email_tools.PASSWORD_ENV, email_tools.IMAP_ENV, email_tools.SMTP_ENV):
+            remove_env_value(name, dirs.env_file)
+        return {"connected": False}
 
     @router.get("/wallpaper")
     def get_wallpaper() -> dict[str, Any]:

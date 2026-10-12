@@ -125,6 +125,11 @@ export const api = {
     loop: (body) => request('/zhunt/api/agent/loops', { method: 'POST', json: body }),
     unloop: (id) => request('/zhunt/api/agent/loops/' + encodeURIComponent(id), { method: 'DELETE' }),
   },
+  email: {
+    status: () => request('/zhunt/api/email/status'),
+    connect: (body) => request('/zhunt/api/email/connect', { method: 'PUT', json: body }),
+    disconnect: () => request('/zhunt/api/email/connect', { method: 'DELETE' }),
+  },
   wallpaper: {
     get: () => request('/zhunt/api/wallpaper'),
     put: (image) => request('/zhunt/api/wallpaper', { method: 'PUT', json: { image } }),

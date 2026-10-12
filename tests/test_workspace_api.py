@@ -35,6 +35,10 @@ ENV_NAMES = (
     "GEMINI_API_KEY",
     "GROQ_API_KEY",
     "CEREBRAS_API_KEY",
+    "ZHUNT_EMAIL_ADDRESS",
+    "ZHUNT_EMAIL_PASSWORD",
+    "ZHUNT_EMAIL_IMAP",
+    "ZHUNT_EMAIL_SMTP",
 )
 
 
@@ -1011,3 +1015,26 @@ def test_an_agent_task_runs_end_to_end_through_zhunts_own_routing(tmp_path):
     assert {t["function"]["name"] for t in first["tools"]} >= {"web_search", "list_files", "write_file"}
     assert first["model"].endswith("coder")  # the only tool-capable free model in the test catalog
     assert state["tasks"][0]["id"] == task["id"] and bad.status_code == 400
+
+
+def test_email_connects_only_after_a_real_login_and_never_reveals_the_password():
+    from zhunt.agent.tools import ToolError
+
+    body = {"provider": "gmail", "address": "me@gmail.com", "password": "abcd efgh ijkl mnop"}
+    with patch("zhunt.agent.email_tools.check_login", side_effect=ToolError("the email server refused the login")), workspace(AsyncMock(), env=ENV) as (client, _):
+        refused = client.put("/zhunt/api/email/connect", headers=headers(), json=body)
+        nothing_saved = not client.dirs.env_file.exists() or "ZHUNT_EMAIL" not in client.dirs.env_file.read_text()
+    with patch("zhunt.agent.email_tools.check_login", return_value=None), workspace(AsyncMock(), env=ENV) as (client, _):
+        ok = client.put("/zhunt/api/email/connect", headers=headers(), json=body)
+        status = client.get("/zhunt/api/email/status", headers=headers())
+        tools = {t["name"] for t in client.get("/zhunt/api/agent", headers=headers()).json()["tools"]}
+        saved = client.dirs.env_file.read_text()
+        client.delete("/zhunt/api/email/connect", headers=headers())
+        after = client.get("/zhunt/api/email/status", headers=headers()).json()
+
+    assert refused.status_code == 400 and nothing_saved
+    assert ok.json() == {"connected": True, "address": "me@gmail.com"}
+    assert 'ZHUNT_EMAIL_PASSWORD="abcdefghijklmnop"' in saved and 'ZHUNT_EMAIL_IMAP="imap.gmail.com:993"' in saved
+    assert "abcdefghijklmnop" not in status.text and status.json()["connected"] is True
+    assert {"list_emails", "read_email", "draft_email", "send_email"} <= tools
+    assert after["connected"] is False

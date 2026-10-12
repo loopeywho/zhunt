@@ -179,6 +179,14 @@ link-local addresses are refused), `list_files`, `read_file` (read risk), `write
 
 Limits: 12 model steps per task (24 in goal mode), approvals time out after 30 minutes.
 
+Email (when connected): `list_emails`, `read_email` (read risk; IMAP `BODY.PEEK`, mailbox
+opened read-only, so nothing is marked read), `draft_email` (write: IMAP APPEND to the
+`\Drafts` special-use folder), `send_email` (send: always approved, full message shown).
+`GET /email/status` -> `{connected, address, presets}` (never the password);
+`PUT /email/connect {"provider": "gmail"|"icloud"|"yahoo", "address", "password"}` or
+`{"imap": "host:port", "smtp": "host:port", ...}` logs in over IMAP first and saves
+`ZHUNT_EMAIL_*` to `~/.zhunt/env` only on success; `DELETE /email/connect` removes them.
+
 ## Plan: `GET /zhunt/api/plan`
 
 ```json

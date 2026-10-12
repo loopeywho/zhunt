@@ -13,12 +13,13 @@ export const COMMANDS = [
   ['/unloop', '<id>', 'stop a loop'],
   ['/web', '<task>', 'only use web research tools'],
   ['/files', '<task>', 'only use the shared-folder tools'],
+  ['/email', '<task>', 'only use your email (connect it in Connect)'],
   ['/folders', '<path>, <path>', 'choose the folders the agent may use'],
   ['/stop', '', 'stop the running task'],
   ['/clear', '', 'clear this window'],
   ['/help', '', 'show these commands'],
 ];
-const TOOLSETS = { web: ['web_search', 'open_page'], files: ['list_files', 'read_file', 'write_file', 'move_file'] };
+const TOOLSETS = { web: ['web_search', 'open_page'], files: ['list_files', 'read_file', 'write_file', 'move_file'], email: ['list_emails', 'read_email', 'draft_email', 'send_email'] };
 
 // '/loop 2h check X' -> {cmd: 'loop', args: '2h check X'}; plain text -> {cmd: null, args: text}
 export function parseCommand(text) {
@@ -103,6 +104,7 @@ export function agentTile(svc) {
       h('p', { class: 'empty-detail' }, 'Give it a task and it works through it with free models: searching the web, reading pages, and working with files in folders you share. It always asks before changing anything. Type / for commands.'),
       h('div', { class: 'suggest' }, [
         'Find three free alternatives to Notion and compare them, with sources',
+        '/email Triage my inbox: what needs a reply today? Draft short replies for those.',
         '/goal Write a one-page summary of today\'s AI news to news.md',
         '/loop 1h check the Groq status page and tell me if anything is down',
       ].map((t) => h('button', { class: 'suggest-btn', type: 'button', onclick: () => { input.value = t; input.focus(); } }, t)))));
@@ -133,7 +135,7 @@ export function agentTile(svc) {
     }
     let body = { goal: args };
     if (cmd === 'goal') body = { goal: args, mode: 'goal' };
-    else if (cmd === 'web' || cmd === 'files') body = { goal: args, tools: TOOLSETS[cmd] };
+    else if (cmd === 'web' || cmd === 'files' || cmd === 'email') body = { goal: args, tools: TOOLSETS[cmd] };
     else if (cmd) { note(`Unknown command /${cmd}. Type /help.`, true); return; }
     if (!body.goal) { note('Tell the agent what to do after the command.', true); return; }
     try {
@@ -200,10 +202,11 @@ export function agentTile(svc) {
       };
       approve.addEventListener('click', () => decide(true));
       decline.addEventListener('click', () => decide(false));
-      const preview = e.args?.content ? h('pre', { class: 'agent-result' }, String(e.args.content).slice(0, 1200)) : null;
+      const long = e.args?.content ?? e.args?.body;
+      const preview = long ? h('pre', { class: 'agent-result' }, String(long).slice(0, 1600)) : null;
       node = h('div', { class: 'card tone-accent agent-approval', 'data-call': e.call_id },
-        h('h3', { class: 'card-title' }, `The agent wants to ${e.name.replace('_', ' ')}`),
-        h('p', { class: 'card-detail' }, argsLine({ ...e.args, content: undefined })), preview,
+        h('h3', { class: 'card-title' }, e.name === 'send_email' ? 'The agent wants to SEND this email' : `The agent wants to ${e.name.replace('_', ' ')}`),
+        h('p', { class: 'card-detail' }, argsLine({ ...e.args, content: undefined, body: undefined })), preview,
         h('div', { class: 'acts' }, approve, decline));
     } else if (e.kind === 'decision') {
       const card = log.querySelector(`.agent-approval[data-call="${e.call_id}"]`);

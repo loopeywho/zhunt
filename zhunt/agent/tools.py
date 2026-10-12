@@ -267,4 +267,8 @@ def web_tools() -> list[Tool]:
 
 
 def all_tools(settings: AgentSettings) -> dict[str, Tool]:
-    return {t.name: t for t in [*web_tools(), *file_tools(settings)]}
+    from zhunt.agent.email_tools import EmailAccount, email_tools
+
+    account = EmailAccount.from_env()
+    extra = email_tools(account) if account else []
+    return {t.name: t for t in [*web_tools(), *file_tools(settings), *extra]}

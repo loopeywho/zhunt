@@ -15,6 +15,55 @@ export function connectTile(svc) {
   const el = h('div', { class: 'connect' }, intro, list);
   const open = new Set(); // providers whose paste box is showing
   let images = null; // /images/status
+  let mail = null; // /email/status
+  const loadMail = () => api.email.status().then((s) => { mail = s; paint(); }, () => {});
+  loadMail();
+
+  // Email for the agent: provider preset (or own servers), address and an app password.
+  function emailRow() {
+    const actions = [];
+    if (!open.has('email')) actions.push(h('button', { class: 'act primary', type: 'button', onclick: () => { open.add('email'); paint(); focusInput('email'); } }, mail.connected ? 'Change' : 'Connect email'));
+    if (mail.connected) actions.push(h('button', { class: 'act ghost', type: 'button', onclick: async () => { await api.email.disconnect(); svc.toast('email disconnected'); loadMail(); } }, 'Disconnect'));
+    let form = null;
+    if (open.has('email')) {
+      const presets = mail.presets || {};
+      const provider = h('select', { class: 'connect-input', 'aria-label': 'Email provider' },
+        ...Object.entries(presets).map(([k, p]) => h('option', { value: k }, p.name)), h('option', { value: 'other' }, 'Other (my own servers)'));
+      const address = h('input', { class: 'connect-input', type: 'email', autocomplete: 'off', 'aria-label': 'Email address', placeholder: 'you@example.com' });
+      const password = h('input', { class: 'connect-input', type: 'password', autocomplete: 'off', 'aria-label': 'App password', placeholder: 'app password (not your normal password)' });
+      const imap = h('input', { class: 'connect-input', 'aria-label': 'IMAP server', placeholder: 'imap.example.com:993', hidden: true });
+      const smtp = h('input', { class: 'connect-input', 'aria-label': 'SMTP server', placeholder: 'smtp.example.com:465', hidden: true });
+      const help = h('p', { class: 'quiet connect-note-help' });
+      const note = h('p', { class: 'quiet connect-note', role: 'status' });
+      const paintHelp = () => {
+        const p = presets[provider.value];
+        imap.hidden = smtp.hidden = !!p;
+        help.replaceChildren(...(p ? [p.note + ' ', h('a', { href: p.help, target: '_blank', rel: 'noopener' }, 'Make an app password')] : ['Enter your provider\'s IMAP and SMTP servers (host:port).']));
+      };
+      provider.addEventListener('change', paintHelp);
+      paintHelp();
+      const save = h('button', { class: 'act primary', type: 'submit' }, 'Connect');
+      form = h('form', { class: 'connect-form', 'data-for': 'email' }, provider, address, password, imap, smtp, help, save,
+        h('button', { class: 'act ghost', type: 'button', onclick: () => { open.delete('email'); paint(); } }, 'Cancel'), note);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        save.disabled = true;
+        note.textContent = 'Checking the login...';
+        try {
+          await api.email.connect({ provider: provider.value, address: address.value, password: password.value, imap: imap.value, smtp: smtp.value });
+          password.value = '';
+          open.delete('email');
+          svc.toast('email connected');
+          loadMail();
+        } catch (err) { note.textContent = err.message || String(err); } finally { save.disabled = false; }
+      });
+    }
+    return h('article', { class: 'connect-row' + (mail.connected ? ' is-set' : ''), 'data-platform': 'email' },
+      h('div', { class: 'connect-top' }, h('strong', {}, 'Email for the agent'), mail.connected ? chip('connected', 'ok') : chip('not connected', ''),
+        mail.connected ? h('span', { class: 'quiet' }, mail.address) : null),
+      h('p', { class: 'quiet' }, 'Lets the agent sort your inbox and draft replies. It never marks mail read, and saving drafts or sending always asks you first.'),
+      h('div', { class: 'acts' }, actions), form);
+  }
   const loadImages = () => api.images.status().then((s) => { images = s; paint(); }, () => {});
   loadImages();
 
@@ -61,6 +110,7 @@ export function connectTile(svc) {
       trainers.length ? trainingSwitch(!!snap.data.policy?.allow_training, trainers) : null,
       ...free.map(row),
     ].filter(Boolean);
+    if (mail) rows.push(h('h3', { class: 'connect-h' }, 'Email (agent)'), emailRow());
     if (images) rows.push(h('h3', { class: 'connect-h' }, 'AI pictures (free)'), picturesRow());
     if (paid.length) rows.push(h('h3', { class: 'connect-h' }, 'Premium (Pro, billed by the provider)'), ...paid.map(row));
     swapIfChanged(list, rows);

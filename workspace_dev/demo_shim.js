@@ -40,6 +40,28 @@
     var ev = function (kind, data) { var e = Object.assign({ seq: t.events.length, ts: now(), kind: kind }, data || {}); t.events.push(e); return e; };
     ev('goal', { text: t.goal, mode: t.mode });
     var wantsFile = /\.(md|txt)\b|save|write/i.test(t.goal);
+    if (/inbox|email|e-mail|triage/i.test(t.goal)) {
+      var m = 'groq/openai/gpt-oss-120b';
+      var mailSteps = [
+        function () { ev('tool', { name: 'list_emails', args: { unread_only: true, limit: 10 }, call_id: 'm1', ok: true, ms: 820, model: m,
+          result: 'INBOX: 4 message(s)\n- id 812 | UNREAD | from Sam Lee | Lunch Friday?\n- id 811 | UNREAD | from Bank | Your statement is ready\n- id 809 | UNREAD | from Priya (client) | Quote for 200 labels\n- id 806 | UNREAD | from Newsletter | 10 AI tools this week' }); },
+        function () { ev('tool', { name: 'read_email', args: { id: '809' }, call_id: 'm2', ok: true, ms: 410, model: m,
+          result: 'From: Priya <priya@example.com>\nSubject: Quote for 200 labels\n\nHi, could you send a price for 200 chilli sauce labels by Wednesday?' }); },
+        function () { t.state = 'waiting'; ev('approval', { name: 'draft_email', args: { to: 'priya@example.com', subject: 'Re: Quote for 200 labels', body: 'Hi Priya,\n\nThanks for asking. I will send the quote for 200 labels by Tuesday.\n\nBest wishes' }, call_id: 'm3', model: m }); },
+      ];
+      var j = 0;
+      var nextMail = function () {
+        if (t.state === 'stopped') return;
+        if (t.state === 'waiting') { setTimeout(nextMail, 400); return; }
+        if (j < mailSteps.length) { mailSteps[j++](); setTimeout(nextMail, 1100); return; }
+        var drafted = t.events.some(function (e) { return e.kind === 'decision' && e.approved; });
+        t.answer = '**Needs a reply today**\n- Priya (client): quote for 200 labels, due Wednesday. ' + (drafted ? 'Draft reply saved in Drafts.' : 'You declined the draft.') + '\n- Sam: lunch on Friday?\n\n**Read later**\n- Bank: statement ready\n\n**Ignore**\n- Newsletter: 10 AI tools this week';
+        ev('answer', { text: t.answer, model: m }); t.state = 'done';
+      };
+      t._ev = ev;
+      setTimeout(nextMail, 600);
+      return t;
+    }
     var steps = [
       function () { ev('thought', { text: 'I will search the web first, then read the most useful page.', model: 'groq/openai/gpt-oss-120b' }); },
       function () { ev('tool', { name: 'web_search', args: { query: t.goal.slice(0, 60) }, call_id: 'c1', ok: true, ms: 640, model: 'groq/openai/gpt-oss-120b',
@@ -315,6 +337,12 @@
       if (tm[3] === 'decide') { task._ev('decision', { call_id: body.call_id, approved: !!body.approve }); task.state = 'running'; return Promise.resolve(json(200, { ok: true })); }
       return Promise.resolve(json(200, agentDetail(task, Number(url.searchParams.get('since') || 0))));
     }
+    if (rest === 'email/status') return Promise.resolve(json(200, { connected: !!AGENT.mail, address: AGENT.mail || null, presets: {
+      gmail: { name: 'Gmail', help: 'https://myaccount.google.com/apppasswords', note: 'Needs 2-Step Verification on, then an app password.' },
+      icloud: { name: 'iCloud Mail', help: 'https://account.apple.com', note: 'Sign-In and Security > App-Specific Passwords.' },
+      yahoo: { name: 'Yahoo Mail', help: 'https://login.yahoo.com/account/security', note: 'Account Security > Generate app password.' } } }));
+    if (rest === 'email/connect' && method === 'PUT') { AGENT.mail = (body && body.address) || 'you@example.com'; return Promise.resolve(json(200, { connected: true, address: AGENT.mail })); }
+    if (rest === 'email/connect' && method === 'DELETE') { AGENT.mail = null; return Promise.resolve(json(200, { connected: false })); }
     if (rest === 'wallpaper') {
       if (method === 'PUT') { WALLPAPER = body && body.image; return Promise.resolve(json(200, { wallpaper: true })); }
       if (method === 'DELETE') { WALLPAPER = null; return Promise.resolve(json(200, { wallpaper: false })); }
