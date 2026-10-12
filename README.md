@@ -64,8 +64,11 @@ Providers, Logs, Connect), so switching keeps every conversation and half-typed 
 **Agent** (the centre window) does tasks for you with free models: it searches the web,
 reads pages and works with files in folders you share, showing every step, and asks before
 it writes or moves anything. Connect an email account (Gmail, iCloud, Yahoo or your own server, with an app password)
-and it triages your inbox and drafts replies; sending always asks first. Slash commands: `/goal` (keep going until an outcome is met),
-`/loop 1h <task>` (repeat while zhunt runs), `/web`, `/files`, `/email`, `/folders`, `/stop`, `/help`.
+and it triages your inbox and drafts replies; sending always asks first. For websites that need
+clicking (forms, bookings), it drives its own browser window: your installed Chrome with a
+separate, clean profile; you log in yourself, it never types passwords, and every click or
+submit asks first. Slash commands: `/goal` (keep going until an outcome is met),
+`/loop 1h <task>` (repeat while zhunt runs), `/web`, `/files`, `/email`, `/browser`, `/folders`, `/stop`, `/help`.
 **Team chat** puts several bots in one conversation: each has its own instructions and
 preferred model type, you @mention one, and they hand work to each other with @mentions
 (bots are JSON files in `~/.zhunt/bots/`). **Connect** adds free keys without a terminal,

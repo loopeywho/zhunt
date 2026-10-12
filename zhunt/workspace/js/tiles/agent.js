@@ -14,12 +14,13 @@ export const COMMANDS = [
   ['/web', '<task>', 'only use web research tools'],
   ['/files', '<task>', 'only use the shared-folder tools'],
   ['/email', '<task>', 'only use your email (connect it in Connect)'],
+  ['/browser', '<task>', 'use the agent\'s own browser window for a website task'],
   ['/folders', '<path>, <path>', 'choose the folders the agent may use'],
   ['/stop', '', 'stop the running task'],
   ['/clear', '', 'clear this window'],
   ['/help', '', 'show these commands'],
 ];
-const TOOLSETS = { web: ['web_search', 'open_page'], files: ['list_files', 'read_file', 'write_file', 'move_file'], email: ['list_emails', 'read_email', 'draft_email', 'send_email'] };
+const TOOLSETS = { web: ['web_search', 'open_page'], files: ['list_files', 'read_file', 'write_file', 'move_file'], email: ['list_emails', 'read_email', 'draft_email', 'send_email'], browser: ['browser_open', 'browser_read', 'browser_follow_link', 'browser_type', 'browser_click', 'browser_press_enter'] };
 
 // '/loop 2h check X' -> {cmd: 'loop', args: '2h check X'}; plain text -> {cmd: null, args: text}
 export function parseCommand(text) {
@@ -135,7 +136,7 @@ export function agentTile(svc) {
     }
     let body = { goal: args };
     if (cmd === 'goal') body = { goal: args, mode: 'goal' };
-    else if (cmd === 'web' || cmd === 'files' || cmd === 'email') body = { goal: args, tools: TOOLSETS[cmd] };
+    else if (cmd in TOOLSETS) body = { goal: args, tools: TOOLSETS[cmd] };
     else if (cmd) { note(`Unknown command /${cmd}. Type /help.`, true); return; }
     if (!body.goal) { note('Tell the agent what to do after the command.', true); return; }
     try {
@@ -205,7 +206,9 @@ export function agentTile(svc) {
       const long = e.args?.content ?? e.args?.body;
       const preview = long ? h('pre', { class: 'agent-result' }, String(long).slice(0, 1600)) : null;
       node = h('div', { class: 'card tone-accent agent-approval', 'data-call': e.call_id },
-        h('h3', { class: 'card-title' }, e.name === 'send_email' ? 'The agent wants to SEND this email' : `The agent wants to ${e.name.replace('_', ' ')}`),
+        h('h3', { class: 'card-title' }, e.name === 'send_email' ? 'The agent wants to SEND this email'
+          : e.name === 'browser_click' ? `The agent wants to click [${e.args?.index}] in its browser`
+            : e.name === 'browser_press_enter' ? `The agent wants to press Enter in [${e.args?.index}] (submits)` : `The agent wants to ${e.name.replace('_', ' ')}`),
         h('p', { class: 'card-detail' }, argsLine({ ...e.args, content: undefined, body: undefined })), preview,
         h('div', { class: 'acts' }, approve, decline));
     } else if (e.kind === 'decision') {
