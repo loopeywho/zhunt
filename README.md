@@ -99,8 +99,12 @@ Licence keys are verified offline; zhunt never phones home to check them.
 zhunt upgrade                 # pricing page
 zhunt licence activate        # paste the key you got after checkout
 zhunt licence status          # plan in effect and what it includes
-zhunt licence renew           # fresh key after your subscription renews (the only call to our website)
+zhunt licence renew           # fresh key after your subscription renews (asks our website)
 ```
+
+Pro also keeps the free-model catalog current: switch on **Keep the free-model list up
+to date** in the workspace Connect window and zhunt checks for a newly verified catalog
+every 12 hours. It is off until you turn it on.
 
 The business model and launch plan are in `docs/LAUNCH.md`.
 
@@ -110,6 +114,19 @@ The catalog is `zhunt/catalog.yaml`: Groq, Google AI Studio and Cerebras, each
 recorded from the provider's own documentation with a verification date. Free tiers
 change often, so re-check a row before relying on it. Limits a provider does not
 publish are left unset and learned from 429 responses.
+
+Between releases a newer catalog can be fetched as a signed feed:
+
+```console
+zhunt catalog status    # catalog in use, its version and source (fetches nothing)
+zhunt catalog update    # fetch once: Pro gets the latest, Free this month's snapshot
+```
+
+A feed is used only if its Ed25519 signature (a catalog key separate from the
+licence key), expiry date and schema check out and it is newer than the catalog in
+use; zhunt never downgrades. The verified file is cached in `~/.zhunt/catalog.json`
+and a running zhunt switches to it within a minute, keeping its quota and cooldown
+state. If anything fails, zhunt keeps the catalog it shipped with and says why.
 
 | Provider | Key variable | Prompt-training policy used by Zhunt |
 | --- | --- | --- |
@@ -128,7 +145,14 @@ publish are left unset and learned from 429 responses.
 - The master key that protects the local API is created on first run. `zhunt open`
   passes it in the URL fragment, which the browser never sends to a server.
 - Request telemetry stays in `~/.zhunt/telemetry.jsonl` (no prompt or response
-  content) and Zhunt does not phone home.
+  content). Zhunt never phones home, unless you turn on catalog updates.
+- **Catalog updates are off by default.** Nothing is fetched unless you run
+  `zhunt catalog update` or switch on updates (Pro) in the Connect window. Each check
+  is one HTTPS GET of a public, static file
+  (`https://zhunt.kindredwildcat.com/catalog/latest.json` for Pro,
+  `.../catalog/monthly.json` for Free) with the User-Agent `zhunt` and no cookie,
+  licence, key, version or other identifier. Like any download, the web host sees your
+  IP address. Licence renewal (`zhunt licence renew`) is the only other call.
 - Routing through Zhunt uses your provider keys, not a flat-rate subscription such as
   ChatGPT Pro, and the answering model is not the one the tool names.
 

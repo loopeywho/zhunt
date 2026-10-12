@@ -12,7 +12,7 @@ company number]). Contact: kwokwingfoods@gmail.com.
 
 Zhunt runs on your computer. We do not run a server that your prompts pass through, we
 do not receive your prompts, responses or provider API keys, and the app does not phone
-home. The only personal data we handle is what is needed to sell you Pro: your email
+home unless you turn on catalog updates (below). The only personal data we handle is what is needed to sell you Pro: your email
 address and subscription status, via Stripe.
 
 ## What stays on your computer (we never receive it)
@@ -46,6 +46,11 @@ paid API traffic is not used for training by default.
   or run `zhunt licence renew`, it asks Stripe about your subscription and returns a
   signed key. It does not store this data; Cloudflare may keep standard request logs
   ([check Cloudflare plan/log settings]).
+- **Catalog updates** (off unless you run `zhunt catalog update` or switch them on in
+  the Connect window): the app downloads a public, signed file listing free models from
+  zhunt.kindredwildcat.com, at most every 12 hours. The request carries no cookie,
+  licence, key or other identifier; Cloudflare, which hosts the file, sees your IP
+  address like any website visit ([check Cloudflare plan/log settings]).
 - **Emails you send us** (feedback, support) are kept to answer you.
 
 Lawful basis [GDPR, confirm]: performance of the contract (licence, billing),
