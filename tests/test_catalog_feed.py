@@ -402,3 +402,52 @@ def test_cli_update_failure_exits_non_zero_and_keeps_bundled(floor, monkeypatch)
     assert result.exit_code == 1
     assert "signature does not match" in result.output
     assert not feed.cache_path().exists()
+
+
+def _check(transport, keys, tmp_path, verified="2026-10-10"):
+    path = tmp_path / "catalog.yaml"
+    path.write_text(
+        "version: 1\nproviders:\n"
+        f"  groq: {{name: Groq, base_url: 'https://g.test/v1', key_env: GROQ_API_KEY, verified_on: {verified}, models: [{{id: a}}, {{id: b}}]}}\n"
+        f"  kilo: {{name: Kilo, base_url: 'https://k.test', key_env: KILO_API_KEY, keyless: true, verified_on: {verified}, models: [{{id: x/free}}]}}\n"
+        f"  cerebras: {{name: Cerebras, base_url: 'https://c.test/v1', key_env: CEREBRAS_API_KEY, verified_on: {verified}, models: [{{id: c}}]}}\n"
+        f"  openai: {{name: OpenAI, base_url: 'https://o.test/v1', key_env: OPENAI_API_KEY, verified_on: {verified}, models: [{{id: p, in: 0.1, out: 0.2}}]}}\n"
+    )
+    import httpx
+    from datetime import date
+
+    with httpx.Client(transport=httpx.MockTransport(transport)) as client:
+        return catalog_tool.check(path, today=date(2026, 10, 12), keys=keys, client=client)
+
+
+def test_check_reports_new_and_gone_models_and_skips_paid_and_keyless_gaps(tmp_path):
+    seen = []
+
+    def transport(request):
+        seen.append((request.url.host, request.headers.get("authorization")))
+        if request.url.host == "g.test":
+            return httpx.Response(200, json={"data": [{"id": "a"}, {"id": "new-one"}]})
+        return httpx.Response(200, json={"data": [{"id": "x/free"}, {"id": "y:free"}, {"id": "paid/model"}]})
+
+    import httpx
+
+    report, attention = _check(transport, {"GROQ_API_KEY": "k1"}, tmp_path)
+    assert attention
+    assert "No longer listed" in report and "`b`" in report and "`new-one`" in report
+    assert "`y:free`" in report and "paid/model" not in report  # gateways: only free ids
+    assert "no `CEREBRAS_API_KEY`" in report and "OpenAI" not in report
+    assert ("g.test", "Bearer k1") in seen and ("k.test", None) in seen
+
+
+def test_check_is_quiet_when_lists_match_and_flags_stale_terms(tmp_path):
+    import httpx
+
+    def transport(request):
+        ids = ["a", "b"] if request.url.host == "g.test" else ["x/free"]
+        return httpx.Response(200, json={"data": [{"id": i} for i in ids]})
+
+    keys = {"GROQ_API_KEY": "k", "CEREBRAS_API_KEY": "k"}
+    report, attention = _check(lambda r: transport(r) if r.url.host != "c.test" else httpx.Response(200, json={"data": [{"id": "c"}]}), keys, tmp_path)
+    assert not attention and "Nothing needs a look." in report
+    report, attention = _check(transport, {}, tmp_path, verified="2026-09-01")
+    assert attention and "not re-read for 41 days" in report

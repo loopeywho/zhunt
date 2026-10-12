@@ -7,9 +7,12 @@ not mint licences, and the other way round.
             to paste into zhunt/catalog_feed.py PUBLIC_KEYS
   publish   validate zhunt/catalog.yaml, stamp its version, sign it and write
             site/catalog/latest.json (+ this month's snapshot, the first time each month)
+  check     ask each free provider which models it lists now and report what differs
+            from zhunt/catalog.yaml (read-only; the weekly review starts here)
 
   uv run python scripts/catalog_tool.py keygen --out ~/.zhunt-signing/catalog-2026-10.pem --kid cat-2026-10
   uv run python scripts/catalog_tool.py publish --key ~/.zhunt-signing/catalog-2026-10.pem --kid cat-2026-10
+  uv run python scripts/catalog_tool.py check --out check-report.md
   uv run python scripts/build_site.py && cd dist/site && npx wrangler pages deploy . --project-name zhunt --branch main
 """
 
@@ -26,6 +29,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -139,6 +143,77 @@ def publish(key: Path, kid: str, *, catalog_path: Path, out: Path, now: int, new
     print("  uv run python scripts/build_site.py && cd dist/site && npx wrangler pages deploy . --project-name zhunt --branch main")
 
 
+# ---- check: what the providers list today -----------------------------------------------
+
+STALE_DAYS = 7
+# Gateways that also list paid models: only ids that say they are free become candidates
+# (FreeLLMAPI does the same with a short approved list instead of trusting /models).
+FREE_ONLY = {"kilo"}
+
+
+def _keys() -> dict[str, str]:
+    from zhunt.auth import read_env_values
+
+    return {**read_env_values(), **os.environ}
+
+
+def list_models(platform: str, provider: dict[str, Any], key: str, client: httpx.Client) -> set[str]:
+    """The model ids a provider's own model list returns for this key."""
+
+    if provider.get("litellm_provider") == "gemini":
+        response = client.get(f"{provider['base_url'].rstrip('/')}/v1beta/models", headers={"x-goog-api-key": key}, params={"pageSize": 1000})
+        response.raise_for_status()
+        ids = {m["name"].removeprefix("models/") for m in response.json().get("models", [])
+               if "generateContent" in m.get("supportedGenerationMethods", [])}
+    else:
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        response = client.get(f"{provider['base_url'].rstrip('/')}/models", headers=headers)
+        response.raise_for_status()
+        ids = {m["id"] for m in response.json().get("data", []) if isinstance(m, dict) and "id" in m}
+    if platform in FREE_ONLY:
+        ids = {i for i in ids if i.endswith(":free") or i.endswith("/free")}
+    return ids
+
+
+def check(catalog_path: Path, *, today: date, keys: dict[str, str], client: httpx.Client) -> tuple[str, bool]:
+    """A markdown report and whether anything needs a look."""
+
+    data = yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    lines = [f"# Catalog check, {today.isoformat()}", ""]
+    attention = False
+    for platform, provider in data["providers"].items():
+        models = provider.get("models", [])
+        if any(m.get("in") or m.get("out") for m in models):
+            continue  # premium providers are re-checked by hand
+        known = {m["id"] for m in models}
+        age = (today - date.fromisoformat(str(provider["verified_on"]))).days
+        lines.append(f"## {provider.get('name', platform)} (`{platform}`), verified {age} days ago")
+        if age > STALE_DAYS:
+            attention = True
+            lines.append(f"- Free-tier terms not re-read for {age} days: check {provider.get('key_url', 'the docs')}")
+        key = keys.get(provider["key_env"], "")
+        if not key and not provider.get("keyless"):
+            lines += [f"- Skipped the live list: no `{provider['key_env']}` here (`zhunt keys add {platform}`)", ""]
+            continue
+        try:
+            listed = list_models(platform, provider, key, client)
+        except (httpx.HTTPError, ValueError, KeyError) as error:
+            attention = True
+            lines += [f"- Could not read the model list: {type(error).__name__} {getattr(getattr(error, 'response', None), 'status_code', '')}".rstrip(), ""]
+            continue
+        gone, new = sorted(known - listed), sorted(listed - known)
+        attention = attention or bool(gone or new)
+        lines += [f"- No longer listed (remove, or check it was renamed): `{i}`" for i in gone]
+        lines += [f"- Listed but not in the catalog (check it is free before adding): `{i}`" for i in new[:40]]
+        if len(new) > 40:
+            lines.append(f"- ...and {len(new) - 40} more")
+        if not gone and not new:
+            lines.append(f"- Model list matches ({len(known)} models)")
+        lines.append("")
+    lines.append("Nothing needs a look." if not attention else "Review the items above, edit zhunt/catalog.yaml, then publish.")
+    return "\n".join(lines) + "\n", attention
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -151,9 +226,19 @@ def main() -> None:
     p.add_argument("--catalog", type=Path, default=CATALOG)
     p.add_argument("--out", type=Path, default=OUT, help="where to write the feed files (default site/catalog)")
     p.add_argument("--new-snapshot", action="store_true", help="replace this month's snapshot with this catalog")
+    c = sub.add_parser("check")
+    c.add_argument("--catalog", type=Path, default=CATALOG)
+    c.add_argument("--out", type=Path, help="also write the report to this file")
     args = parser.parse_args()
     if args.cmd == "keygen":
         keygen(args.out, args.kid)
+    elif args.cmd == "check":
+        with httpx.Client(timeout=20) as client:
+            report, attention = check(args.catalog, today=date.today(), keys=_keys(), client=client)
+        print(report, end="")
+        if args.out:
+            args.out.write_text(report, encoding="utf-8")
+        sys.exit(1 if attention else 0)
     else:
         publish(args.key, args.kid, catalog_path=args.catalog, out=args.out, now=int(time.time()), new_snapshot=args.new_snapshot)
 
