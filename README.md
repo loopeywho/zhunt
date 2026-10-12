@@ -54,9 +54,9 @@ zhunt open                 # opens the workspace in your browser, already signed
 The workspace is its own desktop rather than a sidebar-and-chat app. Pick a window style
 in the top bar (or `Ctrl+Space g`):
 
-- **Floating** (after Hark): glass windows over a wallpaper that you drag by the header,
+- **Floating**: glass windows over a wallpaper that you drag by the header,
   resize from the corner, overlap, maximise (double-click) and minimise to the dock.
-- **Tiled** (after Omarchy / Hyprland): the same windows fill the screen in a split grid,
+- **Tiled**: the same windows fill the screen in a split grid,
   driven from the keyboard.
 
 Both styles share the same windows (Chat, Team chat, For you, Panels, Compare, Routing,
