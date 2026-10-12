@@ -157,14 +157,19 @@ def test_doctor_does_not_echo_config_content_when_yaml_is_malformed() -> None:
 
 
 def run_python(code: str, **env: str) -> str:
-    clean = {k: v for k, v in os.environ.items() if k != "LITELLM_LOCAL_MODEL_COST_MAP"}
     return subprocess.run(
-        [sys.executable, "-c", code], env={**clean, **env}, capture_output=True, text=True, check=True
+        [sys.executable, "-c", code], env={**os.environ, **env}, capture_output=True, text=True, check=True
     ).stdout.strip()
 
 
-def test_litellm_uses_its_bundled_price_table_by_default() -> None:
-    probe = "import zhunt, os; print(os.environ.get('LITELLM_LOCAL_MODEL_COST_MAP'))"
+def test_importing_the_daemon_opens_no_connection_and_loads_no_litellm() -> None:
+    # LiteLLM fetched its price table from GitHub on import; zhunt no longer uses it.
+    probe = (
+        "import socket, sys\n"
+        "calls = []\n"
+        "socket.socket.connect = lambda self, *a: calls.append(a)\n"
+        "import zhunt.cli, zhunt.server, zhunt.engine, zhunt.workspace_api, zhunt.llm\n"
+        "print('litellm' in sys.modules, calls)"
+    )
 
-    assert run_python(probe) == "True"
-    assert run_python(probe, LITELLM_LOCAL_MODEL_COST_MAP="False") == "False"  # explicit opt-out wins
+    assert run_python(probe) == "False []"

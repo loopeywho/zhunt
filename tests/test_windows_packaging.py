@@ -33,10 +33,10 @@ class WindowsPackagingTests(unittest.TestCase):
         installer = (ROOT / "packaging/windows/zhunt.iss").read_text(encoding="utf-8")
         self.assertIn("uninstall --all", installer)
 
-    def test_windows_build_includes_dynamic_tiktoken_encoding(self) -> None:
+    def test_windows_build_bundles_the_catalog_and_no_litellm(self) -> None:
         build = (ROOT / "packaging/windows/build.ps1").read_text(encoding="utf-8")
-        self.assertIn("--collect-all tiktoken", build)
-        self.assertIn("--hidden-import tiktoken_ext.openai_public", build)
+        self.assertNotIn("litellm", build)  # replaced by zhunt's own server (docs/SLIM_ENGINE.md)
+        self.assertNotIn("tiktoken", build)
         self.assertIn("--add-data", build)
         self.assertIn('"zhunt\\catalog.yaml"', build)
         self.assertIn('pip install "."', build)

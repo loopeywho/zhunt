@@ -21,10 +21,10 @@ class MacOSPackagingTests(unittest.TestCase):
         self.assertIn('"$BIN" uninstall --all', uninstaller)
         self.assertIn("pkgutil --forget", uninstaller)
 
-    def test_build_script_bundles_registry_and_tiktoken(self) -> None:
+    def test_build_script_bundles_registry_and_no_litellm(self) -> None:
         script = (ROOT / "packaging/macos/build.sh").read_text(encoding="utf-8")
-        self.assertIn("--collect-all tiktoken", script)
-        self.assertIn("--hidden-import tiktoken_ext.openai_public", script)
+        self.assertNotIn("litellm", script)  # replaced by zhunt's own server (docs/SLIM_ENGINE.md)
+        self.assertNotIn("tiktoken", script)
         self.assertIn("--add-data \"$ROOT/zhunt/catalog.yaml:zhunt\"", script)
         self.assertIn("--specpath \"$WORK\"", script)
         self.assertIn('pip install "$ROOT"', script)

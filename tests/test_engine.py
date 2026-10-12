@@ -5,14 +5,13 @@ from tempfile import TemporaryDirectory
 from unittest.mock import AsyncMock, patch
 
 import httpx
-import litellm
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from litellm.proxy import proxy_server
 
 from tests.catalog_fixtures import catalog_data, model, provider
 from zhunt.brain import Tier
+from zhunt import llm
 from zhunt.catalog import Catalog, Limits
 from zhunt.engine import (
     classify_failure,
@@ -39,8 +38,8 @@ TOOLS = [
 ]
 
 
-def ok(content: str = "hi", finish_reason: str = "stop") -> litellm.ModelResponse:
-    return litellm.ModelResponse(
+def ok(content: str = "hi", finish_reason: str = "stop") -> llm.ModelResponse:
+    return llm.ModelResponse(dict(
         id="r",
         model="x",
         choices=[
@@ -50,26 +49,21 @@ def ok(content: str = "hi", finish_reason: str = "stop") -> litellm.ModelRespons
                 "message": {"role": "assistant", "content": content},
             }
         ],
-    )
+    ))
 
 
 def provider_error(
-    cls=litellm.RateLimitError,
+    cls=llm.RateLimitError,
     status: int = 429,
     retry_after: int | None = None,
 ) -> Exception:
     headers = {"retry-after": str(retry_after)} if retry_after else {}
-    response = httpx.Response(
-        status,
-        headers=headers,
-        request=httpx.Request("POST", "https://fake.invalid/v1"),
-    )
-    return cls(message="boom", llm_provider="alpha", model="alpha/m", response=response)
+    return cls(message="boom", status_code=status, response_headers=httpx.Headers(headers))
 
 
 @contextmanager
 def daemon(provider_call: AsyncMock, *, env: dict[str, str], catalog=None):
-    """Run the free-tier daemon against a fake catalog with litellm patched."""
+    """Run the free-tier daemon against a fake catalog with the provider call patched."""
 
     with TemporaryDirectory() as directory:
         catalog_path = Path(directory) / "catalog.yaml"
@@ -83,7 +77,7 @@ def daemon(provider_call: AsyncMock, *, env: dict[str, str], catalog=None):
             "CEREBRAS_API_KEY": "",
         }
         with patch.dict(os.environ, {**clean, **env}), patch(
-            "litellm.acompletion", provider_call
+            "zhunt.llm.acompletion", provider_call
         ):
             app = create_proxy_app(
                 catalog_path=catalog_path if catalog is not False else None,
@@ -96,7 +90,7 @@ def daemon(provider_call: AsyncMock, *, env: dict[str, str], catalog=None):
 def post(client, body=CHAT):
     return client.post(
         "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {proxy_server.master_key}"},
+        headers={"Authorization": f"Bearer {os.environ['ZHUNT_MASTER_KEY']}"},
         json=body,
     )
 
@@ -236,7 +230,7 @@ def test_rate_limited_model_fails_over_and_is_benched() -> None:
 
 def test_several_failures_in_a_row_still_find_a_working_model() -> None:
     call = AsyncMock(
-        side_effect=[provider_error(), provider_error(status=500, cls=litellm.InternalServerError), ok()]
+        side_effect=[provider_error(), provider_error(status=500, cls=llm.InternalServerError), ok()]
     )
     env = {"FAKE_API_KEY": "k", "ZHUNT_ALLOW_TRAINING": "1"}
     with daemon(call, env=env) as (client, _):
@@ -257,7 +251,7 @@ def test_every_model_failing_ends_in_503_not_a_loop() -> None:
 
 
 def test_client_errors_do_not_bench_the_model_or_retry() -> None:
-    error = provider_error(cls=litellm.BadRequestError, status=400)
+    error = provider_error(cls=llm.BadRequestError, status=400)
     call = AsyncMock(side_effect=[error])
     with daemon(call, env={"FAKE_API_KEY": "k"}) as (client, hook):
         response = post(client)
@@ -277,7 +271,7 @@ def test_no_provider_key_means_no_call_and_a_503() -> None:
     call.assert_not_awaited()
 
 
-def test_prompt_training_provider_needs_opt_in_and_uses_litellms_gemini_name() -> None:
+def test_prompt_training_provider_needs_opt_in_and_uses_the_gemini_route() -> None:
     call = AsyncMock(return_value=ok())
     only_google = {"GEMINI_API_KEY": "g-key"}
 
@@ -362,14 +356,14 @@ def test_a_success_resets_the_failure_streak_so_cooldowns_start_over() -> None:
 @pytest.mark.parametrize(
     ("cls", "status", "whole_provider", "seconds"),
     [
-        (litellm.AuthenticationError, 401, True, 300),
+        (llm.AuthenticationError, 401, True, 300),
         # Cerebras and Groq report a 401 this way
-        (litellm.BadRequestError, 401, True, 300),
-        (litellm.BadRequestError, 402, True, 86_400),
+        (llm.BadRequestError, 401, True, 300),
+        (llm.BadRequestError, 402, True, 86_400),
         # A 403 is this model off the key's tier, a 404 this model gone: neither
         # condemns the provider's other models.
-        (litellm.PermissionDeniedError, 403, False, 86_400),
-        (litellm.NotFoundError, 404, False, 86_400),
+        (llm.PermissionDeniedError, 403, False, 86_400),
+        (llm.NotFoundError, 404, False, 86_400),
     ],
 )
 def test_a_rejected_key_benches_every_model_on_that_provider(
@@ -416,8 +410,8 @@ def test_limits_stated_in_error_bodies_are_parsed(message, learned) -> None:
 
 def test_limits_are_read_from_provider_rate_limit_headers() -> None:
     groq = {
-        "llm_provider-x-ratelimit-limit-requests": "14400",
-        "llm_provider-x-ratelimit-limit-tokens": "6000",
+        "x-ratelimit-limit-requests": "14400",
+        "x-ratelimit-limit-tokens": "6000",
     }
     cerebras = httpx.Headers(
         {"x-ratelimit-limit-requests-day": "14400", "x-ratelimit-limit-tokens-minute": "60000"}
@@ -444,14 +438,11 @@ def test_a_429_body_teaches_the_model_its_real_limit() -> None:
 
 def test_success_headers_lower_a_known_limit_but_never_raise_one() -> None:
     response = ok()
-    response._hidden_params = {
-        "additional_headers": {
-            "llm_provider-x-ratelimit-limit-requests": "4",
-            "llm_provider-x-ratelimit-limit-tokens": "1",
-        }
-    }
+    response.headers = httpx.Headers(
+        {"x-ratelimit-limit-requests": "4", "x-ratelimit-limit-tokens": "1"}
+    )
     raised = ok()
-    raised._hidden_params = {"additional_headers": {"x-ratelimit-limit-requests": "50"}}
+    raised.headers = httpx.Headers({"x-ratelimit-limit-requests": "50"})
     solo = {"providers": {"alpha": provider([model("solo", ["chat"], limits={"rpm": 5})])}}
     call = AsyncMock(side_effect=[raised, response])
     with daemon(call, env={"FAKE_API_KEY": "k"}, catalog=solo) as (client, hook):
@@ -468,7 +459,7 @@ def test_failures_and_successes_move_the_live_penalty() -> None:
     call = AsyncMock(
         side_effect=[
             provider_error(),
-            provider_error(status=500, cls=litellm.InternalServerError),
+            provider_error(status=500, cls=llm.InternalServerError),
             ok(),
         ]
     )
@@ -532,9 +523,9 @@ def premium_catalog() -> dict:
     }
 
 
-def usage_reply() -> litellm.ModelResponse:
+def usage_reply() -> llm.ModelResponse:
     response = ok()
-    response.usage = litellm.Usage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+    response["usage"] = {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
     return response
 
 
@@ -613,7 +604,7 @@ def test_a_keyless_provider_is_routable_with_no_key_and_gets_its_own_endpoint() 
     assert kwargs["api_key"] == "anonymous"
 
 
-def test_named_litellm_providers_never_get_an_api_base_override() -> None:
+def test_named_provider_routes_never_get_an_api_base_override() -> None:
     catalog = load_catalog()
     assert catalog.providers["groq"].api_base is None
     assert catalog.providers["kilo"].api_base == "https://api.kilo.ai/api/gateway"

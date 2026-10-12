@@ -17,8 +17,7 @@ For a PyInstaller onedir smoke build without Inno Setup:
 powershell -ExecutionPolicy Bypass -File packaging/windows/build.ps1 -SkipInno
 ```
 
-The PyInstaller build explicitly bundles the shipped registry data and the
-dynamic `tiktoken` encoding plugin required during daemon startup. Keep the
+The PyInstaller build explicitly bundles the shipped registry data. Keep the
 entire generated onedir folder together when distributing it.
 
 The installer is written to `dist/Zhunt-Setup-win-x64.exe` with a matching

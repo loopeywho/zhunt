@@ -1,28 +1,38 @@
-"""LiteLLM proxy integration for the Zhunt daemon."""
+"""The Zhunt daemon: authenticated /v1 inference routes over the free-tier engine."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 import time
 from collections import deque
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
-from litellm.integrations.custom_logger import CustomLogger
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from zhunt import llm
 from zhunt.adapters import (
     AnthropicMessagesAdapter,
     OpenAIChatCompletionsAdapter,
     OpenAIResponsesAdapter,
 )
-from zhunt.adapters.base import AdapterError, WireAdapter, strip_thinking_blocks, system_first
+from zhunt.adapters.base import (
+    AdapterError,
+    WireAdapter,
+    estimate_tokens,
+    strip_thinking_blocks,
+    system_first,
+)
 from zhunt.auth import ensure_master_key
 from zhunt.router import (
     FailureKind,
@@ -127,23 +137,15 @@ def create_proxy_app(
     catalog_path: Path | None = None,
     workspace_dirs: WorkspaceDirs | None = None,
 ) -> Any:
-    """Configure LiteLLM behind a small, authenticated inference surface."""
-
-    import litellm
-    from litellm.proxy import proxy_server
+    """The free-tier engine behind a small, authenticated inference surface."""
 
     from zhunt.engine import build_engine_hook
     from zhunt.workspace_api import WorkspaceDirs, mount_workspace
 
-    proxy_server.master_key = ensure_master_key(env_path)
+    # First: it also loads ~/.zhunt/env, where the provider keys live.
+    master_key = ensure_master_key(env_path)
     hook = build_engine_hook(catalog_path=catalog_path, telemetry_path=telemetry_path)
-    litellm.callbacks = [hook]
-    proxy_server.save_worker_config(
-        model="*",
-        telemetry=False,
-        drop_params=True,
-    )
-    app = _inference_app(proxy_server)
+    app = _inference_app(hook, master_key)
     mount_workspace(app, hook, workspace_dirs or WorkspaceDirs())
     return RetryMiddleware(app, hook)
 
@@ -171,51 +173,168 @@ def run_proxy(
     uvicorn.run(app, host=host, port=port)
 
 
-def _inference_app(proxy_server: Any) -> FastAPI:
+# path -> (hook call type, zhunt.llm function, stream framing)
+_ROUTES = {
+    "/v1/chat/completions": ("acompletion", "acompletion", "chat"),
+    "/v1/responses": ("aresponses", "aresponses", "events"),
+    "/v1/messages": ("anthropic_messages", "anthropic_messages", "events"),
+}
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    await llm.aclose()
+
+
+def _inference_app(hook: ZhuntProxyHook, master_key: str) -> FastAPI:
     """Return only the supported authenticated inference routes."""
 
-    from litellm.proxy.anthropic_endpoints import endpoints as anthropic
-    from litellm.proxy.response_api_endpoints import endpoints as responses
-
-    app = FastAPI(
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
-        lifespan=proxy_server.app.router.lifespan_context,
-    )
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=_lifespan)
+    app.state.zhunt_master_key = master_key
+    auth = [Depends(_authenticate_local_request)]
+    for path, (call_type, upstream, framing) in _ROUTES.items():
+        app.add_api_route(
+            path,
+            _inference_endpoint(hook, call_type, upstream, framing),
+            methods=["POST"],
+            dependencies=auth,
+        )
     app.add_api_route(
-        "/v1/chat/completions",
-        proxy_server.chat_completion,
-        methods=["POST"],
-    )
-    app.add_api_route(
-        "/v1/responses",
-        responses.responses_api,
-        methods=["POST"],
-    )
-    app.add_api_route(
-        "/v1/messages",
-        anthropic.anthropic_response,
-        methods=["POST"],
-    )
-    app.add_api_route(
-        "/v1/messages/count_tokens",
-        anthropic.count_tokens,
-        methods=["POST"],
-    )
-    for exception_type, handler in proxy_server.app.exception_handlers.items():
-        app.add_exception_handler(exception_type, handler)
-    app.state.zhunt_master_key = proxy_server.master_key
-    app.dependency_overrides[proxy_server.user_api_key_auth] = (
-        _authenticate_local_request
+        "/v1/messages/count_tokens", _count_tokens, methods=["POST"], dependencies=auth
     )
     return app
 
 
-def _authenticate_local_request(request: Request) -> Any:
-    """Authenticate the local daemon without LiteLLM's optional DB layer."""
+def _inference_endpoint(
+    hook: ZhuntProxyHook, call_type: str, upstream: str, framing: str
+) -> Callable[[Request], Awaitable[Response]]:
+    """One inference route, driving the hook through the lifecycle the LiteLLM
+    proxy used: pre-call, provider call, then success, failure or stream."""
 
-    from litellm.proxy._types import UserAPIKeyAuth
+    async def endpoint(request: Request) -> Response:
+        body = await _json_object(request)
+        if not isinstance(body, dict):
+            return _error_response(400, "request body must be a JSON object")
+        data: dict[str, Any] = {
+            **body,
+            "proxy_server_request": {
+                "url": str(request.url),
+                "method": request.method,
+                "headers": dict(request.headers),
+                "body": deepcopy(body),
+            },
+        }
+        try:
+            data = await hook.async_pre_call_hook(None, None, data, call_type)
+        except HTTPException as error:
+            return _error_response(error.status_code, str(error.detail))
+        # Looked up per call so tests can patch zhunt.llm.<function>.
+        call = getattr(llm, upstream)
+        alias = body.get("model") if framing == "chat" else None
+        try:
+            result = await call(**data)
+            if not data.get("stream"):
+                await hook.async_post_call_success_hook(data, None, result)
+                return JSONResponse(_with_model(_plain(result), alias))
+            chunks = hook.async_post_call_streaming_iterator_hook(None, result, data)
+            # The first chunk is read before answering, so a provider that fails
+            # at once still gets its own status code rather than a 200.
+            first = await anext(chunks, None)
+        except Exception as error:
+            # A stream's own failure was already recorded by the iterator hook.
+            await hook.async_post_call_failure_hook(data, error, None)
+            return _error_response(_status_of(error), str(error) or type(error).__name__)
+        return StreamingResponse(
+            _sse(chunks, first, framing, alias),
+            media_type="text/event-stream",
+            headers={"cache-control": "no-cache", "x-accel-buffering": "no"},
+        )
+
+    return endpoint
+
+
+async def _sse(
+    chunks: AsyncIterator[Any], first: Any, framing: str, alias: Any
+) -> AsyncIterator[bytes]:
+    try:
+        if first is not None:
+            yield _frame(first, framing, alias)
+        async for chunk in chunks:
+            yield _frame(chunk, framing, alias)
+        if framing == "chat":
+            yield b"data: [DONE]\n\n"
+    except Exception as error:  # mid-stream: the hook has already recorded it
+        status, message = _status_of(error), str(error) or type(error).__name__
+        if framing == "chat":
+            yield _data({"error": _error_body(status, message)})
+        else:
+            yield _data(
+                {"type": "error", "error": {"type": "api_error", "message": message}},
+                event="error",
+            )
+    finally:
+        await chunks.aclose()
+
+
+def _frame(chunk: Any, framing: str, alias: Any) -> bytes:
+    payload = _plain(chunk)
+    if framing == "chat":
+        return _data(_with_model(payload, alias))
+    return _data(payload, event=payload.get("type"))
+
+
+def _data(payload: Mapping[str, Any], *, event: Any = None) -> bytes:
+    text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    prefix = f"event: {event}\n" if isinstance(event, str) else ""
+    return f"{prefix}data: {text}\n\n".encode()
+
+
+def _plain(value: Any) -> dict[str, Any]:
+    return dict(_response_mapping(value))
+
+
+def _with_model(payload: dict[str, Any], alias: Any) -> dict[str, Any]:
+    """Chat answers name the model the client asked for (zhunt-auto), as before;
+    /zhunt/api/decisions says which model actually answered."""
+
+    if isinstance(alias, str):
+        payload["model"] = alias
+    return payload
+
+
+def _status_of(error: BaseException) -> int:
+    status = getattr(error, "status_code", None)
+    return status if isinstance(status, int) and 400 <= status < 600 else 500
+
+
+def _error_body(status: int, message: str) -> dict[str, Any]:
+    return {"message": message, "type": None, "param": None, "code": str(status)}
+
+
+def _error_response(status: int, message: str) -> JSONResponse:
+    return JSONResponse({"error": _error_body(status, message)}, status_code=status)
+
+
+async def _json_object(request: Request) -> Any:
+    try:
+        return json.loads(await request.body())
+    except ValueError:
+        return None
+
+
+async def _count_tokens(request: Request) -> dict[str, int]:
+    """Anthropic's token counter, answered with zhunt's usual estimate."""
+
+    body = await _json_object(request)
+    if not isinstance(body, dict):
+        body = {}
+    counted = {k: body[k] for k in ("system", "messages", "tools") if k in body}
+    return {"input_tokens": estimate_tokens(counted)}
+
+
+def _authenticate_local_request(request: Request) -> str:
+    """Accept only the local daemon's master key."""
 
     token = request.headers.get("authorization", "")
     if token.lower().startswith("bearer "):
@@ -232,7 +351,7 @@ def _authenticate_local_request(request: Request) -> Any:
         request.app.state.zhunt_master_key.encode("utf-8"),
     ):
         raise HTTPException(status_code=401, detail="invalid Zhunt master key")
-    return UserAPIKeyAuth(api_key=token)
+    return token
 
 
 def _original_request(

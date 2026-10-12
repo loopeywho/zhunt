@@ -1,5 +1,5 @@
 # Parts adapted from FreeLLMAPI (MIT, (c) 2026 Tashfeen Ahmed); see THIRD_PARTY_NOTICES.md
-"""Free-tier engine: wires the catalog, quota tracker and selector into LiteLLM."""
+"""Free-tier engine: wires the catalog, quota tracker and selector into the daemon."""
 
 from __future__ import annotations
 
@@ -15,11 +15,9 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Callable
 
-import litellm
 from fastapi import HTTPException
-from litellm.integrations.custom_logger import CustomLogger
 
-from zhunt import __version__, licence
+from zhunt import __version__, licence, llm
 from zhunt.adapters.base import (
     AdapterError,
     strip_thinking_blocks,
@@ -87,24 +85,41 @@ _CLIENT_ROUTING_FIELDS = (
 )
 
 
+# The endpoint, credential and observability names from LiteLLM 1.94's own
+# request blocklist (``_BANNED_REQUEST_BODY_PARAMS``), kept now that zhunt no
+# longer uses LiteLLM: a client must never set where a call goes or what it carries.
+_LITELLM_BANNED_FIELDS = (
+    "arize_api_key", "arize_space_id", "arize_space_key", "aws_bedrock_project_id",
+    "aws_bedrock_runtime_endpoint", "aws_role_name", "aws_sts_endpoint",
+    "aws_web_identity_token", "azure_ad_token", "bedrock_tags", "braintrust_api_key",
+    "braintrust_host", "braintrust_project", "dd_agent_host", "dd_agent_port", "dd_api_key",
+    "dd_site", "deployment_url", "gcs_bucket_name", "gcs_path_service_account",
+    "humanloop_api_key", "langfuse_host", "langfuse_public_key", "langfuse_secret",
+    "langfuse_secret_key", "langsmith_api_key", "langsmith_base_url", "langsmith_project",
+    "langsmith_tenant_id", "lunary_public_key", "model_list", "nvcf_function_id",
+    "phoenix_project_name", "phoenix_project_name_override", "posthog_api_key",
+    "posthog_api_url", "posthog_host", "s3_endpoint_url", "sagemaker_base_url",
+    "slack_webhook_url", "turn_off_message_logging", "use_ssl",
+    "user_api_key_auth_metadata", "vertex_credentials", "wandb_api_key",
+    "weave_project_id",
+)
+
+
 def _banned_request_params() -> frozenset[str]:
-    """Every field a client must not control: ours plus LiteLLM's own blocklist
-    (endpoints, credentials, cost overrides, observability hosts)."""
+    """Every field a client must not control: ours plus LiteLLM's former blocklist
+    (endpoints, credentials, observability hosts)."""
 
-    from litellm.proxy.auth import auth_utils
-
-    litellm_banned = getattr(auth_utils, "_BANNED_REQUEST_BODY_PARAMS", ())
-    return frozenset(_CLIENT_ROUTING_FIELDS) | frozenset(litellm_banned)
+    return frozenset(_CLIENT_ROUTING_FIELDS) | frozenset(_LITELLM_BANNED_FIELDS)
 
 
 def _enforce_engine_routing(data: dict[str, Any], call_type: str) -> None:
     """Scrub every client-controlled routing field before the engine sets its own.
 
-    LiteLLM's request-body checks live in the auth path that Zhunt replaces, so
-    without this a caller holding the master key could send ``api_base`` (or a
-    ``fallbacks`` entry) and receive the provider key at a host of its choosing.
-    ``data`` also carries LiteLLM's own metadata at this point, so offending names
-    are dropped rather than rejected.
+    Without this a caller holding the master key could send ``api_base`` (or a
+    ``fallbacks`` entry) and receive the provider key at a host of its choosing;
+    ``zhunt.llm`` forwards only standard fields, so this is the first of two
+    fences. ``data`` also carries the daemon's own metadata at this point, so
+    offending names are dropped rather than rejected.
     """
 
     banned = _banned_request_params()
@@ -252,36 +267,32 @@ def parse_limit_from_error(message: str) -> tuple[str, int] | None:
 
 
 def limits_from_headers(platform: str, headers: Any) -> list[tuple[str, int]]:
-    """``(axis, cap)`` pairs from provider rate-limit headers, raw or as LiteLLM
-    re-exposes them (``llm_provider-`` prefixed in a response's hidden params)."""
+    """``(axis, cap)`` pairs from a provider's rate-limit response headers."""
 
     if headers is None:
         return []
     found = []
     for name, axis in _HEADER_LIMITS.get(platform, _DEFAULT_HEADER_LIMITS):
-        for candidate in (name, f"llm_provider-{name}"):
-            try:
-                value = int(float(headers.get(candidate)))
-            except (AttributeError, TypeError, ValueError):
-                continue
-            if value > 0:
-                found.append((axis, value))
-                break
+        try:
+            value = int(float(headers.get(name)))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if value > 0:
+            found.append((axis, value))
     return found
 
 
 def _error_headers(error: BaseException) -> Any:
-    headers = getattr(error, "litellm_response_headers", None)
+    headers = getattr(error, "response_headers", None)
     if headers is None:
         headers = getattr(getattr(error, "response", None), "headers", None)
     return headers
 
 
 def _response_headers(response: Any) -> Any:
-    hidden = getattr(response, "_hidden_params", None)
-    if isinstance(hidden, Mapping):
-        return hidden.get("additional_headers")
-    return None
+    """The raw headers ``zhunt.llm`` keeps on every response and stream chunk."""
+
+    return getattr(response, "headers", None)
 
 
 def _is_daily_quota_exhausted(message: str) -> bool:
@@ -298,12 +309,12 @@ _MAX_RETRY_AFTER_SECONDS = 86_400.0
 def _retry_after(error: BaseException) -> float | None:
     """Provider ``retry-after`` in seconds, clamped to a day.
 
-    LiteLLM's mapped exceptions keep the real headers on ``litellm_response_headers``
-    (``.response`` is a synthetic empty one), so look there first.
+    ``zhunt.llm`` errors carry the provider's headers on ``response_headers``;
+    an httpx error carries them on ``.response``.
     """
 
     for headers in (
-        getattr(error, "litellm_response_headers", None),
+        getattr(error, "response_headers", None),
         getattr(getattr(error, "response", None), "headers", None),
     ):
         if headers is None:
@@ -340,8 +351,12 @@ class _Retry:
     exclude: frozenset[str] = frozenset()
 
 
-class EngineProxyHook(CustomLogger):
-    """Route supported LiteLLM proxy calls through the free-tier engine."""
+class EngineProxyHook:
+    """Route each inference call through the free-tier engine.
+
+    ``zhunt.server`` calls the hooks in the order the LiteLLM proxy did (pre-call,
+    then success, failure or the streaming iterator), so they keep its names.
+    """
 
     max_replays = MAX_REPLAYS
 
@@ -859,7 +874,7 @@ class EngineProxyHook(CustomLogger):
 
         started = time.perf_counter()
         try:
-            response = await litellm.acompletion(
+            response = await llm.acompletion(
                 model=f"{provider.litellm_provider}/{model.model_id}",
                 messages=list(messages),
                 api_key=api_key,

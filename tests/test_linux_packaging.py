@@ -12,6 +12,7 @@ def test_linux_package_targets_x86_64_and_bundles_registry():
     assert 'pip install "$ROOT"' in build
     assert "pystray" not in build  # the tray indicator was removed
     assert "--collect-all PIL" in build
+    assert "litellm" not in build and "tiktoken" not in build  # see docs/SLIM_ENGINE.md
     assert '--add-data "$ROOT/zhunt/catalog.yaml:zhunt"' in build
     assert '(cd "$OUTPUT" && sha256sum "$(basename "$ARCHIVE")")' in build
     assert "ubuntu-22.04" in workflow

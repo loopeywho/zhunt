@@ -33,6 +33,11 @@ for coding tools such as Codex and Hermes.
 Three wire protocols are accepted, so existing tools need no changes: Anthropic
 Messages, OpenAI Responses and OpenAI Chat Completions.
 
+Zhunt is small: the daemon is its own FastAPI app with a thin httpx client for the
+providers, so an install is about 35 MB, it starts in under a second and idles at
+about 84 MB of memory (it used to run on the LiteLLM proxy: 444 MB, 3.3 s,
+325 MB). The measurements and design are in `docs/SLIM_ENGINE.md`.
+
 ## Quick start
 
 Zhunt targets Python 3.12.
