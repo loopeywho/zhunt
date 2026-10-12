@@ -96,6 +96,14 @@ def test_a_catalog_api_base_is_used_and_model_ids_keep_their_slashes(provider) -
     assert provider.body["model"] == "kilo-auto/free"
 
 
+def test_raw_newlines_inside_provider_strings_are_accepted(provider) -> None:
+    # Kilo's NVIDIA models send reasoning text with unescaped newlines.
+    raw = json.dumps(CHAT_ANSWER).replace('"content": "hi"', '"content": "hi", "reasoning": "line one\nline two"').replace("\\n", "\n")
+    provider.responses.append(httpx.Response(200, content=raw.encode(), headers={"content-type": "application/json"}))
+    answer = run(llm.acompletion(model="groq/llama", messages=MESSAGES, api_key="k-1"))
+    assert answer["choices"][0]["message"]["content"] == "hi"
+
+
 def test_an_unknown_route_without_an_endpoint_is_a_client_error(provider) -> None:
     with pytest.raises(llm.BadRequestError):
         run(llm.acompletion(model="alpha/m", messages=MESSAGES))

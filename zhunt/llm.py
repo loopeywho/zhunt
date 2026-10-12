@@ -203,7 +203,8 @@ async def _post_json(
 ) -> ModelResponse:
     response = await _send(url, headers=headers, timeout=timeout, json=body)
     try:
-        data = response.json()
+        # strict=False: some providers send raw newlines inside strings (e.g. reasoning text)
+        data = json.loads(response.text, strict=False)
     except ValueError:
         raise InternalServerError("InternalServerError: provider answer is not JSON") from None
     if not isinstance(data, Mapping):
@@ -234,7 +235,7 @@ async def _sse_objects(response: httpx.Response) -> AsyncIterator[ModelResponse]
             if payload == "[DONE]":
                 return
             try:
-                event = json.loads(payload)
+                event = json.loads(payload, strict=False)
             except ValueError:
                 continue
             if not isinstance(event, Mapping):

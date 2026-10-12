@@ -153,6 +153,11 @@ providers:
   # 200 requests/hour per IP, learned from 429s. Its free router may send prompts to
   # providers that log them and use them to improve their services, so it stays
   # behind the training gate. Checked with one anonymous call on 2026-10-11.
+  # Named `:free` models added 2026-10-12 from Kilo's /models list, each answered one
+  # anonymous call. NVIDIA's free endpoints log prompts to improve NVIDIA products
+  # ("trial use only, no personal or confidential data"), so all stay may-train.
+  # Left out: inkling-small (served from OpenRouter's shared pool, daily cap already
+  # hit), guardrail/perception/tiny models, and openrouter/free.
   kilo:
     name: Kilo Gateway (no key needed)
     base_url: https://api.kilo.ai/api/gateway
@@ -161,13 +166,41 @@ providers:
     keyless: true
     key_url: https://app.kilo.ai
     free_note: "Works with no key at all. Its free models may log prompts and use them for training."
-    verified_on: 2026-10-11
+    verified_on: 2026-10-12
     models:
       - id: kilo-auto/free
         tiers: [chat, coding, reasoning]
         intelligence: 60
         speed: 55
         context_window: 128000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: nvidia/nemotron-3-ultra-550b-a55b:free
+        tiers: [chat, coding, reasoning, long-context]
+        intelligence: 80
+        speed: 40
+        context_window: 1000000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: nvidia/nemotron-3-super-120b-a12b:free
+        tiers: [chat, coding, reasoning]
+        intelligence: 72
+        speed: 45
+        context_window: 262144
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: poolside/laguna-s-2.1:free
+        tiers: [coding]
+        intelligence: 72
+        speed: 70
+        context_window: 262144
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: nvidia/nemotron-3.5-lightning:free
+        tiers: [chat, long-context]
+        intelligence: 50
+        speed: 85
+        context_window: 1000000
         supports_tools: true
         may_train_on_prompts: true
 
