@@ -62,7 +62,9 @@ ROUTES = frozenset(llm._ROUTES)
 
 # Public halves of the catalog signing keys, by key id. Separate from the licence keys;
 # the private key never enters the repo. Paste the line `catalog_tool.py keygen` prints.
-PUBLIC_KEYS: dict[str, str] = {}
+PUBLIC_KEYS: dict[str, str] = {
+    'cat-2026-10': 'FEJbBUT7Q5OvEL-q-c01km_9WxcqDlj-jy7Lk7uXbho',
+}
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
