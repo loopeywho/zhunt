@@ -184,6 +184,9 @@ class Selector:
     def set_policy(self, policy: SelectionPolicy) -> None:
         self._policy = policy
 
+    def set_catalog(self, catalog: Catalog) -> None:
+        self._catalog = catalog
+
     def set_keys(self, keys: Mapping[str, Sequence[str]]) -> None:
         self._keys = {platform: tuple(ids) for platform, ids in keys.items()}
 
