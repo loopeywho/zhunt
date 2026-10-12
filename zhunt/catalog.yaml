@@ -282,7 +282,8 @@ providers:
   # project, so zhunt should be used here without one. Hosted in France; OVHcloud
   # says user data is "never stored or used for model training"
   # (ovhcloud.com/en/public-cloud/free-ai-api). Ids and context from its live /models
-  # and one anonymous tool call per model on 2026-10-12.
+  # and one anonymous tool call per model on 2026-10-12. The Qwen3Guard safety
+  # classifiers it also lists are not chat models and are left out.
   ovh:
     name: OVHcloud AI Endpoints (no key needed)
     base_url: https://oai.endpoints.kepler.ai.cloud.ovh.net/v1
@@ -324,6 +325,65 @@ providers:
         speed: 55
         context_window: 131072
         supports_tools: true
+        may_train_on_prompts: false
+      - id: Qwen3.5-397B-A17B
+        tiers: [chat, coding, long-context, reasoning]
+        limits: {rpm: 2}
+        intelligence: 80
+        speed: 40
+        context_window: 262144
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: Qwen3.6-27B
+        tiers: [chat, coding, long-context]
+        limits: {rpm: 2}
+        intelligence: 58
+        speed: 50
+        context_window: 262144
+        supports_tools: true
+        may_train_on_prompts: false
+      # Rejects tool definitions that have no description (checked 2026-10-12).
+      - id: gpt-oss-20b
+        tiers: [chat, coding]
+        limits: {rpm: 2}
+        intelligence: 50
+        speed: 65
+        context_window: 131072
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: Qwen3.5-9B
+        tiers: [chat, long-context]
+        limits: {rpm: 2}
+        intelligence: 40
+        speed: 70
+        context_window: 262144
+        supports_tools: true
+        may_train_on_prompts: false
+      - id: Mistral-Nemo-Instruct-2407
+        tiers: [chat]
+        limits: {rpm: 2}
+        intelligence: 35
+        speed: 65
+        context_window: 65536
+        supports_tools: true
+        may_train_on_prompts: false
+      # Returns tool calls as plain text, so it is kept to tool-free chat.
+      - id: Mistral-7B-Instruct-v0.3
+        tiers: [chat]
+        limits: {rpm: 2}
+        intelligence: 25
+        speed: 75
+        context_window: 65536
+        supports_tools: false
+        may_train_on_prompts: false
+      # Vision model; OVH says tool calls are not supported on it.
+      - id: Qwen2.5-VL-72B-Instruct
+        tiers: [chat]
+        limits: {rpm: 2}
+        intelligence: 50
+        speed: 45
+        context_window: 32768
+        supports_tools: false
         may_train_on_prompts: false
 
   # Premium models for zhunt Pro's fallback, called directly with the user's own
