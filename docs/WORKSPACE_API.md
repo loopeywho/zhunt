@@ -157,6 +157,28 @@ when not connected, 429 when the free daily allowance is spent. Bot pictures:
 `GET|PUT|DELETE /zhunt/api/bots/{handle}/avatar` with `{"image": data URL}` (JPEG, PNG or
 WebP, at most 2 MB; SVG refused), stored next to the bot as `<handle>.jpg|png|webp`.
 
+## Agent: `/zhunt/api/agent...`
+
+The agent works through a task with tools, each model step being an ordinary routed
+`/v1/chat/completions` call made in-process (so failover, quotas and privacy rules apply,
+and only tool-capable models are chosen). Tools: `web_search` (DuckDuckGo HTML, no key),
+`open_page` (public http(s) only; every redirect hop is checked and private, loopback and
+link-local addresses are refused), `list_files`, `read_file` (read risk), `write_file`,
+`move_file` (write risk: the task waits for approval). Files are confined to the folders in
+`~/.zhunt/agent.json`.
+
+- `GET /agent` -> `{folders, tools: [{name, risk, description}], tasks: [summary...], loops}`
+- `PUT /agent/folders {"folders": [...]}` (existing folders only; never `/` or the whole home)
+- `POST /agent/tasks {"goal", "mode": "task"|"goal", "tools"?: [...]}` -> task detail
+- `GET /agent/tasks/{id}?since=n` -> `{id, goal, mode, state, answer, events[n:]}`; states
+  `running | waiting | done | failed | stopped`; events `goal, thought, tool, approval,
+  decision, answer, error, stopped`
+- `POST /agent/tasks/{id}/decide {"call_id", "approve"}`, `POST /agent/tasks/{id}/stop`
+- `POST /agent/loops {"every": "30m"|"2h"|"1d", "goal", ...}` (minimum 5 minutes, only
+  while the daemon runs), `DELETE /agent/loops/{id}`
+
+Limits: 12 model steps per task (24 in goal mode), approvals time out after 30 minutes.
+
 ## Plan: `GET /zhunt/api/plan`
 
 ```json

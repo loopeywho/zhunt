@@ -970,3 +970,44 @@ def test_a_personal_wallpaper_round_trips_and_clears() -> None:
 
     assert none.status_code == 404 and put.json() == {"wallpaper": True} and got == jpeg
     assert bad.status_code == 400 and gone.status_code == 404
+
+
+def _tool_reply(name, args):
+    import json as _json
+
+    return llm.ModelResponse({"id": "r", "model": "x", "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
+        "role": "assistant", "content": "", "tool_calls": [{"id": "call1", "type": "function", "function": {"name": name, "arguments": _json.dumps(args)}}]}}]})
+
+
+def _text_reply(text):
+    return llm.ModelResponse({"id": "r", "model": "x", "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": text}}]})
+
+
+def test_an_agent_task_runs_end_to_end_through_zhunts_own_routing(tmp_path):
+    import time as _time
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "receipt.txt").write_text("coffee 3.20")
+    call = AsyncMock(side_effect=[_tool_reply("list_files", {}), _text_reply("You have one file: receipt.txt.")])
+    with workspace(call, env=ENV) as (client, _):
+        refused = client.put("/zhunt/api/agent/folders", headers=headers(), json={"folders": ["/"]})
+        shared_ok = client.put("/zhunt/api/agent/folders", headers=headers(), json={"folders": [str(shared)]})
+        task = client.post("/zhunt/api/agent/tasks", headers=headers(), json={"goal": "What files do I have?"}).json()
+        for _ in range(100):
+            detail = client.get(f"/zhunt/api/agent/tasks/{task['id']}", headers=headers()).json()
+            if detail["state"] not in ("running", "waiting"):
+                break
+            _time.sleep(0.05)
+        state = client.get("/zhunt/api/agent", headers=headers()).json()
+        bad = client.post("/zhunt/api/agent/tasks", headers=headers(), json={"goal": "x", "tools": ["rm_rf"]})
+
+    assert refused.status_code == 400 and shared_ok.json()["folders"] == [str(shared.resolve())]
+    assert detail["state"] == "done" and detail["answer"] == "You have one file: receipt.txt."
+    tool = [e for e in detail["events"] if e["kind"] == "tool"][0]
+    assert tool["name"] == "list_files" and "receipt.txt" in tool["result"]
+    # each step went through zhunt's routing to a tool-capable model, with the tools offered
+    first = call.await_args_list[0].kwargs
+    assert {t["function"]["name"] for t in first["tools"]} >= {"web_search", "list_files", "write_file"}
+    assert first["model"].endswith("coder")  # the only tool-capable free model in the test catalog
+    assert state["tasks"][0]["id"] == task["id"] and bad.status_code == 400

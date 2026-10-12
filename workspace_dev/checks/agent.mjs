@@ -1,0 +1,21 @@
+// Run: node workspace_dev/checks/agent.mjs
+// Agent window: slash command parsing and the command list.
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+globalThis.location = { hash: '' };
+const { parseCommand, COMMANDS } = await import(pathToFileURL(path.join(here, '../../zhunt/workspace/js/tiles/agent.js')).href);
+
+let fail = 0;
+const check = (name, ok, extra = '') => { if (!ok) fail += 1; console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : '  ' + extra)); };
+const loop = parseCommand('/loop 2h check the news');
+check('a command and its arguments are split', loop.cmd === 'loop' && loop.args === '2h check the news');
+check('plain text is a task, not a command', parseCommand('find me a recipe').cmd === null);
+check('a slash later in the text is not a command', parseCommand('compare a/b testing tools').cmd === null);
+check('multi-line goals keep their lines', parseCommand('/goal line one\nline two').args === 'line one\nline two');
+check('every advertised command starts with /', COMMANDS.every(([c]) => c.startsWith('/')));
+check('goal, loop, stop and help exist', ['/goal', '/loop', '/stop', '/help'].every((c) => COMMANDS.some(([x]) => x === c)));
+if (fail) { console.log(fail + ' failed'); process.exit(1); }
+console.log('PASS all agent checks');

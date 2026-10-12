@@ -61,6 +61,10 @@ in the top bar (or `Ctrl+Space g`):
 
 Both styles share the same windows (Chat, Team chat, For you, Panels, Compare, Routing,
 Providers, Logs, Connect), so switching keeps every conversation and half-typed message.
+**Agent** (the centre window) does tasks for you with free models: it searches the web,
+reads pages and works with files in folders you share, showing every step, and asks before
+it writes or moves anything. Slash commands: `/goal` (keep going until an outcome is met),
+`/loop 1h <task>` (repeat while zhunt runs), `/web`, `/files`, `/folders`, `/stop`, `/help`.
 **Team chat** puts several bots in one conversation: each has its own instructions and
 preferred model type, you @mention one, and they hand work to each other with @mentions
 (bots are JSON files in `~/.zhunt/bots/`). **Connect** adds free keys without a terminal,

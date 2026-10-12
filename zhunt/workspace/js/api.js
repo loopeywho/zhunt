@@ -115,6 +115,16 @@ export const api = {
     disconnect: () => request('/zhunt/api/images/connect', { method: 'DELETE' }),
     generate: (prompt) => request('/zhunt/api/images', { method: 'POST', json: { prompt } }),
   },
+  agent: {
+    state: () => request('/zhunt/api/agent'),
+    setFolders: (folders) => request('/zhunt/api/agent/folders', { method: 'PUT', json: { folders } }),
+    start: (body) => request('/zhunt/api/agent/tasks', { method: 'POST', json: body }),
+    task: (id, since = 0) => request('/zhunt/api/agent/tasks/' + encodeURIComponent(id) + '?since=' + since),
+    decide: (id, call_id, approve) => request('/zhunt/api/agent/tasks/' + encodeURIComponent(id) + '/decide', { method: 'POST', json: { call_id, approve } }),
+    stop: (id) => request('/zhunt/api/agent/tasks/' + encodeURIComponent(id) + '/stop', { method: 'POST' }),
+    loop: (body) => request('/zhunt/api/agent/loops', { method: 'POST', json: body }),
+    unloop: (id) => request('/zhunt/api/agent/loops/' + encodeURIComponent(id), { method: 'DELETE' }),
+  },
   wallpaper: {
     get: () => request('/zhunt/api/wallpaper'),
     put: (image) => request('/zhunt/api/wallpaper', { method: 'PUT', json: { image } }),

@@ -146,8 +146,11 @@ def create_proxy_app(
     master_key = ensure_master_key(env_path)
     hook = build_engine_hook(catalog_path=catalog_path, telemetry_path=telemetry_path)
     app = _inference_app(hook, master_key)
-    mount_workspace(app, hook, workspace_dirs or WorkspaceDirs())
-    return RetryMiddleware(app, hook)
+    runner = mount_workspace(app, hook, workspace_dirs or WorkspaceDirs())
+    wrapped = RetryMiddleware(app, hook)
+    # the agent calls the full app (with failover replay) in-process, as any client would
+    runner.bind(wrapped, master_key)
+    return wrapped
 
 
 def run_proxy(

@@ -7,7 +7,7 @@
 // 'row' puts a|b side by side (vertical divider); 'col' stacks a over b.
 // Operations mutate the tree in place and return the (possibly new) root.
 
-export const KINDS = ['chat', 'foryou', 'panels', 'compare', 'routing', 'providers', 'logs', 'connect', 'team'];
+export const KINDS = ['chat', 'foryou', 'panels', 'compare', 'routing', 'providers', 'logs', 'connect', 'team', 'agent'];
 export const MAX_TILES = 12;
 export const MAX_DEPTH = 8;
 export const MIN_RATIO = 0.08;

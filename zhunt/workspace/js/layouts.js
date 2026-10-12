@@ -23,7 +23,8 @@ const LS_LAST = 'zhunt.layout.last';
 const LS_NAMED = 'zhunt.layouts.named';
 
 export const PRESETS = {
-  desktop: () => T.split('row', T.split('col', T.tile('foryou'), T.tile('panels'), 0.6), T.tile('chat', { alias: 'zhunt-auto' }), 0.3),
+  // the agent in the middle, what needs you on the left; chat stays one click away
+  desktop: () => T.split('row', T.split('col', T.tile('foryou'), T.tile('panels'), 0.6), T.tile('agent'), 0.3),
   'single-chat': () => T.tile('chat', { alias: 'zhunt-auto' }),
   'chat-routing': () => T.split('row', T.tile('chat', { alias: 'zhunt-auto' }), T.tile('routing'), 0.62),
   'chat-compare-providers': () => T.split('row',

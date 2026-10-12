@@ -17,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 
 from zhunt.auth import remove_env_value, save_env_value
 from zhunt import images, llm
+from zhunt.agent.runner import AgentRunner, parse_interval
+from zhunt.agent.tools import AgentSettings
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
@@ -53,6 +55,7 @@ class WorkspaceDirs:
     bots: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "bots")
     # a personal wallpaper (AI-generated or uploaded): <wallpaper>.jpg|png|webp
     wallpaper: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "wallpaper")
+    agent: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "agent.json")
     themes: Path = field(default_factory=lambda: Path.home() / ".zhunt" / "themes")
     static: Path = Path(__file__).parent / "workspace"
 
@@ -95,20 +98,23 @@ class _WorkspaceHeaders:
         await self.app(scope, receive, send_with_headers)
 
 
-def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> None:
+def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> AgentRunner:
     app.add_middleware(_WorkspaceHeaders)
-    app.include_router(build_router(hook, dirs))
+    runner = AgentRunner(dirs.agent)
+    app.include_router(build_router(hook, dirs, runner=runner))
     if dirs.static.is_dir():  # the UI ships in a separate change
         app.mount(
             "/workspace",
             StaticFiles(directory=dirs.static, html=True),
             name="workspace",
         )
+    return runner
 
 
 def build_router(
-    hook: EngineProxyHook, dirs: WorkspaceDirs, plan: Callable[[], Plan] | None = None
+    hook: EngineProxyHook, dirs: WorkspaceDirs, plan: Callable[[], Plan] | None = None, runner: AgentRunner | None = None
 ) -> APIRouter:
+    runner = runner or AgentRunner(dirs.agent)
     # Read on every request, so `zhunt licence activate` takes effect without a restart.
     plan = plan or (lambda: current_plan())
     router = APIRouter(
@@ -308,6 +314,78 @@ def build_router(
             raise HTTPException(error.status, str(error)) from None
         return {"image": "data:image/jpeg;base64," + base64.b64encode(data).decode()}
 
+    # ---- agent ----
+
+    @router.get("/agent")
+    def agent_state() -> dict[str, Any]:
+        tools = runner.tools()
+        return {
+            "folders": runner.settings().to_json()["folders"],
+            "tools": [{"name": t.name, "risk": t.risk, "description": t.description} for t in tools.values()],
+            "tasks": [runner.tasks[i].summary() for i in reversed(runner.order) if i in runner.tasks],
+            "loops": [loop.summary() for loop in runner.loops.values()],
+        }
+
+    @router.put("/agent/folders")
+    async def agent_folders(request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=8192)
+        raw = body.get("folders") if isinstance(body, dict) else None
+        if not isinstance(raw, list) or len(raw) > 10 or not all(isinstance(f, str) for f in raw):
+            raise HTTPException(400, "send {\"folders\": [\"/path\", ...]} (at most 10)")
+        folders = []
+        for item in raw:
+            path = Path(item).expanduser().resolve()
+            if not path.is_dir():
+                raise HTTPException(400, f"{item!r} is not a folder on this computer")
+            if path == Path(path.anchor) or path == Path.home().resolve():
+                raise HTTPException(400, "share a specific folder, not the whole disk or your entire home folder")
+            folders.append(path)
+        _write_private(dirs.agent, json.dumps(AgentSettings(folders=folders).to_json(), indent=2).encode())
+        return {"folders": [str(f) for f in folders]}
+
+    @router.post("/agent/tasks")
+    async def agent_start(request: Request) -> dict[str, Any]:
+        goal, mode, tools = _agent_request(await _json_body(request, limit=16 * 1024), runner)
+        return runner.start(goal, mode=mode, tools=tools).detail()
+
+    @router.get("/agent/tasks/{task_id}")
+    def agent_task(task_id: str, since: int = Query(0, ge=0)) -> dict[str, Any]:
+        task = runner.tasks.get(task_id)
+        if task is None:
+            raise HTTPException(404, "no such task")
+        return task.detail(since)
+
+    @router.post("/agent/tasks/{task_id}/decide")
+    async def agent_decide(task_id: str, request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=1024)
+        if not isinstance(body, dict) or not isinstance(body.get("call_id"), str) or not isinstance(body.get("approve"), bool):
+            raise HTTPException(400, "send {\"call_id\": \"...\", \"approve\": true|false}")
+        if not runner.decide(task_id, body["call_id"], body["approve"]):
+            raise HTTPException(409, "nothing is waiting for that decision")
+        return {"ok": True}
+
+    @router.post("/agent/tasks/{task_id}/stop")
+    def agent_stop(task_id: str) -> dict[str, Any]:
+        task = runner.stop(task_id)
+        if task is None:
+            raise HTTPException(404, "no such task")
+        return task.summary()
+
+    @router.post("/agent/loops")
+    async def agent_loop(request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=16 * 1024)
+        every = parse_interval(str(body.get("every", ""))) if isinstance(body, dict) else None
+        if every is None:
+            raise HTTPException(400, "every must look like 30m, 2h or 1d")
+        goal, mode, tools = _agent_request(body, runner)
+        return runner.add_loop(every, goal, mode=mode, tools=tools).summary()
+
+    @router.delete("/agent/loops/{loop_id}")
+    def agent_unloop(loop_id: str) -> dict[str, Any]:
+        if not runner.remove_loop(loop_id):
+            raise HTTPException(404, "no such loop")
+        return {"id": loop_id}
+
     @router.get("/wallpaper")
     def get_wallpaper() -> dict[str, Any]:
         found = _picture_file(dirs.wallpaper)
@@ -389,6 +467,24 @@ def build_router(
         raise HTTPException(404, f"no theme named {name!r}")
 
     return router
+
+
+def _agent_request(body: Any, runner: AgentRunner) -> tuple[str, str, set[str] | None]:
+    if not isinstance(body, dict):
+        raise HTTPException(400, "send a JSON object")
+    goal = body.get("goal")
+    if not isinstance(goal, str) or not goal.strip():
+        raise HTTPException(400, "tell the agent what to do")
+    mode = body.get("mode", "task")
+    if mode not in ("task", "goal"):
+        raise HTTPException(400, "mode is task or goal")
+    tools = body.get("tools")
+    if tools is not None:
+        known = set(runner.tools())
+        if not isinstance(tools, list) or not tools or not set(tools) <= known:
+            raise HTTPException(400, f"tools must be a list of: {', '.join(sorted(known))}")
+        tools = set(tools)
+    return goal, mode, tools
 
 
 def _picture_file(stem: Path) -> tuple[str, Path] | None:

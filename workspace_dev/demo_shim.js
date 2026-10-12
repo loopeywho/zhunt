@@ -31,6 +31,39 @@
   var AVATARS = {};
   // demo pictures: drawn in the page (the real app asks Cloudflare's FLUX model)
   var WALLPAPER = null;
+  // demo agent: a scripted run (search -> read -> answer; a save step asks for approval)
+  var AGENT = { folders: ['/Users/you/Documents/zhunt-agent'], tasks: {}, order: [], loops: [] };
+  function agentStart(body) {
+    var id = Math.random().toString(36).slice(2, 10);
+    var t = { id: id, goal: body.goal, mode: body.mode || 'task', state: 'running', created: now(), events: [], answer: '', loop_id: null };
+    AGENT.tasks[id] = t; AGENT.order.push(id);
+    var ev = function (kind, data) { var e = Object.assign({ seq: t.events.length, ts: now(), kind: kind }, data || {}); t.events.push(e); return e; };
+    ev('goal', { text: t.goal, mode: t.mode });
+    var wantsFile = /\.(md|txt)\b|save|write/i.test(t.goal);
+    var steps = [
+      function () { ev('thought', { text: 'I will search the web first, then read the most useful page.', model: 'groq/openai/gpt-oss-120b' }); },
+      function () { ev('tool', { name: 'web_search', args: { query: t.goal.slice(0, 60) }, call_id: 'c1', ok: true, ms: 640, model: 'groq/openai/gpt-oss-120b',
+        result: 'Search results:\n- 12 Best Free Note-Taking Apps in 2026\n  https://toolradar.com/blog/best-free-note-taking-apps\n- Joplin: open source note taking\n  https://joplinapp.org' }); },
+      function () { ev('tool', { name: 'open_page', args: { url: 'https://joplinapp.org' }, call_id: 'c2', ok: true, ms: 910, model: 'groq/openai/gpt-oss-120b',
+        result: 'Page: Joplin\nAn open source note taking and to-do application with synchronisation...' }); },
+    ];
+    if (wantsFile) steps.push(function () { t.state = 'waiting'; ev('approval', { name: 'write_file', args: { path: 'notes-summary.md', content: '# Free note apps\n\n- Joplin: open source, syncs via your own cloud\n- Obsidian: local files, plugins\n- Notion (free plan): easy sharing\n' }, call_id: 'c3', model: 'groq/openai/gpt-oss-120b' }); });
+    var i = 0;
+    var next = function () {
+      if (t.state === 'stopped') return;
+      if (t.state === 'waiting') { setTimeout(next, 400); return; }
+      if (i < steps.length) { steps[i++](); setTimeout(next, 1100); return; }
+      t.answer = '**Joplin** is the best free pick for most people: open source, syncs through a cloud you already use. **Obsidian** suits tinkerers (local files, plugins) and **Notion\'s free plan** is easiest for sharing.\n\nSources: https://toolradar.com/blog/best-free-note-taking-apps, https://joplinapp.org' + (wantsFile ? '\n\n' + (t.events.some(function (e) { return e.kind === 'decision' && e.approved; }) ? 'Saved to notes-summary.md.' : 'You declined saving, so nothing was written.') : '');
+      ev('answer', { text: t.answer, model: 'groq/openai/gpt-oss-120b' }); t.state = 'done';
+    };
+    t._ev = ev;
+    setTimeout(next, 600);
+    return t;
+  }
+  function agentDetail(t, since) {
+    return { id: t.id, goal: t.goal, mode: t.mode, state: t.state, created: t.created, answer: t.answer, loop_id: t.loop_id,
+      steps: t.events.filter(function (e) { return e.kind === 'tool'; }).length, events: t.events.slice(since || 0) };
+  }
   function demoPicture(prompt) {
     var wide = /wallpaper/i.test(prompt);
     var c = document.createElement('canvas');
@@ -256,6 +289,32 @@
       return new Promise(function (resolve) { setTimeout(function () { resolve(json(200, { text: 'Write a regex for UK postcodes' })); }, 700); });
     }
     if (rest === 'bots') return Promise.resolve(json(200, { bots: Object.keys(BOTS).sort().map(function (k) { var b = Object.assign({}, BOTS[k]); b.avatar = !!AVATARS[k]; return b; }) }));
+    if (rest === 'agent') return Promise.resolve(json(200, { folders: AGENT.folders, loops: AGENT.loops,
+      tools: [{ name: 'web_search', risk: 'read' }, { name: 'open_page', risk: 'read' }, { name: 'list_files', risk: 'read' }, { name: 'read_file', risk: 'read' }, { name: 'write_file', risk: 'write' }, { name: 'move_file', risk: 'write' }],
+      tasks: AGENT.order.slice().reverse().map(function (id) { return agentDetail(AGENT.tasks[id]); }) }));
+    if (rest === 'agent/folders' && method === 'PUT') { AGENT.folders = (body && body.folders) || []; return Promise.resolve(json(200, { folders: AGENT.folders })); }
+    if (rest === 'agent/tasks' && method === 'POST') {
+      if (!body || !String(body.goal || '').trim()) return Promise.resolve(json(400, { detail: 'tell the agent what to do' }));
+      return Promise.resolve(json(200, agentDetail(agentStart(body))));
+    }
+    if (rest === 'agent/loops' && method === 'POST') {
+      var m = /^(\d+)\s*(m|h|d)$/.exec(String((body && body.every) || ''));
+      if (!m) return Promise.resolve(json(400, { detail: 'every must look like 30m, 2h or 1d' }));
+      var secs = Math.max(300, Number(m[1]) * { m: 60, h: 3600, d: 86400 }[m[2]]);
+      var lp = { id: Math.random().toString(36).slice(2, 8), every: secs, goal: body.goal, next_run: now() + secs, runs: 0 };
+      AGENT.loops.push(lp); agentStart(body);
+      return Promise.resolve(json(200, lp));
+    }
+    var lm = /^agent\/loops\/([a-z0-9]+)$/.exec(rest);
+    if (lm && method === 'DELETE') { AGENT.loops = AGENT.loops.filter(function (l) { return l.id !== lm[1]; }); return Promise.resolve(json(200, { id: lm[1] })); }
+    var tm = /^agent\/tasks\/([a-z0-9]+)(\/(decide|stop))?$/.exec(rest);
+    if (tm) {
+      var task = AGENT.tasks[tm[1]];
+      if (!task) return Promise.resolve(json(404, { detail: 'no such task' }));
+      if (tm[3] === 'stop') { task.state = 'stopped'; task._ev('stopped'); return Promise.resolve(json(200, agentDetail(task))); }
+      if (tm[3] === 'decide') { task._ev('decision', { call_id: body.call_id, approved: !!body.approve }); task.state = 'running'; return Promise.resolve(json(200, { ok: true })); }
+      return Promise.resolve(json(200, agentDetail(task, Number(url.searchParams.get('since') || 0))));
+    }
     if (rest === 'wallpaper') {
       if (method === 'PUT') { WALLPAPER = body && body.image; return Promise.resolve(json(200, { wallpaper: true })); }
       if (method === 'DELETE') { WALLPAPER = null; return Promise.resolve(json(200, { wallpaper: false })); }
