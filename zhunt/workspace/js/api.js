@@ -135,6 +135,11 @@ export const api = {
     put: (image) => request('/zhunt/api/wallpaper', { method: 'PUT', json: { image } }),
     remove: () => request('/zhunt/api/wallpaper', { method: 'DELETE' }),
   },
+  catalog: {
+    status: () => request('/zhunt/api/catalog'),
+    update: () => request('/zhunt/api/catalog/update', { method: 'POST' }),
+    setUpdates: (enabled) => request('/zhunt/api/catalog/updates', { method: 'PUT', json: { enabled } }),
+  },
   setTraining: (allow) => request('/zhunt/api/policy/training', { method: 'PUT', json: { allow } }),
   decisions: ({ limit = 50, session } = {}, signal) => {
     const q = new URLSearchParams({ limit: String(limit) });

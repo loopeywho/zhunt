@@ -302,6 +302,14 @@
       if (gone) gone.key_set = false;
       return Promise.resolve(json(200, { platform: rest.slice(5), key_set: false }));
     }
+    if (rest === 'catalog' || rest === 'catalog/update') {
+      // demo: nothing is fetched; the list shipped with zhunt is always current
+      var cat = { active: { version: 202610100000, source: 'bundled', channel: null, issued_at: null, expires_at: null, note: null, providers: CATALOG.length, models: CATALOG.reduce(function (n, p) { return n + p.models.length; }, 0) },
+        updates: { switched_on: false, available: false, enabled: false, channel: 'monthly', url: 'https://zhunt.kindredwildcat.com/catalog/monthly.json', every_hours: 12 },
+        last_checked: null, last_status: null, last_message: null };
+      if (rest === 'catalog/update') { cat.status = 'current'; cat.message = 'Demo: the free-model list is up to date'; }
+      return Promise.resolve(json(200, cat));
+    }
     if (rest === 'policy/training' && method === 'PUT') {
       ALLOW_TRAINING = !!(body && body.allow === true);
       return Promise.resolve(json(200, { allow_training: ALLOW_TRAINING }));

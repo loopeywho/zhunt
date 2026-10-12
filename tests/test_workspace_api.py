@@ -183,7 +183,7 @@ def test_status_shape_and_blocked_reasons() -> None:
         models = status_models(client)
 
     body = response.json()
-    assert set(body) == {"version", "policy", "spend", "providers"}
+    assert set(body) == {"version", "policy", "spend", "providers", "catalog"}
     assert body["version"]
     assert body["policy"] == {"allow_paid": False, "allow_training": False, "premium_reason": "pro only"}
     assert body["spend"]["spent"] == 0 and body["spend"]["cap"] == 5.0

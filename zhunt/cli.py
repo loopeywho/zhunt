@@ -6,6 +6,7 @@ from pathlib import Path
 
 import typer
 
+from zhunt.catalog_cli import catalog_app
 from zhunt.connect_cli import register as register_connect_commands
 from zhunt.installer import Installer, InstallerError
 from zhunt.keys_cli import keys_app
@@ -17,6 +18,7 @@ app = typer.Typer(no_args_is_help=True)
 register_connect_commands(app)
 app.add_typer(keys_app, name="keys")
 app.add_typer(licence_app, name="licence")
+app.add_typer(catalog_app, name="catalog")
 app.add_typer(premium_app, name="premium")
 app.command("upgrade")(upgrade)
 

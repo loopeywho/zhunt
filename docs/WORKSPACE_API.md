@@ -50,9 +50,14 @@ in `/zhunt/api/decisions` by that session id.
         }
       ]
     }
-  ]
+  ],
+  "catalog": {"version": 202610100000, "source": "bundled", "channel": null,
+              "issued_at": null, "expires_at": null, "note": null, "providers": 8, "models": 20}
 }
 ```
+
+`catalog` is the catalog in use (see Catalog below); with `zhunt serve --catalog FILE`
+it is `{"source": "file", "version": 0}`.
 
 `allowed` is false when policy or a missing key excludes the model;
 `blocked_reason` is then one of `"no key"`, `"may train on prompts"`, or for a paid model
@@ -197,7 +202,36 @@ opened read-only, so nothing is marked read), `draft_email` (write: IMAP APPEND 
 
 Read from `~/.zhunt/licence` on every request (verified offline, see `zhunt/licence.py`),
 so `zhunt licence activate` takes effect without a restart. `problem` explains why a stored
-key is not in effect (expired, altered). Pro has `features: ["premium_fallback"]`.
+key is not in effect (expired, altered). Pro has `features: ["catalog_live", "premium_fallback"]`.
+
+## Catalog: `GET /zhunt/api/catalog`, `POST /zhunt/api/catalog/update`, `PUT /zhunt/api/catalog/updates`
+
+The signed free-model catalog feed (`zhunt/catalog_feed.py`). `GET` never fetches:
+
+```json
+{"active": {"version": 202610120320, "source": "feed", "channel": "latest",
+            "issued_at": 1791775234.0, "expires_at": 1795663234.0, "note": null,
+            "providers": 8, "models": 20},
+ "updates": {"switched_on": true, "available": true, "enabled": true, "channel": "latest",
+             "url": "https://zhunt.kindredwildcat.com/catalog/latest.json", "every_hours": 12},
+ "last_checked": 1791775300.1, "last_status": "applied",
+ "last_message": "catalog updated to version 202610120320 (20 models from 8 providers)"}
+```
+
+`source` is `bundled` (shipped with zhunt) or `feed` (verified `~/.zhunt/catalog.json`);
+`note` says why a cached feed is not in use. `available` is whether the plan includes
+automatic updates (Pro); `enabled` = `switched_on` and `available`.
+
+`POST /catalog/update` checks the feed once, now (Pro: `latest`, Free: `monthly`) and
+returns the same body plus `status` (`applied`, `current`, `older` or `error`) and a
+plain-language `message`. A newer verified feed replaces the catalog at once, keeping
+quota, cooldown and reliability state; anything else keeps the current catalog.
+
+`PUT /catalog/updates {"enabled": bool}` is the Connect window switch: saves
+`ZHUNT_CATALOG_UPDATES=1|0` to `~/.zhunt/env`; turning it on also checks once and
+returns the `POST` body. 403 on Free for `true`; 409 on all three when the daemon was
+started with `--catalog`. The daemon also watches `~/.zhunt/catalog.json` (a local stat
+every 30 s), so a `zhunt catalog update` from the terminal applies within a minute.
 Same name rule as layouts.
 
 ## Auth failures

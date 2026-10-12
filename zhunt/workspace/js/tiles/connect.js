@@ -66,6 +66,9 @@ export function connectTile(svc) {
   }
   const loadImages = () => api.images.status().then((s) => { images = s; paint(); }, () => {});
   loadImages();
+  let catalog = null; // /catalog
+  const loadCatalog = () => api.catalog.status().then((c) => { catalog = c; paint(); }, () => {});
+  loadCatalog();
 
   // Cloudflare Workers AI needs two values (account id + token), so it has its own row.
   function picturesRow() {
@@ -113,6 +116,7 @@ export function connectTile(svc) {
     if (mail) rows.push(h('h3', { class: 'connect-h' }, 'Email (agent)'), emailRow());
     if (images) rows.push(h('h3', { class: 'connect-h' }, 'AI pictures (free)'), picturesRow());
     if (paid.length) rows.push(h('h3', { class: 'connect-h' }, 'Premium (Pro, billed by the provider)'), ...paid.map(row));
+    if (catalog?.updates) rows.push(h('h3', { class: 'connect-h' }, 'Free-model list'), catalogRow());
     swapIfChanged(list, rows);
   }
 
@@ -130,6 +134,47 @@ export function connectTile(svc) {
     return h('label', { class: 'connect-train' }, box,
       h('span', {}, h('strong', {}, 'Also use free providers that may train on your prompts'),
         h('span', { class: 'quiet', id: 'connect-train-note' }, ` (${names.join(', ')}). Off by default. Turn it on for more free capacity, including ones that need no key.`)));
+  }
+
+  // The catalog feed. Nothing is fetched unless the user flips the switch (Pro) or presses Check now.
+  function catalogRow() {
+    const a = catalog.active, u = catalog.updates;
+    const day = (ts) => (ts ? new Date(ts * 1000).toISOString().slice(0, 10) : '');
+    const where = a.source === 'feed' ? `signed ${a.channel} list of ${day(a.issued_at)}` : 'shipped with zhunt';
+    const summary = h('p', { class: 'quiet' }, `Version ${a.version}, ${where}: ${a.models} models from ${a.providers} providers.`,
+      a.note ? ` ${a.note}.` : '', catalog.last_message ? ` Last check: ${catalog.last_message}.` : '');
+    const check = h('button', { class: 'act', type: 'button' }, 'Check now');
+    check.addEventListener('click', async () => {
+      check.disabled = true;
+      try {
+        const r = await api.catalog.update();
+        catalog = r;
+        svc.toast(r.message, r.status === 'error');
+        await svc.store.refresh('status');
+      } catch (err) { svc.toast(err.message || String(err), true); } finally { check.disabled = false; paint(); }
+    });
+    const host = u.url.replace(/^https?:\/\//, '').split('/')[0];
+    let control;
+    if (u.available) {
+      const box = h('input', { type: 'checkbox', checked: u.switched_on, 'aria-describedby': 'connect-catalog-note' });
+      box.addEventListener('change', async () => {
+        box.disabled = true;
+        try {
+          const r = await api.catalog.setUpdates(box.checked);
+          catalog = r;
+          svc.toast(box.checked ? (r.message || 'catalog updates on') : 'catalog updates off', r.status === 'error');
+          await svc.store.refresh('status');
+        } catch (err) { box.checked = !box.checked; svc.toast(err.message || String(err), true); } finally { box.disabled = false; paint(); }
+      });
+      control = h('label', { class: 'connect-train' }, box,
+        h('span', {}, h('strong', {}, 'Keep the free-model list up to date (Pro)'),
+          h('span', { class: 'quiet', id: 'connect-catalog-note' },
+            ` Every ${u.every_hours} hours zhunt downloads one public, signed file from ${host}. Nothing about you is sent. Off until you turn it on.`)));
+    } else {
+      control = h('p', { class: 'quiet', id: 'connect-catalog-note' },
+        `zhunt Pro keeps this list current automatically. "Check now" downloads this month's public, signed list from ${host} once; nothing about you is sent.`);
+    }
+    return h('article', { class: 'connect-row is-set', 'data-platform': 'catalog' }, control, summary, h('div', { class: 'acts' }, [check]));
   }
 
   function row(p) {

@@ -26,6 +26,7 @@ from zhunt.adapters.base import (
 )
 from zhunt.brain import Tier
 from zhunt.catalog import Catalog, CatalogModel, load_catalog
+from zhunt.catalog_feed import ActiveCatalog, CatalogFeed, load_active
 from zhunt.quota import FailureKind as ProviderFailure
 from zhunt.quota import Lease, QuotaTracker, Slot
 from zhunt.registry import ModelRegistry
@@ -393,6 +394,7 @@ class EngineProxyHook:
         self._retries: dict[str, _Retry] = {}
         self._decisions: deque[dict[str, Any]] = deque(maxlen=DECISION_LOG_SIZE)
         self._lock = RLock()
+        self.catalog_feed: CatalogFeed | None = None
 
     async def async_pre_call_hook(
         self,
@@ -436,7 +438,9 @@ class EngineProxyHook:
             )
         except NoCandidateError as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
-        provider = self.catalog.providers[candidate.model.platform]
+        provider = self.catalog.providers.get(candidate.model.platform)
+        if provider is None:  # the catalog was replaced between ranking and here
+            raise HTTPException(status_code=503, detail="the model catalog just changed; retry")
         api_key = provider_key(provider)
         if not api_key:
             raise HTTPException(
@@ -747,6 +751,20 @@ class EngineProxyHook:
         self._base_policy = replace(self._base_policy, allow_training=allow)
         self.refresh_policy()
 
+    def apply_catalog(self, active: ActiveCatalog) -> None:
+        """Route with a new catalog from now on, without a restart. Quota, cooldown,
+        reliability and learned limits are keyed by model id, so they carry over."""
+
+        catalog = active.catalog
+        registry = registry_from_catalog(catalog)
+        with self._lock:
+            self.selector.set_catalog(catalog)
+            self.catalog = catalog
+            self.selector.set_keys(keys_from_env(catalog, os.environ))
+            self.coordinator.registry = registry
+            if self.telemetry is not None:
+                self.telemetry.registry = registry
+
     def reload_keys(self) -> None:
         """Pick up provider keys added or removed since start-up (the Connect window)."""
 
@@ -829,6 +847,11 @@ class EngineProxyHook:
                 "cap": self.monthly_cap,
             },
             "providers": providers,
+            "catalog": (
+                self.catalog_feed.active.to_api()
+                if self.catalog_feed is not None
+                else {"source": "file", "version": 0}
+            ),
         }
 
     async def compare(
@@ -974,7 +997,12 @@ def build_engine_hook(
     rng: random.Random | None = None,
 ) -> EngineProxyHook:
     env = os.environ if env is None else env
-    catalog = load_catalog(catalog_path)
+    if catalog_path is None:
+        # The newest verified feed in ~/.zhunt/catalog.json, else the bundled catalog.
+        active = load_active()
+    else:
+        active = ActiveCatalog(load_catalog(catalog_path), 0, "file")
+    catalog = active.catalog
     # Defaults to ~/.zhunt/state.db (or $ZHUNT_STATE_DB); memory-only if unusable.
     store = StateStore.open(state_path)
     quota = QuotaTracker(store=store)
@@ -985,7 +1013,7 @@ def build_engine_hook(
     policy = policy_from_env(env)
     selector = Selector(catalog, quota, reliability, keys, policy=policy)
     registry = registry_from_catalog(catalog)
-    return EngineProxyHook(
+    hook = EngineProxyHook(
         RoutingCoordinator(registry=registry),
         selector,
         quota,
@@ -998,6 +1026,12 @@ def build_engine_hook(
         spend=SpendLedger(store),
         monthly_cap=cap_from_env(dict(env)),
     )
+    # A --catalog file is used as given; otherwise the feed can replace the catalog live.
+    if active.source != "file":
+        hook.catalog_feed = CatalogFeed(active, hook.apply_catalog, plan=hook.current_plan)
+        if active.note:
+            hook.summary += (f"Catalog: {active.note}",)
+    return hook
 
 
 def describe(

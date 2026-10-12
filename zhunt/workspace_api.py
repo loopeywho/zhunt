@@ -21,6 +21,7 @@ from zhunt import images, llm
 from zhunt.agent.runner import AgentRunner, parse_interval
 from zhunt.agent import email_tools
 from zhunt.agent.tools import AgentSettings, ToolError
+from zhunt.catalog_feed import UPDATES_ENV
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
@@ -155,6 +156,46 @@ def build_router(
         save_env_value("ZHUNT_ALLOW_TRAINING", "1" if allow else "0", dirs.env_file)
         hook.set_allow_training(allow)
         return {"allow_training": allow}
+
+    def _feed() -> Any:
+        if hook.catalog_feed is None:
+            raise HTTPException(409, "zhunt was started with --catalog, so it uses that file as given")
+        return hook.catalog_feed
+
+    @router.get("/catalog")
+    def catalog_status() -> dict[str, Any]:
+        """Which catalog is in use and whether updates are on. Never fetches."""
+
+        if hook.catalog_feed is None:
+            return {"active": {"source": "file", "version": 0}, "updates": None}
+        return hook.catalog_feed.status()
+
+    @router.post("/catalog/update")
+    async def catalog_update() -> dict[str, Any]:
+        """Check the feed once, now (the user asked): Pro gets latest, Free the monthly snapshot."""
+
+        feed = _feed()
+        result = await asyncio.to_thread(feed.update_now)
+        return {"status": result.status, "message": result.message, **feed.status()}
+
+    @router.put("/catalog/updates")
+    async def set_catalog_updates(request: Request) -> dict[str, Any]:
+        """The Connect window's switch: let the daemon check the latest catalog every 12 hours."""
+
+        feed = _feed()
+        body = await _json_body(request, limit=256)
+        enabled = body.get("enabled") if isinstance(body, dict) else None
+        if not isinstance(enabled, bool):
+            raise HTTPException(400, "send {\"enabled\": true} or {\"enabled\": false}")
+        if enabled and not hook.current_plan().has("catalog_live"):
+            raise HTTPException(
+                403, "automatic catalog updates are part of zhunt Pro; `zhunt catalog update` fetches the monthly snapshot"
+            )
+        save_env_value(UPDATES_ENV, "1" if enabled else "0", dirs.env_file)
+        if not enabled:
+            return feed.status()
+        result = await asyncio.to_thread(feed.update_now)
+        return {"status": result.status, "message": result.message, **feed.status()}
 
     @router.delete("/keys/{platform}")
     def remove_key(platform: str) -> dict[str, Any]:

@@ -146,6 +146,8 @@ def create_proxy_app(
     master_key = ensure_master_key(env_path)
     hook = build_engine_hook(catalog_path=catalog_path, telemetry_path=telemetry_path)
     app = _inference_app(hook, master_key)
+    if hook.catalog_feed is not None:
+        app.state.background = [hook.catalog_feed.run]
     runner = mount_workspace(app, hook, workspace_dirs or WorkspaceDirs())
     wrapped = RetryMiddleware(app, hook)
     # the agent calls the full app (with failover replay) in-process, as any client would
@@ -186,7 +188,11 @@ _ROUTES = {
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Long-running jobs registered on app.state.background (the catalog feed watcher).
+    tasks = [asyncio.create_task(job()) for job in getattr(app.state, "background", ())]
     yield
+    for task in tasks:
+        task.cancel()
     await llm.aclose()
 
 

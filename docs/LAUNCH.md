@@ -32,6 +32,7 @@ useful because free tiers do most everyday work.
 | Workspace, floating/tiled, dark/light | yes | yes | yes |
 | Own themes and layouts (files) | yes | yes | yes |
 | Premium fallback (GPT, Claude, Gemini Pro) with monthly cap | | yes, user's own paid keys | yes, included credits |
+| Free-model catalog | release + monthly snapshot (`zhunt catalog update`) | live, every 12 h (opt-in switch) | live |
 | All 12 themes (incl. 10 Omarchy-style) | yes | yes | yes |
 | Nothing to install | | | yes |
 
@@ -53,9 +54,50 @@ How Pro is delivered (all in the repo):
   `~/.zhunt-signing/licence-2026-10.pem` (outside the repo). **Back it up** (password
   manager or encrypted drive). Losing it means every customer needs a new key from a new
   signing key shipped in a new release.
+- Live catalog: `zhunt/catalog_feed.py` + `scripts/catalog_tool.py`, see "The moat" below.
 - Gating is honest open-core: the code is open, so the check can be patched out. The
   licence is how people who want Pro pay for it, not DRM. That is normal for open-core
   tools and keeps goodwill with the open-source audience.
+
+### The moat: a live, verified free-model catalog
+
+Free tiers change weekly; a catalog that only moves with releases goes stale. zhunt
+publishes its hand-verified `zhunt/catalog.yaml` as an Ed25519-signed feed (same idea as
+FreeLLMAPI's catalog sync, without a licence check on the server):
+
+- `site/catalog/latest.json`: re-published whenever a row is re-verified. Pro checks it
+  every 12 hours once the user switches updates on in the Connect window.
+- `site/catalog/monthly.json` (+ `monthly/YYYY-MM.json`): the first publish of each
+  month. Free users get it with `zhunt catalog update`.
+- Both are public static files: no request carries a licence or any identifier, so the
+  "never phones home unless you turn it on" promise holds. The Pro edge is freshness and
+  automation, enforced client-side like every other Pro feature (honest open-core). If
+  that ever needs a server-side gate, put `latest.json` behind a Pages Function that
+  checks a licence header, and say so in the privacy policy first.
+- Clients accept a feed only if the signature (catalog key, separate from the licence
+  key), expiry (latest 45 days, monthly 75 days) and schema check out, the version is
+  newer than what they run and every provider uses a route zhunt can call. Failures keep
+  the bundled catalog. `catalog.yaml`'s `version` is the floor each release ships with.
+
+The value is the verification work: re-check each provider's free tier, update the
+`verified_on` dates and rows, publish. Aim for at least weekly.
+
+**Owner steps (one-off):**
+1. `uv run python scripts/catalog_tool.py keygen --out ~/.zhunt-signing/catalog-2026-10.pem --kid cat-2026-10`
+   and back the key up next to the licence key (losing it means a new kid in a release).
+2. Paste the printed line into `PUBLIC_KEYS` in `zhunt/catalog_feed.py`, commit, release.
+   Until then every zhunt says "this zhunt has no catalog signing key yet" and keeps the
+   bundled catalog.
+
+**Each time the catalog changes:**
+1. Edit and re-verify `zhunt/catalog.yaml`.
+2. `uv run python scripts/catalog_tool.py publish --key ~/.zhunt-signing/catalog-2026-10.pem --kid cat-2026-10`
+   (validates, stamps `version`, signs, writes `site/catalog/`; the first run each month
+   also writes the monthly snapshot).
+3. Commit `zhunt/catalog.yaml` and `site/catalog/`, then deploy:
+   `uv run python scripts/build_site.py && cd dist/site && npx wrangler pages deploy . --project-name zhunt --branch main`.
+4. Check: `curl -s https://zhunt.kindredwildcat.com/catalog/latest.json | head -c 200`, then
+   `zhunt catalog update` on a Pro install.
 
 ## 3. Unit economics
 
@@ -133,7 +175,8 @@ Owner = you unless marked. Order matters.
     the first week and say so publicly.
 
 **D. Measure (from day 1, privacy-preserving)**
-- Installs: GitHub clones/stars, PyPI downloads (no in-app tracking; zhunt does not phone home).
+- Installs: GitHub clones/stars, PyPI downloads (no in-app tracking; zhunt does not phone
+  home, and catalog-feed downloads carry no identifier, so they are not a user count).
 - Trials started, trial→paid conversion, monthly churn: Stripe dashboard.
 - Activation: ask in the welcome email whether the first request worked.
 - Targets for month one: 500 installs, 30 trials, 15 paying.
@@ -147,7 +190,8 @@ Owner = you unless marked. Order matters.
 
 | Risk | Mitigation |
 | --- | --- |
-| Providers shrink free tiers | multi-provider catalog with dates; learned limits; Pro fallback is the safety net |
+| Providers shrink free tiers | multi-provider catalog with dates; signed live catalog feed between releases; learned limits; Pro fallback is the safety net |
+| Catalog signing key leaked | separate from the licence key; ship a new kid and drop the old one in a release; feeds expire within 75 days |
 | "Why pay if it's open source?" | price low ($7), sell convenience and support; Cloud is the real business |
 | Free keys feel complicated to newcomers | For you cards walk through it; Cloud removes keys entirely |
 | Licence key leaked and shared | keys carry the buyer's email and expire monthly; renewals check the subscription |
