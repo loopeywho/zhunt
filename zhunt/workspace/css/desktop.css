@@ -169,6 +169,9 @@
 .connect-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .connect-note { flex-basis: 100%; }
 .connect-note:empty { display: none; }
+.connect-status { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border-left: 4px solid var(--warn); }
+.connect-any { margin-top: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.connect-any-label { flex-basis: 100%; }
 .btn.mic { font-family: var(--font-prose); }
 .btn.mic.recording { background: var(--err); border-color: var(--err); color: var(--accent-fg); animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { opacity: 0.65; } }

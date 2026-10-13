@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Optional
 
 import typer
 
 from zhunt.auth import read_env_values, save_env_value, write_private_text
 from zhunt.catalog import Catalog, Provider, load_catalog
+from zhunt.key_prefix import detect_platform
 
 keys_app = typer.Typer(
     help="Add, list or remove provider API keys (stored in ~/.zhunt/env, mode 0600).",
@@ -45,13 +47,31 @@ def list_keys() -> None:
 
 
 @keys_app.command("add")
-def add_key(platform: str = typer.Argument(help="Provider, e.g. groq.")) -> None:
+def add_key(
+    platform: Optional[str] = typer.Argument(
+        None, help="Provider, e.g. groq. Leave out to tell it from the key."
+    ),
+) -> None:
     """Save a provider key. It is read from a hidden prompt, never from an argument."""
 
-    provider = _provider(load_catalog(), platform)
-    value = typer.prompt(f"{provider.name} API key", hide_input=True).strip()
+    catalog = load_catalog()
+    provider = _provider(catalog, platform) if platform else None
+    value = typer.prompt(
+        f"{provider.name} API key" if provider else "Paste any API key", hide_input=True
+    ).strip()
     if not value:
         raise typer.BadParameter("the key is empty", param_hint="key")
+    if provider is None:
+        detected = detect_platform(value)
+        if detected in catalog.providers:
+            provider = catalog.providers[detected]
+            typer.echo(f"That looks like a {provider.name} key.")
+        else:
+            choices = sorted(p for p, v in catalog.providers.items() if not v.keyless)
+            typer.echo("zhunt cannot tell which provider this key is for.")
+            provider = _provider(
+                catalog, typer.prompt(f"Which provider? ({', '.join(choices)})").strip()
+            )
     try:
         save_env_value(provider.key_env, value, _env_path())
     except ValueError as error:

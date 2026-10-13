@@ -25,6 +25,7 @@ from zhunt.agent import email_tools
 from zhunt.agent.tools import AgentSettings, ToolError
 from zhunt.catalog_feed import UPDATES_ENV
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
+from zhunt.key_prefix import detect_platform
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
 
@@ -136,19 +137,26 @@ def build_router(
     @router.post("/keys")
     async def add_key(request: Request) -> dict[str, Any]:
         """Save a provider key pasted in the Connect window. It goes to ~/.zhunt/env
-        (owner-only) and the environment of this process; it is never echoed back."""
+        (owner-only) and the environment of this process; it is never echoed back.
+        With no ``platform`` the provider is told from the key's prefix."""
 
         body = await _json_body(request, limit=4096)
         platform = body.get("platform") if isinstance(body, dict) else None
         key = body.get("key") if isinstance(body, dict) else None
+        if not isinstance(key, str) or not _KEY.fullmatch(key.strip()):
+            raise HTTPException(400, "that does not look like an API key (one line, no spaces)")
+        if platform is None:
+            platform = detect_platform(key)
+            if platform not in hook.catalog.providers:
+                raise HTTPException(
+                    422, "zhunt cannot tell which provider this key is for; choose the provider"
+                )
         provider = hook.catalog.providers.get(platform) if isinstance(platform, str) else None
         if provider is None:
             raise HTTPException(404, "unknown provider")
-        if not isinstance(key, str) or not _KEY.fullmatch(key.strip()):
-            raise HTTPException(400, "that does not look like an API key (one line, no spaces)")
         save_env_value(provider.key_env, key.strip(), dirs.env_file)
         hook.reload_keys()
-        return {"platform": provider.platform, "key_set": True}
+        return {"platform": provider.platform, "name": provider.name, "key_set": True}
 
     @router.put("/policy/training")
     async def set_training(request: Request) -> dict[str, Any]:

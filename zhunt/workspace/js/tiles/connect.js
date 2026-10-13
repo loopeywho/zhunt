@@ -10,7 +10,7 @@ export function connectTile(svc) {
   const list = h('div', { class: 'connect-list' });
   list.dataset.keepScroll = '1';
   const intro = h('p', { class: 'connect-intro' },
-    'Each provider gives a free API key. Open its page, create a key, then paste it here. ',
+    'zhunt works with no keys. One free key makes it fast: get it, then paste it below. ',
     'Keys stay on this computer, in a file only you can read.');
   const el = h('div', { class: 'connect' }, intro, list);
   const open = new Set(); // providers whose paste box is showing
@@ -106,18 +106,96 @@ export function connectTile(svc) {
     const premium = (p) => (p.models || []).length && p.models.every((m) => !m.free);
     const free = providers.filter((p) => !premium(p));
     const paid = providers.filter(premium);
-    const connected = free.filter((p) => p.key_set).length;
+    const keyed = free.filter((p) => !p.keyless);
+    // one recommended key first (Groq: fast, no card); everything else is more free capacity
+    const first = keyed.find((p) => p.platform === 'groq') || keyed[0];
+    const more = free.filter((p) => p !== first);
+    const connected = more.filter((p) => p.key_set && !p.keyless).length;
     const trainers = free.filter((p) => (p.models || []).some((m) => m.may_train_on_prompts)).map((p) => p.name.replace(/ \(.*\)$/, ''));
     const rows = [
-      h('h3', { class: 'connect-h' }, `Free models · ${connected} of ${free.length} connected`),
+      keyed.some((p) => p.key_set) ? null : noKeysNote(free, first),
+      anyBox(keyed),
+      first ? h('h3', { class: 'connect-h' }, 'Recommended') : null,
+      first ? row(first, true) : null,
+      h('h3', { class: 'connect-h' }, `More free capacity · ${connected} of ${more.filter((p) => !p.keyless).length} connected`),
       trainers.length ? trainingSwitch(!!snap.data.policy?.allow_training, trainers) : null,
-      ...free.map(row),
+      ...more.map((p) => row(p)),
     ].filter(Boolean);
     if (mail) rows.push(h('h3', { class: 'connect-h' }, 'Email (agent)'), emailRow());
     if (images) rows.push(h('h3', { class: 'connect-h' }, 'AI pictures (free)'), picturesRow());
-    if (paid.length) rows.push(h('h3', { class: 'connect-h' }, 'Premium (Pro, billed by the provider)'), ...paid.map(row));
+    if (paid.length) rows.push(h('h3', { class: 'connect-h' }, 'Premium (Pro, billed by the provider)'), ...paid.map((p) => row(p)));
     if (catalog?.updates) rows.push(h('h3', { class: 'connect-h' }, 'Free-model list'), catalogRow());
     swapIfChanged(list, rows);
+  }
+
+  // Plain words for a fresh install: zhunt already answers through the keyless providers.
+  function noKeysNote(free, first) {
+    const keyless = free.some((p) => p.keyless && (p.models || []).some((m) => m.allowed));
+    const add = first ? ` Add a free ${first.name.replace(/ \(.*\)$/, '')} key for speed.` : '';
+    return h('p', { class: 'connect-status', role: 'status' },
+      keyless ? 'Working with no keys (slow, shared limits).' + add : 'No free model is ready yet.' + add);
+  }
+
+  // One box for any key: the daemon tells the provider from the prefix and asks only when it cannot.
+  // Built once (and again only if the provider list changes) so a status poll never wipes a paste.
+  let anyForm = null, anyFor = '';
+  function anyBox(keyed) {
+    const sig = keyed.map((p) => p.platform).join();
+    if (!anyForm || sig !== anyFor) { anyForm = pasteAny(keyed); anyFor = sig; }
+    return anyForm;
+  }
+
+  function pasteAny(keyed) {
+    let anyChoice = false; // the prefix was unknown: show the provider picker
+    const input = h('input', {
+      class: 'connect-input', type: 'password', autocomplete: 'off', spellcheck: 'false',
+      'aria-label': 'Paste any API key', placeholder: 'paste any API key',
+    });
+    const pick = h('select', { class: 'connect-input', 'aria-label': 'Which provider is this key for?', hidden: true },
+      h('option', { value: '' }, 'Which provider is this key for?'),
+      ...providersForPick().map((p) => h('option', { value: p.platform }, p.name)));
+    const save = h('button', { class: 'act primary', type: 'submit' }, 'Save');
+    const note = h('p', { class: 'quiet connect-note', role: 'status' });
+    const form = h('form', { class: 'connect-form connect-any', 'data-for': 'any' },
+      h('label', { class: 'connect-any-label' }, h('strong', {}, 'Paste any key'),
+        h('span', { class: 'quiet' }, ' zhunt tells which provider it is for.')),
+      input, pick, save, note);
+    // a different key gets detected afresh
+    input.addEventListener('input', () => { anyChoice = false; pick.hidden = true; pick.value = ''; note.textContent = ''; });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const key = input.value.trim();
+      if (!key) { note.textContent = 'Paste the key first.'; return; }
+      if (anyChoice && !pick.value) { note.textContent = 'Choose the provider first.'; return; }
+      save.disabled = true;
+      try {
+        const r = await (anyChoice ? api.keys.add(pick.value, key) : api.keys.addAny(key));
+        input.value = '';
+        anyChoice = false;
+        pick.hidden = true;
+        pick.value = '';
+        note.textContent = '';
+        svc.toast(`${r.name || r.platform} connected`);
+        await svc.store.refresh('status');
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 422) {
+          anyChoice = true;
+          pick.hidden = false;
+          note.textContent = 'zhunt cannot tell which provider this key is for. Choose it, then Save.';
+          pick.focus();
+        } else {
+          note.textContent = err instanceof ApiError ? err.message : String(err);
+        }
+      } finally {
+        save.disabled = false;
+      }
+    });
+    return form;
+
+    function providersForPick() {
+      const premiumOnly = (snap.data?.providers || []).filter((p) => (p.models || []).length && p.models.every((m) => !m.free));
+      return [...keyed, ...premiumOnly];
+    }
   }
 
   // The privacy gate, offered where people set things up: off unless they choose it.
@@ -177,7 +255,7 @@ export function connectTile(svc) {
     return h('article', { class: 'connect-row is-set', 'data-platform': 'catalog' }, control, summary, h('div', { class: 'acts' }, [check]));
   }
 
-  function row(p) {
+  function row(p, recommended = false) {
     const ready = (p.models || []).filter((m) => m.allowed).length;
     const status = p.keyless ? chip('no key needed', 'ok') : p.key_set ? chip('connected', 'ok') : chip('not connected', '');
     const actions = [];
@@ -188,7 +266,8 @@ export function connectTile(svc) {
           h('span', { class: 'quiet' }, blocked ? 'off: turn on the switch above to use it' : `${ready} model${ready === 1 ? '' : 's'} ready`)),
         p.free_note ? h('p', { class: 'quiet' }, p.free_note) : null);
     }
-    if (p.key_url) actions.push(h('button', { class: 'act primary', type: 'button', onclick: () => window.open(p.key_url, '_blank', 'noopener') }, p.key_set ? 'Manage key' : 'Get free key'));
+    const getLabel = p.key_set ? 'Manage key' : recommended ? `Get a free ${p.name} key (about 1 minute)` : 'Get free key';
+    if (p.key_url) actions.push(h('button', { class: 'act primary', type: 'button', onclick: () => window.open(p.key_url, '_blank', 'noopener') }, getLabel));
     if (!open.has(p.platform)) {
       actions.push(h('button', { class: 'act', type: 'button', onclick: () => { open.add(p.platform); paint(); focusInput(p.platform); } }, p.key_set ? 'Replace key' : 'Paste key'));
     }

@@ -69,6 +69,30 @@ def test_add_rejects_an_unknown_provider_and_an_empty_key() -> None:
         assert not env_file(home).exists()
 
 
+def test_add_with_no_provider_tells_it_from_the_key_prefix() -> None:
+    with TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        result = invoke(home, "add", input=f"{SECRET}\n")
+
+        assert result.exit_code == 0, result.output
+        assert SECRET not in result.output
+        assert "Groq" in result.output
+        assert f'GROQ_API_KEY="{SECRET}"' in env_file(home).read_text()
+        assert stat.S_IMODE(env_file(home).stat().st_mode) == 0o600
+
+
+def test_add_with_no_provider_asks_which_one_when_the_prefix_is_unknown() -> None:
+    with TemporaryDirectory() as tmp:
+        home = Path(tmp)
+        result = invoke(home, "add", input="mystery-key-123\ncerebras\n")
+
+        assert result.exit_code == 0, result.output
+        assert "mystery-key-123" not in result.output
+        assert "Which provider?" in result.output and "groq" in result.output
+        assert "ovh" not in result.output.split("Which provider?")[1].splitlines()[0]
+        assert 'CEREBRAS_API_KEY="mystery-key-123"' in env_file(home).read_text()
+
+
 def test_list_shows_set_and_not_set_but_never_values() -> None:
     with TemporaryDirectory() as tmp:
         home = Path(tmp)
