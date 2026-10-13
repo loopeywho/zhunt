@@ -127,11 +127,11 @@ The value is the verification work: re-check each provider's free tier, update t
 
 **Weekly review (Mondays, a scheduled Claude task drafts it):**
 `uv run python scripts/catalog_tool.py check` asks each free provider which models it lists
-today (keys from `~/.zhunt/env`; Kilo needs none) and reports models that disappeared, new
+today (keys from `~/.zhunt/env`; Kilo and OVH need none) and reports models that disappeared, new
 ones, and providers whose free-tier terms were not re-read for over 7 days. The task re-reads
 the free-tier pages, drafts `catalog.yaml` changes on a `catalog/review-<date>` branch and
 waits for approval; nothing is published until the owner says so. Add free keys
-(`zhunt keys add groq|google|cerebras|zai`) so every provider's list can be checked.
+(`zhunt keys add groq|google|cerebras|zai|mistral|sambanova`) so every provider's list can be checked.
 
 **Each time the catalog changes:**
 1. Edit and re-verify `zhunt/catalog.yaml`.
