@@ -94,6 +94,23 @@ const opts = { openWindow() {}, now };
   check('Pro users get one card naming every premium provider', proUser[0].id === 'premium-keys' && /Anthropic, OpenAI/.test(proUser[0].detail) && /zhunt premium on/.test(proUser[0].code) && proUser.filter((c) => c.id.startsWith('premium')).length === 1, proUser[0].detail);
   check('the card goes once any premium key is added', !proWithKey.includes('premium-keys'));
 }
+{
+  const ovh = { platform: 'ovh', name: 'OVHcloud AI Endpoints (no key needed)', keyless: true, key_set: true, models: [model('ovh/a')] };
+  const groq = { platform: 'groq', name: 'Groq', key_set: false, models: [model('groq/a', { allowed: false, blocked_reason: 'no key' })] };
+  const google = { platform: 'google', name: 'Google AI Studio', key_set: false, models: [model('google/a', { allowed: false, blocked_reason: 'no key' }), model('google/b', { allowed: false, blocked_reason: 'no key' })] };
+  const zero = buildCards(status([google, groq, ovh]), { data: [] }, opts);
+  check('with no keys one card says so plainly and recommends Groq', ids(zero).join() === 'no-keys'
+    && zero[0].title === 'Working with no keys (slow, shared limits)' && /free Groq key for speed/.test(zero[0].detail), JSON.stringify(zero));
+  const none = buildCards(status([groq]), { data: [] }, opts);
+  check('with no keys and nothing keyless the card asks for a key to start', none[0].id === 'no-keys' && /to start/.test(none[0].title), none[0].title);
+  const haveGroq = { ...groq, key_set: true, models: [model('groq/a')] };
+  const calm = ids(buildCards(status([google, haveGroq, ovh]), { data: [] }, opts));
+  check('once a key is set no other provider is pushed while limits are fine', calm.join() === 'all-good', calm.join());
+  const busy = { ...haveGroq, models: [model('groq/a', { cooldown_remaining: 30 })] };
+  const hit = buildCards(status([google, busy, ovh]), { data: [] }, opts);
+  check('after limits are hit exactly one next provider is suggested', ids(hit).filter((i) => i.startsWith('key-')).join() === 'key-google'
+    && /2 more models/.test(hit[0].detail), ids(hit).join());
+}
 check('sky follows the hour', [4, 6, 12, 18, 22].map(skyFor).join() === 'night,dawn,day,dusk,night');
 
 if (fail) { console.log(fail + ' failed'); process.exit(1); }

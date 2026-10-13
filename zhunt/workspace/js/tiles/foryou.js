@@ -36,18 +36,33 @@ export function buildCards(status, decisions, { openWindow, openPlan, plan = nul
       code: 'zhunt premium on --cap 5', actions: [{ label: 'Connect', run: () => openWindow('connect') }],
     });
   }
-  for (const p of providers.filter((x) => !x.key_set && !premiumOnly(x))) {
-    const n = (p.models || []).length;
-    cards.push({
-      id: 'key-' + p.platform, tone: 'accent', title: `Add your free ${p.name || p.platform} key`,
-      detail: `${n} free model${n === 1 ? '' : 's'} ready once zhunt has a key. Getting one takes about a minute.`,
-      actions: [{ label: 'Connect', run: () => openWindow('connect') }],
-    });
-  }
   // premium models only count while premium is allowed
   const models = providers.flatMap((p) => p.models || []).filter((m) => m.free || s.policy?.allow_paid);
   const cooling = models.filter((m) => m.allowed && m.cooldown_remaining > 0)
     .sort((a, b) => a.cooldown_remaining - b.cooldown_remaining);
+  const low = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0) && m.headroom !== null && m.headroom !== undefined && m.headroom < 0.2);
+  // Free providers that take a key: with none set zhunt runs on the keyless ones; after that the next
+  // key is suggested only once free limits are being hit.
+  const keyed = providers.filter((p) => !p.keyless && !premiumOnly(p));
+  const missing = keyed.filter((p) => !p.key_set);
+  const next = missing.find((p) => p.platform === 'groq') || missing[0];
+  const label = (p) => (p.name || p.platform).replace(/ \(.*\)$/, '');
+  if (next && !keyed.some((p) => p.key_set)) {
+    const keyless = providers.some((p) => p.keyless && (p.models || []).some((m) => m.allowed));
+    cards.push({
+      id: 'no-keys', tone: 'accent',
+      title: keyless ? 'Working with no keys (slow, shared limits)' : 'Add a free key to start',
+      detail: `${keyless ? 'Add' : 'No free model is ready yet. Add'} a free ${label(next)} key for speed. Getting one takes about a minute.`,
+      actions: [{ label: 'Connect', run: () => openWindow('connect') }],
+    });
+  } else if (next && (cooling.length || low.length)) {
+    const n = (next.models || []).length;
+    cards.push({
+      id: 'key-' + next.platform, tone: 'accent', title: `More free capacity: add a ${label(next)} key`,
+      detail: `Free limits are being hit. A free ${label(next)} key adds ${n} more model${n === 1 ? '' : 's'}; getting one takes about a minute.`,
+      actions: [{ label: 'Connect', run: () => openWindow('connect') }],
+    });
+  }
   if (cooling.length) {
     const left = Math.max(0, cooling[0].cooldown_remaining - (now - status.at) / 1000);
     cards.push({
@@ -58,7 +73,6 @@ export function buildCards(status, decisions, { openWindow, openPlan, plan = nul
       actions: [{ label: 'See models', run: () => openWindow('providers') }],
     });
   }
-  const low = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0) && m.headroom !== null && m.headroom !== undefined && m.headroom < 0.2);
   if (low.length) {
     cards.push({
       id: 'low', tone: 'warn',
