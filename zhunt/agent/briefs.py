@@ -42,6 +42,8 @@ MAX_FETCH = 60  # at most three batches per brief; older new mail is counted as 
 FETCH_BYTES = 65536  # enough of each message for its headers and first text
 KEEP_BRIEFS = 10
 MAX_MEMORY = 500
+CATCH_UP_GRACE = 5 * 60  # a slot noticed later than this was missed (asleep or closed): the brief says it caught up
+CATCH_UP_DAYS = 14
 ACTIONS = ("reply", "pay", "schedule", "read", "none")
 DEFAULT_OFFER = {"reply": "Want me to draft a reply?", "pay": "Want me to pull out the amount and due date?",
                  "schedule": "Want me to draft a reply about the time?", "read": "Want a short summary?"}
@@ -300,7 +302,7 @@ def brief_title(when: float) -> str:
 
 
 class BriefStore:
-    """~/.zhunt/briefs.json: {settings, cursor, memory: {senders, topics}, briefs}."""
+    """~/.zhunt/briefs.json: {settings, enabled_at, cursor, memory: {senders, topics}, briefs}."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -315,6 +317,7 @@ class BriefStore:
         memory = raw.get("memory") if isinstance(raw.get("memory"), dict) else {}
         return {
             "settings": {"enabled": settings.get("enabled") is True, "times": valid_times(settings.get("times")) or list(DEFAULT_TIMES)},
+            "enabled_at": raw.get("enabled_at") if isinstance(raw.get("enabled_at"), (int, float)) else None,
             "cursor": raw.get("cursor") if isinstance(raw.get("cursor"), dict) else {},
             "memory": {k: [v for v in memory.get(k, []) if isinstance(v, str)] for k in ("senders", "topics")},
             "briefs": [b for b in raw.get("briefs", []) if isinstance(b, dict)][-KEEP_BRIEFS:],
@@ -335,6 +338,16 @@ def remember(memory: dict[str, list[str]], kind: str, value: str) -> None:
         memory[kind] = [*memory[kind], value][-MAX_MEMORY:]
 
 
+def schedule_start(data: dict[str, Any], now: float) -> float:
+    """Where the schedule picks up when the daemon starts: the last brief, or when briefs were
+    switched on if that is later. Slots after it were missed while zhunt was closed."""
+
+    marks = [b.get("created") for b in data["briefs"] if isinstance(b.get("created"), (int, float))]
+    marks.append(data.get("enabled_at") or 0)
+    latest = max(marks)
+    return min(latest, now) if latest else now
+
+
 def find_item(data: dict[str, Any], brief_id: str, item_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
     for brief in data["briefs"]:
         if brief.get("id") == brief_id:
@@ -344,12 +357,15 @@ def find_item(data: dict[str, Any], brief_id: str, item_id: str) -> tuple[dict[s
     return None
 
 
-async def run_brief(store: BriefStore, account: EmailAccount, call_model: CallModel, *, now: float | None = None) -> dict[str, Any]:
-    """Make one brief and save it (and the advanced cursor). Returns the brief."""
+async def run_brief(store: BriefStore, account: EmailAccount, call_model: CallModel, *, now: float | None = None,
+                    caught_up_since: float | None = None) -> dict[str, Any]:
+    """Make one brief and save it (and the advanced cursor). Returns the brief. caught_up_since
+    marks a brief made late for missed scheduled times, covering mail since then."""
 
     now = now or time.time()
     brief: dict[str, Any] = {"id": uuid.uuid4().hex[:10], "title": brief_title(now), "created": now, "state": "done",
-                             "items": [], "scanned": 0, "skipped": 0, "older": 0, "models": [], "error": None}
+                             "items": [], "scanned": 0, "skipped": 0, "older": 0, "models": [], "error": None,
+                             "caught_up_since": caught_up_since}
     data = store.load()
     try:
         mails, cursor, older = await asyncio.to_thread(fetch_new, account, data["cursor"], now=now)
@@ -379,14 +395,17 @@ async def run_brief(store: BriefStore, account: EmailAccount, call_model: CallMo
     return brief
 
 
-def due_slot(times: list[str], last_check: float, now: float) -> str | None:
-    """The scheduled HH:MM that fell in (last_check, now], if any (local time)."""
+def last_slot(times: list[str], after: float, now: float) -> float | None:
+    """When the latest scheduled HH:MM in (after, now] fell (local time), or None. However many
+    slots a sleeping laptop missed, this is one answer, so the gap gets one brief."""
 
-    for day_offset in (0, -1):
-        day = dt.date.fromtimestamp(now) + dt.timedelta(days=day_offset)
+    start = max(after, now - CATCH_UP_DAYS * 86400)
+    day, latest = dt.date.fromtimestamp(start), None
+    while day <= dt.date.fromtimestamp(now):
         for hhmm in times:
             h, m = map(int, hhmm.split(":"))
             at = dt.datetime(day.year, day.month, day.day, h, m).timestamp()
-            if last_check < at <= now:
-                return hhmm
-    return None
+            if start < at <= now and (latest is None or at > latest):
+                latest = at
+        day += dt.timedelta(days=1)
+    return latest

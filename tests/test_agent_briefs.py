@@ -220,8 +220,53 @@ def test_briefs_are_off_by_default_at_eight_one_and_six():
 
 def test_a_slot_fires_once_when_its_time_passes():
     at = dt.datetime(2026, 10, 13, 8, 0).timestamp()
-    assert B.due_slot(["08:00", "13:00"], at - 30, at + 1) == "08:00"
-    assert B.due_slot(["08:00", "13:00"], at + 1, at + 31) is None
+    assert B.last_slot(["08:00", "13:00"], at - 30, at + 1) == at
+    assert B.last_slot(["08:00", "13:00"], at + 1, at + 31) is None
+
+
+def _scheduled_runner(tmp_path, briefs=(), enabled_at=None):
+    runner = AgentRunner(tmp_path / "agent.json")
+    data = runner.brief_store.load()
+    data["settings"]["enabled"] = True
+    data["enabled_at"] = enabled_at
+    data["briefs"] = list(briefs)
+    runner.brief_store.save(data)
+    started = []
+    runner.start_brief = lambda caught_up_since=None: started.append(caught_up_since) or True
+    return runner, started
+
+
+def test_waking_after_missed_times_makes_one_catch_up_brief(tmp_path):
+    evening = dt.datetime(2026, 10, 12, 18, 0, 5).timestamp()  # last brief, Monday evening
+    runner, started = _scheduled_runner(tmp_path, briefs=[{"id": "b0", "created": evening, "items": []}])
+    woke = dt.datetime(2026, 10, 13, 14, 30).timestamp()  # slept through 08:00 and 13:00
+    last = B.schedule_start(runner.brief_store.load(), woke)
+    last = runner.brief_schedule_step(last, woke)
+    runner.brief_schedule_step(last, woke + 30)
+    assert started == [evening]  # one brief for the gap, saying it covers since Monday's brief
+
+
+def test_an_on_time_slot_is_not_a_catch_up(tmp_path):
+    runner, started = _scheduled_runner(tmp_path, enabled_at=dt.datetime(2026, 10, 13, 7, 0).timestamp())
+    at = dt.datetime(2026, 10, 13, 8, 0).timestamp()
+    runner.brief_schedule_step(at - 10, at + 20)
+    assert started == [None]
+
+
+def test_times_before_briefs_were_switched_on_are_never_caught_up(tmp_path):
+    switched_on = dt.datetime(2026, 10, 13, 13, 30).timestamp()
+    runner, started = _scheduled_runner(tmp_path, enabled_at=switched_on)
+    now = dt.datetime(2026, 10, 13, 17, 0).timestamp()
+    runner.brief_schedule_step(B.schedule_start(runner.brief_store.load(), now), now)
+    assert started == []
+    assert B.schedule_start({"briefs": [], "enabled_at": None}, now) == now  # never enabled through the API: start fresh
+
+
+def test_a_catch_up_brief_records_what_it_covers(imap, tmp_path):
+    imap.mailbox = {1: raw(1)}
+    _, call = model_replying({"items": []})
+    brief = asyncio.run(B.run_brief(B.BriefStore(tmp_path / "briefs.json"), ACCOUNT, call, caught_up_since=1_791_800_000.0))
+    assert brief["caught_up_since"] == 1_791_800_000.0
 
 
 # ---- the item button and dismissing ---------------------------------------------------------

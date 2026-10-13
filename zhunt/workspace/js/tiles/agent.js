@@ -50,6 +50,11 @@ export function briefItemLine(item) {
   return `${item.summary} · due ${label}`;
 }
 
+// A brief made late for missed times (the laptop slept): "caught up: covers since Mon 18:00"
+export function caughtUpLine(since) {
+  return 'caught up: covers since ' + new Date(since * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 export function agentTile(svc) {
   let taskId = null;
   let seen = 0;
@@ -153,6 +158,7 @@ export function agentTile(svc) {
     return h('div', { class: 'card tone-info agent-brief', 'data-brief': brief.id },
       h('h3', { class: 'card-title' }, `${brief.title} · ${when}`),
       h('p', { class: 'quiet' }, facts, brief.models.length ? ' · ' : '', brief.models.length ? modelLabel(brief.models[0]) : null),
+      brief.caught_up_since ? h('p', { class: 'quiet' }, caughtUpLine(brief.caught_up_since)) : null,
       brief.error ? h('p', { class: 'agent-note err' }, brief.error) : null,
       open.length ? h('ul', { class: 'brief-items' }, open.map((item) => briefRow(brief, item)))
         : h('p', { class: 'card-detail' }, brief.state === 'failed' ? 'Nothing could be read this time.' : 'Nothing needs you.'));

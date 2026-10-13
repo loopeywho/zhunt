@@ -8,6 +8,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -448,6 +449,8 @@ def build_router(
         if "enabled" in body:
             if not isinstance(body["enabled"], bool):
                 raise HTTPException(400, "enabled is true or false")
+            if body["enabled"] and not data["settings"]["enabled"]:
+                data["enabled_at"] = time.time()  # missed times before this are never caught up
             data["settings"]["enabled"] = body["enabled"]
         if "times" in body:
             times = briefs.valid_times(body["times"])

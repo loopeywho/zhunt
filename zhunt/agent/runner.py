@@ -296,27 +296,38 @@ class AgentRunner:
     async def _brief_model(self, messages: list[dict[str, Any]], session: str) -> dict[str, Any]:
         return await self._model(messages, [], session, max_tokens=briefs.MAX_OUTPUT_TOKENS)
 
-    def start_brief(self) -> bool:
+    def start_brief(self, caught_up_since: float | None = None) -> bool:
         """Make a brief in the background now. False when one is already running or no email is connected."""
 
         account = EmailAccount.from_env()
         if account is None or self.brief_running:
             return False
-        self._brief_job = asyncio.get_running_loop().create_task(briefs.run_brief(self.brief_store, account, self._brief_model))
+        self._brief_job = asyncio.get_running_loop().create_task(
+            briefs.run_brief(self.brief_store, account, self._brief_model, caught_up_since=caught_up_since))
         return True
+
+    def brief_schedule_step(self, last: float, now: float) -> float:
+        """One check of the schedule: if a picked time fell in (last, now], make one brief. A time
+        noticed late (the laptop slept or zhunt was closed) gives one catch-up brief for the whole
+        gap, not one per missed time. Returns the new 'last'."""
+
+        data = self.brief_store.load()
+        settings = data["settings"]
+        slot = briefs.last_slot(settings["times"], last, now) if settings["enabled"] else None
+        if slot is not None:
+            late = now - slot > briefs.CATCH_UP_GRACE
+            since = briefs.schedule_start(data, now) if late else None
+            self.start_brief(caught_up_since=since)
+        return now
 
     async def run_brief_schedule(self) -> None:
         """While the daemon runs: make a brief at each time the user picked, if briefs are switched on.
-        Times that passed while zhunt was closed are not made up for."""
+        Starting up, and waking from sleep, catch up on missed times with a single brief."""
 
-        last = time.time()
+        last = briefs.schedule_start(self.brief_store.load(), time.time())
         while True:
+            last = self.brief_schedule_step(last, time.time())
             await asyncio.sleep(BRIEF_CHECK_SECONDS)
-            now = time.time()
-            settings = self.brief_store.load()["settings"]
-            if settings["enabled"] and briefs.due_slot(settings["times"], last, now):
-                self.start_brief()
-            last = now
 
     def act_on_brief_item(self, brief_id: str, item_id: str) -> Task | None:
         """Start the item's proposed action as an agent task (fixed template, email read/draft tools only)."""

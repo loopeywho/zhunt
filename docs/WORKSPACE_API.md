@@ -204,10 +204,13 @@ fails, the brief is `partial` and the next one resumes after the last mail that 
 
 - `GET /agent/briefs` -> `{settings: {enabled, times}, running, email_connected, memory:
   {senders, topics}, briefs: [newest first]}`; a brief is `{id, title, created, state:
-  done|partial|failed, items, scanned, skipped, older, models, error}` and an item adds
+  done|partial|failed, items, scanned, skipped, older, models, error, caught_up_since}` and an item adds
   `item_id, sender, sender_name, topic, subject, state: open|started|dismissed, task_id`
 - `PUT /agent/briefs/settings {"enabled"?: bool, "times"?: ["08:00", ...]}` (1-6 local
-  times; off by default at 08:00, 13:00 and 18:00; made only while the daemon runs)
+  times; off by default at 08:00, 13:00 and 18:00; made only while the daemon runs). When
+  the daemon starts or the laptop wakes after missed times, one catch-up brief covers the
+  whole gap (not one per missed time) and carries `caught_up_since` (when the previous brief
+  was made, or briefs were switched on); the card shows "caught up: covers since ...".
 - `POST /agent/briefs/run` makes one now (409 when email is not connected or one is running)
 - `POST /agent/briefs/{brief}/items/{item}/act` starts the item as an agent task and returns
   its detail. The goal is a fixed template per action (the summary is quoted as data) and the
