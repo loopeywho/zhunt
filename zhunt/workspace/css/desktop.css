@@ -231,6 +231,10 @@
 .agent-approval { margin: 2px 0; }
 .agent-note { margin: 0; white-space: pre-wrap; font-size: 12.5px; color: var(--text-dim); font-family: var(--font-mono); }
 .agent-note.err { color: var(--err); }
+.brief-items { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.brief-item { padding-top: 8px; border-top: 1px solid var(--border); }
+.brief-line { margin: 0 0 2px; line-height: 1.45; }
+.brief-item .acts { margin-top: 5px; }
 .agent-hints { position: absolute; left: 8px; right: 8px; bottom: 54px; z-index: 5; display: flex; flex-direction: column; padding: 4px; border-radius: 10px; background: var(--surface); border: 1px solid var(--accent); box-shadow: var(--shadow); }
 .agent-hint { display: flex; gap: 8px; align-items: baseline; text-align: left; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); cursor: pointer; font: inherit; font-size: 12.5px; }
 .agent-hint:hover, .agent-hint:focus-visible { background: var(--accent-soft); }

@@ -124,6 +124,11 @@ export const api = {
     stop: (id) => request('/zhunt/api/agent/tasks/' + encodeURIComponent(id) + '/stop', { method: 'POST' }),
     loop: (body) => request('/zhunt/api/agent/loops', { method: 'POST', json: body }),
     unloop: (id) => request('/zhunt/api/agent/loops/' + encodeURIComponent(id), { method: 'DELETE' }),
+    briefs: () => request('/zhunt/api/agent/briefs'),
+    briefSettings: (body) => request('/zhunt/api/agent/briefs/settings', { method: 'PUT', json: body }),
+    runBrief: () => request('/zhunt/api/agent/briefs/run', { method: 'POST' }),
+    actBrief: (b, i) => request('/zhunt/api/agent/briefs/' + encodeURIComponent(b) + '/items/' + encodeURIComponent(i) + '/act', { method: 'POST' }),
+    dismissBrief: (b, i, skip = null) => request('/zhunt/api/agent/briefs/' + encodeURIComponent(b) + '/items/' + encodeURIComponent(i) + '/dismiss', { method: 'POST', json: { skip } }),
   },
   email: {
     status: () => request('/zhunt/api/email/status'),

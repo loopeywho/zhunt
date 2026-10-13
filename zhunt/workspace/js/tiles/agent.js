@@ -1,5 +1,6 @@
 // Agent window: give zhunt a task and watch it work (thinking, tools, results), approve anything
-// that changes files, and get the answer. Slash commands: /goal /loop /web /files /stop /clear /help.
+// that changes files, and get the answer. Slash commands: /goal /loop /web /files /brief /stop /clear /help.
+// Briefs: scheduled digests of new email, each item with one proposed action a button starts.
 
 import { h } from '../dom.js';
 import { renderMarkdown } from '../md.js';
@@ -15,6 +16,8 @@ export const COMMANDS = [
   ['/files', '<task>', 'only use the shared-folder tools'],
   ['/email', '<task>', 'only use your email (connect it in Connect)'],
   ['/browser', '<task>', 'use the agent\'s own browser window for a website task'],
+  ['/brief', '', 'make an email brief now'],
+  ['/briefs', '[on|off|08:00, 13:00, 18:00]', 'show the latest brief, switch briefs on or off, or set their times'],
   ['/folders', '<path>, <path>', 'choose the folders the agent may use'],
   ['/stop', '', 'stop the running task'],
   ['/clear', '', 'clear this window'],
@@ -28,12 +31,33 @@ export function parseCommand(text) {
   return m ? { cmd: m[1], args: m[2].trim() } : { cmd: null, args: text.trim() };
 }
 
+// '/briefs on' -> {enabled: true}; '/briefs 07:30, 18:00' -> {times: [...]}; '' -> {}; nonsense -> null
+export function parseBriefsArgs(args) {
+  const a = args.trim().toLowerCase();
+  if (!a) return {};
+  if (a === 'on' || a === 'off') return { enabled: a === 'on' };
+  const times = a.split(/[\s,]+/).filter(Boolean);
+  return times.every((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)) ? { times } : null;
+}
+
+const ACTION_LABEL = { reply: 'reply', pay: 'pay', schedule: 'schedule', read: 'read' };
+
+// "Sam is waiting on the deck · due Fri 16 Oct" (the due date in the reader's own locale)
+export function briefItemLine(item) {
+  if (!item.due) return item.summary;
+  const due = new Date(item.due + 'T12:00:00');
+  const label = isNaN(due) ? item.due : due.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return `${item.summary} · due ${label}`;
+}
+
 export function agentTile(svc) {
   let taskId = null;
   let seen = 0;
   let timer = null;
   let destroyed = false;
   let state = { folders: [], loops: [], tasks: [] };
+  let briefs = null;
+  let briefTimer = null;
 
   const bar = h('div', { class: 'agent-bar' });
   const log = h('div', { class: 'msgs agent-log', role: 'log', 'aria-label': 'Agent steps', tabindex: '0' });
@@ -70,12 +94,101 @@ export function agentTile(svc) {
     paintBar();
   }
 
+  async function refreshBriefs() {
+    try { briefs = await api.agent.briefs(); } catch { return null; }
+    paintBar();
+    return briefs;
+  }
+
+  // ---- briefs ----
+
+  async function showBriefs() {
+    const data = await refreshBriefs();
+    if (!data) return;
+    const latest = data.briefs[0];
+    if (latest) addBrief(latest);
+    else note(data.email_connected ? 'No briefs yet. Make one now with /brief.' : 'Connect your email (in Connect) to get briefs.');
+    note(data.settings.enabled ? `Briefs are on at ${data.settings.times.join(', ')} while zhunt runs. /briefs off to stop.`
+      : 'Scheduled briefs are off. /briefs on to get them at ' + data.settings.times.join(', ') + '; /briefs 07:30, 18:00 to change the times.');
+  }
+
+  async function briefsCommand(args) {
+    const body = parseBriefsArgs(args);
+    if (body === null) { note('Use: /briefs on, /briefs off, or /briefs 08:00, 13:00, 18:00', true); return; }
+    if (!Object.keys(body).length) { showBriefs(); return; }
+    try {
+      const settings = await api.agent.briefSettings(body);
+      note(settings.enabled ? `Briefs on at ${settings.times.join(', ')} while zhunt runs.` : `Briefs off (times kept: ${settings.times.join(', ')}).`);
+      refreshBriefs();
+    } catch (err) { note(err.message || String(err), true); }
+  }
+
+  async function runBrief() {
+    try { await api.agent.runBrief(); } catch (err) { note(err.message || String(err), true); return; }
+    note('Reading new email for a brief…');
+    const before = briefs?.briefs[0]?.id;
+    clearTimeout(briefTimer);
+    const wait = async () => {
+      if (destroyed) return;
+      const data = await refreshBriefs();
+      if (data && !data.running) {
+        if (data.briefs[0] && data.briefs[0].id !== before) addBrief(data.briefs[0]);
+        return;
+      }
+      briefTimer = setTimeout(wait, 2000);
+    };
+    briefTimer = setTimeout(wait, 1500);
+  }
+
+  function addBrief(brief) {
+    log.querySelector('.chat-empty')?.remove();
+    log.append(briefCard(brief));
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function briefCard(brief) {
+    const open = brief.items.filter((i) => i.state !== 'dismissed');
+    const when = new Date(brief.created * 1000).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    const facts = [`${brief.scanned} new`, brief.skipped ? `${brief.skipped} skipped` : null, brief.older ? `${brief.older} older not read` : null].filter(Boolean).join(' · ');
+    return h('div', { class: 'card tone-info agent-brief', 'data-brief': brief.id },
+      h('h3', { class: 'card-title' }, `${brief.title} · ${when}`),
+      h('p', { class: 'quiet' }, facts, brief.models.length ? ' · ' : '', brief.models.length ? modelLabel(brief.models[0]) : null),
+      brief.error ? h('p', { class: 'agent-note err' }, brief.error) : null,
+      open.length ? h('ul', { class: 'brief-items' }, open.map((item) => briefRow(brief, item)))
+        : h('p', { class: 'card-detail' }, brief.state === 'failed' ? 'Nothing could be read this time.' : 'Nothing needs you.'));
+  }
+
+  function briefRow(brief, item) {
+    const row = h('li', { class: 'brief-item' });
+    const act = h('button', { class: 'act primary', type: 'button', disabled: item.state === 'started' }, item.state === 'started' ? 'Started' : item.proposed_action);
+    const done = (text) => { row.querySelectorAll('button').forEach((b) => { b.disabled = true; }); row.append(h('p', { class: 'quiet' }, text)); };
+    const dismiss = async (skip) => {
+      try { await api.agent.dismissBrief(brief.id, item.item_id, skip); } catch (err) { svc.toast(err.message || String(err), true); return; }
+      done(skip === 'sender' ? `Mail from ${item.sender} will be skipped.` : skip === 'topic' ? `"${item.topic}" will be skipped.` : 'Dismissed.');
+    };
+    act.addEventListener('click', async () => {
+      act.disabled = true;
+      try { openTask(await api.agent.actBrief(brief.id, item.item_id)); } catch (err) { svc.toast(err.message || String(err), true); act.disabled = false; }
+    });
+    const others = item.people.filter((p) => p !== item.sender_name);
+    row.append(
+      h('p', { class: 'brief-line' }, chip(ACTION_LABEL[item.action] || item.action, item.action === 'pay' ? 'warn' : ''), ' ', briefItemLine(item)),
+      h('p', { class: 'quiet' }, item.sender_name || item.sender, others.length ? ' · ' + others.join(', ') : ''),
+      h('div', { class: 'acts' }, act,
+        h('button', { class: 'act', type: 'button', onclick: () => dismiss(null) }, 'Dismiss'),
+        h('button', { class: 'act', type: 'button', title: 'Leave mail from this sender out of later briefs', onclick: () => dismiss('sender') }, 'Skip sender'),
+        item.topic ? h('button', { class: 'act', type: 'button', title: 'Leave this thread out of later briefs', onclick: () => dismiss('topic') }, 'Skip topic') : null));
+    return row;
+  }
+
   function paintBar() {
     const folders = state.folders.length ? state.folders.map((f) => f.split('/').slice(-2).join('/')).join(', ') : 'none yet';
     bar.replaceChildren(
       h('span', { class: 'agent-bar-item', title: state.folders.join('\n') || 'Share a folder so the agent can work with your files' },
         'Folders: ', h('strong', {}, folders)),
       h('button', { class: 'pane-btn wide', type: 'button', onclick: chooseFolders }, 'change'),
+      briefs ? h('button', { class: 'pane-btn wide', type: 'button', title: 'Show the latest brief (/briefs on|off|times)', onclick: () => showBriefs() },
+        'Briefs: ' + (briefs.settings.enabled ? briefs.settings.times.join(' · ') : 'off')) : null,
       ...state.loops.map((l) => h('span', { class: 'agent-bar-item' }, chip(`every ${fmtEvery(l.every)}`, 'warn'), ' ' + l.goal.slice(0, 40),
         h('button', { class: 'pane-btn', type: 'button', 'aria-label': 'Stop loop', title: 'Stop this loop', onclick: () => unloop(l.id) }, 'x'))));
   }
@@ -124,6 +237,8 @@ export function agentTile(svc) {
     if (cmd === 'folders') { chooseFolders(args); return; }
     if (cmd === 'loops') { note(state.loops.length ? state.loops.map((l) => `${l.id}: every ${fmtEvery(l.every)} — ${l.goal}`).join('\n') : 'No loops running.'); return; }
     if (cmd === 'unloop') { unloop(args); return; }
+    if (cmd === 'brief') { runBrief(); return; }
+    if (cmd === 'briefs') { briefsCommand(args); return; }
     if (cmd === 'loop') {
       const m = /^(\S+)\s+([\s\S]+)$/.exec(args);
       if (!m) { note('Use: /loop 2h <task>', true); return; }
@@ -231,11 +346,16 @@ export function agentTile(svc) {
 
   paintEmpty();
   refreshState();
+  // greet with the latest brief when it still has something to act on
+  refreshBriefs().then((data) => {
+    const latest = data?.briefs[0];
+    if (latest && log.querySelector('.chat-empty') && latest.items.some((i) => i.state === 'open')) addBrief(latest);
+  });
 
   return {
     el,
     getState: () => ({}),
     focusPrimary: () => input.focus(),
-    destroy() { destroyed = true; stopPolling(); },
+    destroy() { destroyed = true; stopPolling(); clearTimeout(briefTimer); },
   };
 }
