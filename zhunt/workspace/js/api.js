@@ -99,6 +99,8 @@ export const api = {
   plan: () => request('/zhunt/api/plan'),
   keys: {
     add: (platform, key) => request('/zhunt/api/keys', { method: 'POST', json: { platform, key } }),
+    // no platform: the daemon tells the provider from the key's prefix (422 when it cannot)
+    addAny: (key) => request('/zhunt/api/keys', { method: 'POST', json: { key } }),
     remove: (platform) => request('/zhunt/api/keys/' + encodeURIComponent(platform), { method: 'DELETE' }),
   },
   bots: {

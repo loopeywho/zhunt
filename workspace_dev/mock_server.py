@@ -17,7 +17,9 @@ Implements docs/WORKSPACE_API.md with realistic fake data (stdlib only):
   *    /zhunt/api/layouts[/name]        backed by a temp dir
   *    /zhunt/api/catalog[/update(s)]   the bundled catalog; switch is Pro-only; nothing is fetched
   GET  /zhunt/api/themes[/name]         built-ins from the workspace dir + a user theme from a temp dir
-  POST /mock/control                    {"layouts_broken": bool, "status_down": bool, "plan": "free"|"pro"} (no auth), test hook
+  POST /zhunt/api/keys                  with or without "platform" (prefix detection, 422 when unclear); stores nothing
+  POST /mock/control                    {"layouts_broken": bool, "status_down": bool, "plan": "free"|"pro",
+                                         "no_keys": true (fresh install: only keyless providers)} (no auth), test hook
 
 Usage: python3 workspace_dev/mock_server.py [--port 8765] [--key mockkey]
 Then open http://127.0.0.1:8765/workspace/#key=mockkey
@@ -27,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -36,6 +39,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from zhunt.key_prefix import detect_platform  # noqa: E402  (stdlib-only module)
+
 WORKSPACE_DIR = ROOT / "zhunt" / "workspace"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
@@ -100,6 +106,11 @@ CATALOG = [
     {"platform": "kilo", "name": "Kilo Gateway (no key needed)", "key_set": True, "keyless": True, "key_env": "KILO_API_KEY", "key_url": "https://app.kilo.ai",
      "free_note": "Works with no key at all. Its free models may log prompts and use them for training.", "models": [
         {"id": "kilo/kilo-auto/free", "tiers": ["chat", "coding", "reasoning"], "headroom": None, "reliability": None, "may_train_on_prompts": True},
+    ]},
+    {"platform": "ovh", "name": "OVHcloud AI Endpoints (no key needed)", "key_set": True, "keyless": True, "key_env": "OVH_AI_ENDPOINTS_ACCESS_TOKEN",
+     "key_url": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/",
+     "free_note": "Works with no key, hosted in the EU, no training on prompts; 2 requests a minute per model. Adding a key makes it paid.", "models": [
+        {"id": "ovh/gpt-oss-120b", "tiers": ["chat", "coding", "reasoning"], "headroom": None, "reliability": 0.85},
     ]},
     {"platform": "anthropic", "name": "Anthropic (premium)", "key_set": False, "key_env": "ANTHROPIC_API_KEY", "models": [
         {"id": "anthropic/claude-haiku-5-5", "tiers": ["chat", "coding"], "headroom": None, "reliability": None, "free": False},
@@ -325,7 +336,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         if u.path == "/mock/control":
-            STATE.update({k: v for k, v in (self._json_body() or {}).items() if k in ("layouts_broken", "status_down", "plan")})
+            body = self._json_body() or {}
+            STATE.update({k: v for k, v in body.items() if k in ("layouts_broken", "status_down", "plan")})
+            if body.get("no_keys"):  # a fresh install: only the keyless providers work
+                for prov in CATALOG:
+                    prov["key_set"] = bool(prov.get("keyless"))
             return self._send(200, {"ok": True, **{k: STATE[k] for k in ("layouts_broken", "status_down", "plan")}})
         if not self._authed():
             return
@@ -341,13 +356,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"text": "Write a regex for UK postcodes"})
         if u.path == "/zhunt/api/keys":
             body = self._json_body() or {}
-            prov = next((p for p in CATALOG if p["platform"] == body.get("platform")), None)
-            if prov is None:
-                return self._send(404, {"detail": "unknown provider"})
             if not isinstance(body.get("key"), str) or len(body["key"].strip()) < 8 or " " in body["key"].strip():
                 return self._send(400, {"detail": "that does not look like an API key (one line, no spaces)"})
+            platform = body.get("platform")
+            if platform is None:
+                platform = detect_platform(body["key"])
+                if not any(p["platform"] == platform for p in CATALOG):
+                    return self._send(422, {"detail": "zhunt cannot tell which provider this key is for; choose the provider"})
+            prov = next((p for p in CATALOG if p["platform"] == platform), None)
+            if prov is None:
+                return self._send(404, {"detail": "unknown provider"})
             prov["key_set"] = True  # the mock never stores the value
-            return self._send(200, {"platform": prov["platform"], "key_set": True})
+            return self._send(200, {"platform": prov["platform"], "name": prov["name"], "key_set": True})
         self._send(404, {"detail": "not found"})
 
     # ---- layouts / themes ----
