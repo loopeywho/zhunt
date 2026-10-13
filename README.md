@@ -46,10 +46,15 @@ Zhunt targets Python 3.12.
 python -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
 
-zhunt keys add groq        # hidden prompt; or paste it in the workspace's Connect window
 zhunt serve                # starts the daemon on localhost:4000
 zhunt open                 # opens the workspace in your browser, already signed in
+zhunt keys add             # optional: paste any free key (hidden); zhunt tells the provider from it
 ```
+
+With no keys at all zhunt already answers, through OVHcloud AI Endpoints (no key, no
+training on prompts, hosted in the EU), but slowly and under limits shared by everyone.
+A free Groq key (console.groq.com/keys, about a minute) makes it fast; paste it in the
+workspace's Connect window or with `zhunt keys add`.
 
 The workspace is its own desktop rather than a sidebar-and-chat app. Pick a window style
 in the top bar (or `Ctrl+Space g`):
