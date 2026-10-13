@@ -202,7 +202,7 @@ session id so stickiness keeps them on one model. Replies are validated to
 dropped, items in the same thread are merged and list every message in `ids`). If a batch
 fails, the brief is `partial` and the next one resumes after the last mail that was read.
 
-- `GET /agent/briefs` -> `{settings: {enabled, times}, running, email_connected, memory:
+- `GET /agent/briefs` -> `{settings: {enabled, times}, running, email_connected, scheduled_available, memory:
   {senders, topics}, briefs: [newest first]}`; a brief is `{id, title, created, state:
   done|partial|failed, items, scanned, skipped, older, models, error, caught_up_since}` and an item adds
   `item_id, sender, sender_name, topic, subject, state: open|started|dismissed, task_id`
@@ -211,7 +211,9 @@ fails, the brief is `partial` and the next one resumes after the last mail that 
   the daemon starts or the laptop wakes after missed times, one catch-up brief covers the
   whole gap (not one per missed time) and carries `caught_up_since` (when the previous brief
   was made, or briefs were switched on); the card shows "caught up: covers since ...".
-- `POST /agent/briefs/run` makes one now (409 when email is not connected or one is running)
+  Scheduled briefs are Pro (`scheduled_briefs` feature): `{"enabled": true}` is 403 on
+  Free and the schedule does not fire without Pro; times can still be set.
+- `POST /agent/briefs/run` makes one now, on any plan (409 when email is not connected or one is running)
 - `POST /agent/briefs/{brief}/items/{item}/act` starts the item as an agent task and returns
   its detail. The goal is a fixed template per action (the summary is quoted as data) and the
   task gets only `list_emails`, `read_email` and, for reply/schedule, `draft_email`, so

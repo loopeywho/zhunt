@@ -49,11 +49,12 @@ STATE = {
     "plan": "free",  # free | pro  (--plan, or POST /mock/control {"plan": "pro"})
     "catalog_updates": False,
 }
-PLAN_FEATURES = {"free": [], "pro": ["premium_fallback", "catalog_live", "priority_support"]}
+PLAN_FEATURES = {"free": [], "pro": ["premium_fallback", "catalog_live", "priority_support", "scheduled_briefs"]}
 FEATURE_LABELS = {
     "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
     "catalog_live": "Live free-model catalog: newly verified free models every 12 hours, when you switch it on",
     "priority_support": "Priority email support (a reply within one working day) and help with your first setup",
+    "scheduled_briefs": "Scheduled email briefs: what needs you, with a one-tap next step, at the times you pick",
 }
 
 

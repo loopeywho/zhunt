@@ -20,6 +20,7 @@ from typing import Any, Callable
 import httpx
 
 from zhunt.agent import briefs
+from zhunt import licence
 from zhunt.agent.browser import AgentBrowser, browser_tools, find_browser
 from zhunt.agent.email_tools import EmailAccount
 from zhunt.agent.tools import AgentSettings, Tool, ToolError, all_tools
@@ -104,6 +105,8 @@ class AgentRunner:
     def __init__(self, settings_path: Path, briefs_path: Path | None = None) -> None:
         self.settings_path = settings_path
         self.brief_store = briefs.BriefStore(briefs_path or settings_path.with_name("briefs.json"))
+        # Scheduled briefs are a Pro feature; a brief made on request (/brief) is free.
+        self.plan: Callable[[], licence.Plan] = licence.current_plan
         self._brief_job: asyncio.Task | None = None
         self.tasks: dict[str, Task] = {}
         self.order: deque[str] = deque()
@@ -313,7 +316,8 @@ class AgentRunner:
 
         data = self.brief_store.load()
         settings = data["settings"]
-        slot = briefs.last_slot(settings["times"], last, now) if settings["enabled"] else None
+        on = settings["enabled"] and self.plan().has("scheduled_briefs")
+        slot = briefs.last_slot(settings["times"], last, now) if on else None
         if slot is not None:
             late = now - slot > briefs.CATCH_UP_GRACE
             since = briefs.schedule_start(data, now) if late else None

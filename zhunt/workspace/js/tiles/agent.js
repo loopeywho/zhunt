@@ -113,6 +113,7 @@ export function agentTile(svc) {
     const latest = data.briefs[0];
     if (latest) addBrief(latest);
     else note(data.email_connected ? 'No briefs yet. Make one now with /brief.' : 'Connect your email (in Connect) to get briefs.');
+    if (!data.scheduled_available) { note('Scheduled briefs (at the times you pick) are part of zhunt Pro. /brief makes one now, free.'); return; }
     note(data.settings.enabled ? `Briefs are on at ${data.settings.times.join(', ')} while zhunt runs. /briefs off to stop.`
       : 'Scheduled briefs are off. /briefs on to get them at ' + data.settings.times.join(', ') + '; /briefs 07:30, 18:00 to change the times.');
   }

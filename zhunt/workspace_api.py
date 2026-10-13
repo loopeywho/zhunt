@@ -124,6 +124,7 @@ def build_router(
     runner = runner or AgentRunner(dirs.agent)
     # Read on every request, so `zhunt licence activate` takes effect without a restart.
     plan = plan or (lambda: current_plan())
+    runner.plan = plan
     router = APIRouter(
         prefix="/zhunt/api", dependencies=[Depends(_authenticate_local_request)]
     )
@@ -438,6 +439,7 @@ def build_router(
         data = runner.brief_store.load()
         return {"settings": data["settings"], "running": runner.brief_running, "memory": data["memory"],
                 "email_connected": email_tools.EmailAccount.from_env() is not None,
+                "scheduled_available": plan().has("scheduled_briefs"),
                 "briefs": list(reversed(data["briefs"]))}
 
     @router.put("/agent/briefs/settings")
@@ -449,6 +451,8 @@ def build_router(
         if "enabled" in body:
             if not isinstance(body["enabled"], bool):
                 raise HTTPException(400, "enabled is true or false")
+            if body["enabled"] and not plan().has("scheduled_briefs"):
+                raise HTTPException(403, "scheduled briefs are part of zhunt Pro; /brief makes one now for free")
             if body["enabled"] and not data["settings"]["enabled"]:
                 data["enabled_at"] = time.time()  # missed times before this are never caught up
             data["settings"]["enabled"] = body["enabled"]

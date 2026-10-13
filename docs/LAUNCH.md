@@ -36,7 +36,8 @@ features are open-core and can be patched out, so each one must be worth paying 
    a guided first setup (a short call or a written walk-through for the user's own apps).
    Cheap to offer, valued most by beginners, and it is where we learn what to build.
 3. **Convenience features we maintain.** Scheduled email briefs with one-tap next actions
-   (in progress), brief and agent templates, more connectors as they are built. Useful,
+   (built: Pro gets them at the times they pick; anyone can make one on request with
+   `/brief`), brief and agent templates, more connectors as they are built. Useful,
    but no single one justifies a subscription, so they are bundled, never sold alone.
 4. **Premium fallback** on the user's own Anthropic, OpenAI or Google key, under a monthly
    cap. A safety net for people who already have paid keys, not the headline.
@@ -67,7 +68,7 @@ exposed to the internet.
 | Free-model catalog | release + monthly snapshot (`zhunt catalog update`) | live, every 12 h (opt-in switch) | live |
 | All 12 themes (incl. 10 Omarchy-style) | yes | yes | yes |
 | Priority email support, guided first setup | community | yes (not set up yet: needs a support address and a reply target) | yes |
-| Scheduled email briefs | | yes (in progress) | yes, even while the laptop is closed |
+| Scheduled email briefs | on request (`/brief`) | yes, at the times you pick, while zhunt runs | yes, even while the laptop is closed |
 | Always on, no keys to enter | | (own server, self-run) | yes |
 | Nothing to install | | | yes |
 

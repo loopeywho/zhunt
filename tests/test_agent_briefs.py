@@ -13,6 +13,7 @@ import pytest
 from zhunt.agent import briefs as B
 from zhunt.agent.email_tools import EmailAccount
 from zhunt.agent.runner import AgentRunner
+from zhunt.licence import FEATURES, FREE, Plan
 
 ACCOUNT = EmailAccount("me@example.com", "app-pass-1234", "imap.example.com:993", "smtp.example.com:465")
 TODAY = dt.date(2026, 10, 13)
@@ -224,8 +225,12 @@ def test_a_slot_fires_once_when_its_time_passes():
     assert B.last_slot(["08:00", "13:00"], at + 1, at + 31) is None
 
 
-def _scheduled_runner(tmp_path, briefs=(), enabled_at=None):
+PRO = Plan(name="pro", features=FEATURES["pro"], expires_at=2e9)
+
+
+def _scheduled_runner(tmp_path, briefs=(), enabled_at=None, plan=PRO):
     runner = AgentRunner(tmp_path / "agent.json")
+    runner.plan = lambda: plan
     data = runner.brief_store.load()
     data["settings"]["enabled"] = True
     data["enabled_at"] = enabled_at
@@ -321,3 +326,10 @@ def test_acting_on_an_item_starts_an_agent_task_that_still_needs_approval(tmp_pa
     assert {t["function"]["name"] for t in seen[0]["tools"]} == {"list_emails", "read_email", "draft_email"}
     saved = runner.brief_store.load()["briefs"][0]["items"][0]
     assert saved["state"] == "started" and saved["task_id"] == task.id
+
+
+def test_scheduled_briefs_are_pro_only(tmp_path):
+    runner, started = _scheduled_runner(tmp_path, plan=FREE)
+    at = dt.datetime(2026, 10, 13, 8, 0).timestamp()
+    runner.brief_schedule_step(at - 30, at + 1)
+    assert started == []  # switched on, time due, but Free: no scheduled brief

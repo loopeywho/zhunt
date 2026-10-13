@@ -1053,8 +1053,21 @@ def test_email_connects_only_after_a_real_login_and_never_reveals_the_password()
     assert after["connected"] is False
 
 
-def test_briefs_start_switched_off_and_need_email_to_run():
+def test_scheduled_briefs_need_pro_but_a_brief_on_request_does_not():
     with workspace(AsyncMock(), env=ENV) as (client, _):
+        listing = client.get("/zhunt/api/agent/briefs", headers=headers()).json()
+        on = client.put("/zhunt/api/agent/briefs/settings", headers=headers(), json={"enabled": True})
+        times = client.put("/zhunt/api/agent/briefs/settings", headers=headers(), json={"times": ["07:00"]})
+        run = client.post("/zhunt/api/agent/briefs/run", headers=headers())
+
+    assert listing["scheduled_available"] is False
+    assert on.status_code == 403 and "Pro" in on.json()["detail"]
+    assert times.status_code == 200
+    assert run.status_code == 409 and "email" in run.json()["detail"]  # not a Pro refusal
+
+
+def test_briefs_start_switched_off_and_need_email_to_run():
+    with workspace(AsyncMock(), env=ENV, plan=PRO) as (client, _):
         first = client.get("/zhunt/api/agent/briefs", headers=headers()).json()
         bad = client.put("/zhunt/api/agent/briefs/settings", headers=headers(), json={"times": ["8am"]})
         on = client.put("/zhunt/api/agent/briefs/settings", headers=headers(), json={"enabled": True, "times": ["07:30", "17:00"]})
