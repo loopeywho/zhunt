@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zhunt — Setup guide</title>
+    <meta name="description" content="Install zhunt, add your first free key, open the workspace and connect your apps, step by step." />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Zhunt home"><span class="brand-mark" aria-hidden="true">z</span><span>Zhunt</span></a>
+      </header>
+      <main class="activate-main guide">
+        <p class="eyebrow">Setup guide</p>
+        <h1 class="activate-title">From install to your first answer in about five minutes.</h1>
+        <p class="section-intro">Zhunt runs on your computer. You need a terminal for the first two steps; after that everything happens in the workspace in your browser.</p>
+
+        <section class="install-card" aria-labelledby="s1">
+          <h2 id="s1">1. Install</h2>
+          <p>Zhunt installs with <a href="https://docs.astral.sh/uv/" target="_blank" rel="noopener">uv</a>, a small Python tool installer. Install uv first if you do not have it, then:</p>
+<pre><code>uv tool install git+https://github.com/loopeywho/zhunt</code></pre>
+          <p>Check it worked: <code>zhunt --help</code> prints the list of commands.</p>
+        </section>
+
+        <section class="install-card" aria-labelledby="s2">
+          <h2 id="s2">2. Start zhunt and open your workspace</h2>
+<pre><code>zhunt serve     # leave this running
+zhunt open      # in a second terminal: opens the workspace in your browser</code></pre>
+          <p>Always open the workspace with <code>zhunt open</code>. It passes the workspace its key in a way your browser never sends anywhere. A tab opened by hand says "This workspace needs its key"; that is expected.</p>
+          <p>If port 4000 is busy, zhunt picks another and remembers it. <code>zhunt open</code> always finds it.</p>
+        </section>
+
+        <section class="install-card" aria-labelledby="s3">
+          <h2 id="s3">3. Add one free key (one is enough)</h2>
+          <p>Each free AI provider gives you a key after a quick sign-up, with no card. You do not need all of them: start with one.</p>
+          <ul>
+            <li><strong>Groq</strong> (recommended first, about a minute): <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a></li>
+            <li>Later, for more free capacity: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>, <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a> and the others listed in the app.</li>
+          </ul>
+          <p>In the workspace, open the <strong>Connect</strong> window, press <em>Paste key</em> next to the provider and paste. Or in a terminal: <code>zhunt keys add groq</code>. Keys stay on your computer, in a file only you can read, and are never shown again.</p>
+        </section>
+
+        <section class="install-card" aria-labelledby="s4">
+          <h2 id="s4">4. Ask something</h2>
+          <p>Type in the chat window. Zhunt picks the best free model that has room, and moves to another one by itself when a provider is busy. The routing window shows which model answered and why.</p>
+          <p>Some free providers say they may use prompts for training. They stay off unless you turn on the switch in the Connect window.</p>
+        </section>
+
+        <section class="install-card" aria-labelledby="s5">
+          <h2 id="s5">5. Use zhunt from your other apps (optional)</h2>
+<pre><code>zhunt launch codex     # starts Codex with zhunt as its model provider
+zhunt launch hermes    # the same for Hermes
+zhunt launch cursor    # Cursor and VS Code: prints the steps for their settings</code></pre>
+          <p>Nothing in the app's own config files is changed, so app updates cannot break the connection.</p>
+        </section>
+
+        <section class="install-card" aria-labelledby="s6">
+          <h2 id="s6">6. Pro extras</h2>
+          <p>After checkout, run <code>zhunt licence activate</code> and paste your key. Then, in the Connect window:</p>
+          <ul>
+            <li>switch on <strong>Keep the free-model list up to date</strong> to get newly verified free models every 12 hours;</li>
+            <li>add a paid Anthropic, OpenAI or Google key and run <code>zhunt premium on --cap 5</code> if you want premium models when every free one is busy (billed by that provider, stopping at your cap).</li>
+          </ul>
+        </section>
+
+        <section class="install-card" aria-labelledby="s7">
+          <h2 id="s7">Something not working?</h2>
+<pre><code>zhunt doctor     # checks zhunt, your keys, settings and connected apps, with a fix for each problem</code></pre>
+          <p>Still stuck? Email <a href="mailto:kwokwingfoods@gmail.com?subject=zhunt%20question">kwokwingfoods@gmail.com</a> with what you tried and what <code>zhunt doctor</code> printed (never include your keys). Pro subscribers: use the <em>Email support</em> item under your plan in the workspace, or start the subject with <code>[zhunt Pro]</code>, and we reply within one working day and help you finish the setup.</p>
+        </section>
+      </main>
+      <footer class="site-footer"><div class="footer-meta"><span>© 2026 Kindred Wildcat</span><a href="./">Back to zhunt</a></div></footer>
+    </div>
+  </body>
+</html>

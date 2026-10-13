@@ -76,9 +76,17 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
         : { title: 'Get zhunt Pro ($7/month, 7-day free trial)', group: 'upgrade', hint: 'opens the website', open: true },
       ...(pro ? [] : [{ title: 'Already bought it? Run: zhunt licence activate', group: 'upgrade' }]),
       ...(plan.problem ? [{ title: 'Stored licence not in effect: ' + plan.problem, group: 'plan' }] : []),
+      ...(plan.setup_guide_url ? [{ title: 'Setup guide: install, first key, connect your apps', group: 'help', hint: 'opens the website', url: plan.setup_guide_url }] : []),
+      ...(plan.support_email ? [{
+        title: pro ? `Email support (Pro: reply within one working day) · ${plan.support_email}` : `Email us · ${plan.support_email}`,
+        group: 'help', hint: 'opens your email app', mail: plan.support_email,
+      }] : []),
     ];
     const picked = await overlays.palette(items, { placeholder: pro ? 'your plan' : 'zhunt Pro' });
     if (picked?.open && plan.upgrade_url) window.open(plan.upgrade_url, '_blank', 'noopener');
+    if (picked?.url) window.open(picked.url, '_blank', 'noopener');
+    // The subject marks Pro mail so it is answered first; nothing about the setup is attached.
+    if (picked?.mail) window.location.href = `mailto:${picked.mail}?subject=${encodeURIComponent(pro ? '[zhunt Pro] Support' : 'zhunt question')}`;
   }
 
   async function newWindowMenu() {

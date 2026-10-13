@@ -284,7 +284,8 @@
       return Promise.resolve(json(200, { plan: PLAN, email: null, expires_at: null, in_grace: false, problem: null,
         features: [],
         feature_labels: { premium_fallback: 'Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap' },
-        upgrade_url: 'https://zhunt.kindredwildcat.com/#pricing' }));
+        upgrade_url: 'https://zhunt.kindredwildcat.com/#pricing',
+        setup_guide_url: 'https://zhunt.kindredwildcat.com/setup.html', support_email: 'kwokwingfoods@gmail.com' }));
     }
     if (rest === 'themes') {
       return Promise.resolve(json(200, { themes: THEMES.map(function (n) { return { name: n, builtin: true }; }) }));

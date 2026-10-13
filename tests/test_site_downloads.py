@@ -41,3 +41,23 @@ def test_homepage_shows_the_demo_video_without_preloading_it():
     assert 'src="media/zhunt-demo.mp4"' in html and 'preload="none"' in html
     assert (SITE / "media" / "zhunt-demo.mp4").stat().st_size < 10 * 1024 * 1024
     assert (SITE / "media" / "zhunt-demo-poster.jpg").is_file()
+
+
+def test_setup_guide_is_linked_and_only_names_real_commands():
+    import re
+
+    from typer.testing import CliRunner
+
+    from zhunt.cli import app
+
+    page = (SITE / "setup.html").read_text(encoding="utf-8")
+    assert 'href="setup.html"' in (SITE / "index.html").read_text(encoding="utf-8")
+    assert "<script" not in page  # the site CSP allows no inline scripts; the guide needs none
+    blocks = re.findall(r"<code>(.*?)</code>", page, re.S)
+    code = "\n".join(line.split("#")[0] for block in blocks for line in block.splitlines())
+    commands = set(re.findall(r"\bzhunt ((?:[a-z]+)(?: [a-z]+)?)", code))
+    assert {"serve", "open", "doctor", "keys add", "launch codex", "licence activate", "premium on"} <= commands
+    for command in sorted(commands):
+        words = command.split()
+        args = words if words[0] in {"keys", "licence", "premium"} else words[:1]
+        assert CliRunner().invoke(app, [*args, "--help"]).exit_code == 0, command

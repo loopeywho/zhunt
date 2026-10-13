@@ -49,10 +49,11 @@ STATE = {
     "plan": "free",  # free | pro  (--plan, or POST /mock/control {"plan": "pro"})
     "catalog_updates": False,
 }
-PLAN_FEATURES = {"free": [], "pro": ["premium_fallback", "catalog_live"]}
+PLAN_FEATURES = {"free": [], "pro": ["premium_fallback", "catalog_live", "priority_support"]}
 FEATURE_LABELS = {
     "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
     "catalog_live": "Live free-model catalog: newly verified free models every 12 hours, when you switch it on",
+    "priority_support": "Priority email support (a reply within one working day) and help with your first setup",
 }
 
 
@@ -266,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
                 "expires_at": time.time() + 20 * 86400 if pro else None, "in_grace": False, "problem": None,
                 "features": PLAN_FEATURES[STATE["plan"]], "feature_labels": FEATURE_LABELS,
                 "upgrade_url": "https://zhunt.kindredwildcat.com/#pricing",
+                "setup_guide_url": "https://zhunt.kindredwildcat.com/setup.html",
+                "support_email": "kwokwingfoods@gmail.com",
             })
         if u.path == "/zhunt/api/catalog":
             return self._send(200, catalog_payload())

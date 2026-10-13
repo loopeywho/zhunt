@@ -27,6 +27,8 @@ from zhunt.auth import write_private_text
 
 PREFIX = "ZHUNT1"
 UPGRADE_URL = "https://zhunt.kindredwildcat.com/#pricing"
+SETUP_GUIDE_URL = "https://zhunt.kindredwildcat.com/setup.html"
+SUPPORT_EMAIL = "kwokwingfoods@gmail.com"
 # A lapsed subscription keeps Pro for this long after the key's expiry, so a renewal
 # that is a few days late (or a laptop that was offline) does not switch features off.
 GRACE_SECONDS = 7 * 24 * 3600
@@ -38,11 +40,12 @@ PUBLIC_KEYS: dict[str, str] = {
 
 FEATURES = {
     "free": frozenset(),
-    "pro": frozenset({"premium_fallback", "catalog_live"}),
+    "pro": frozenset({"premium_fallback", "catalog_live", "priority_support"}),
 }
 FEATURE_LABELS = {
     "premium_fallback": "Premium models (GPT, Claude, Gemini Pro) when free models run out, under your monthly cap",
     "catalog_live": "Live free-model catalog: newly verified free models every 12 hours, when you switch it on",
+    "priority_support": "Priority email support (a reply within one working day) and help with your first setup",
 }
 
 
@@ -72,6 +75,9 @@ class Plan:
             "features": sorted(self.features),
             "feature_labels": FEATURE_LABELS,
             "upgrade_url": UPGRADE_URL,
+            "setup_guide_url": SETUP_GUIDE_URL,
+            # Everyone can write in; Pro is answered first (the subject line marks it).
+            "support_email": SUPPORT_EMAIL,
         }
 
 

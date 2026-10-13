@@ -6,13 +6,14 @@ should be re-checked before quoting them publicly.
 ## 1. What we sell
 
 **One workspace for every AI model, free first.** Zhunt answers with the best free model
-available (Groq, Google AI Studio, Cerebras), fails over automatically when one runs dry,
-and lives in its own desktop (floating or tiled windows, themes). It runs on the user's
-computer with the user's own keys.
+available, fails over automatically when one runs dry, and lives in its own desktop
+(floating or tiled windows, themes). Free runs on the user's computer with the user's own
+free keys and stays genuinely useful on its own: that is how the community grows.
 
-The ChatLLM idea (one place, many models, automatic routing) is the product. The
-difference is the price floor: ChatLLM has no free plan; zhunt's free plan is genuinely
-useful because free tiers do most everyday work.
+**What people pay for is what they cannot easily do themselves:** work we keep doing
+(verifying free tiers), help from a person, and, in phase 2, servers we run (zhunt that
+never sleeps and needs no keys). We do not charge for switches in open-source code: Pro
+features are open-core and can be patched out, so each one must be worth paying for anyway.
 
 | Product | Price | Free plan | Notes |
 | --- | --- | --- | --- |
@@ -20,9 +21,40 @@ useful because free tiers do most everyday work.
 | T3 Chat | ~$8 /month | limited | hosted, rate-limits premium models |
 | Poe | ~$20 /month | limited | hosted, points system |
 | OpenRouter | pay per token | 50 req/day | API only, needs a separate chat app |
+| Hark | free + Pro | yes | hosted assistant: OAuth email/calendar, scheduled briefs |
 | **zhunt Free** | $0 | yes | local, free-tier models, user's free keys, all themes |
-| **zhunt Pro** | $7 /month, 7-day trial | | adds premium fallback (user's paid keys) |
-| **zhunt Cloud** (phase 2) | $12 /month (proposed) | | hosted, premium credits included: the full ChatLLM model |
+| **zhunt Pro** | $7 /month, 7-day trial | | live verified catalog, premium fallback, support, convenience features |
+| **zhunt Cloud** (phase 2) | $12 /month (proposed) | | always on, no keys, premium credits included |
+
+**Pro ($7/month): ongoing work and help, on the user's own computer.** In order of value:
+
+1. **Live, verified free-model catalog.** Every free tier re-checked at least weekly
+   (`scripts/catalog_tool.py check`, then publish); Pro picks up new and changed models
+   every 12 hours without upgrading zhunt. This is only worth $7 while the weekly
+   verification actually happens: it is the core promise, so it comes first in the week.
+2. **Help from a person.** Priority email support with a reply within one working day, and
+   a guided first setup (a short call or a written walk-through for the user's own apps).
+   Cheap to offer, valued most by beginners, and it is where we learn what to build.
+3. **Convenience features we maintain.** Scheduled email briefs with one-tap next actions
+   (in progress), brief and agent templates, more connectors as they are built. Useful,
+   but no single one justifies a subscription, so they are bundled, never sold alone.
+4. **Premium fallback** on the user's own Anthropic, OpenAI or Google key, under a monthly
+   cap. A safety net for people who already have paid keys, not the headline.
+
+**Cloud ($12/month proposed, phase 2): servers we run.** zhunt that never sleeps, with
+nothing to install and no keys to enter. Briefs, scheduled loops and email triage run while
+the user's laptop is closed; premium models are included up to a monthly credit cap.
+This is the product that justifies a subscription on its own, and it solves the two
+biggest complaints from first use: entering a key per provider, and nothing running while
+the computer sleeps. It has real costs (servers, model tokens, about $5 per user per month
+budgeted), real obligations (hosting people's email access and keys securely, privacy
+law) and must run on paid, resale-permitted provider accounts, never pooled free keys.
+Build it only when demand is clear (about 100 Pro subscribers or a waitlist, see 5.E).
+Architecture, costs and the build gate are in `docs/CLOUD.md`.
+
+Until Cloud exists, a user who wants zhunt always on can run it on their own server (for
+example a spare VPS), bound to 127.0.0.1 and reached over an SSH tunnel or Tailscale, never
+exposed to the internet.
 
 ## 2. Plans and what is built
 
@@ -34,6 +66,9 @@ useful because free tiers do most everyday work.
 | Premium fallback (GPT, Claude, Gemini Pro) with monthly cap | | yes, user's own paid keys | yes, included credits |
 | Free-model catalog | release + monthly snapshot (`zhunt catalog update`) | live, every 12 h (opt-in switch) | live |
 | All 12 themes (incl. 10 Omarchy-style) | yes | yes | yes |
+| Priority email support, guided first setup | community | yes (not set up yet: needs a support address and a reply target) | yes |
+| Scheduled email briefs | | yes (in progress) | yes, even while the laptop is closed |
+| Always on, no keys to enter | | (own server, self-run) | yes |
 | Nothing to install | | | yes |
 
 How Pro is delivered (all in the repo):
@@ -200,7 +235,8 @@ Owner = you unless marked. Order matters.
 | --- | --- |
 | Providers shrink free tiers | multi-provider catalog with dates; signed live catalog feed between releases; learned limits; Pro fallback is the safety net |
 | Catalog signing key leaked | separate from the licence key; ship a new kid and drop the old one in a release; feeds expire within 75 days |
-| "Why pay if it's open source?" | price low ($7), sell convenience and support; Cloud is the real business |
+| "Why pay if it's open source?" | Pro sells ongoing work (weekly catalog verification) and a person's help, not switches; Cloud is the real business |
+| The weekly catalog check slips | it is Pro's core promise: schedule it, and say on the site when the catalog was last verified |
 | Free keys feel complicated to newcomers | For you cards walk through it; Cloud removes keys entirely |
 | Licence key leaked and shared | keys carry the buyer's email and expire monthly; renewals check the subscription |
 | Losing the signing key | back it up today; rotation path exists (new kid in a release) |
