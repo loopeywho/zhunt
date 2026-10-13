@@ -50,6 +50,7 @@ the computer sleeps. It has real costs (servers, model tokens, about $5 per user
 budgeted), real obligations (hosting people's email access and keys securely, privacy
 law) and must run on paid, resale-permitted provider accounts, never pooled free keys.
 Build it only when demand is clear (about 100 Pro subscribers or a waitlist, see 5.E).
+Architecture, costs and the build gate are in `docs/CLOUD.md`.
 
 Until Cloud exists, a user who wants zhunt always on can run it on their own server (for
 example a spare VPS), bound to 127.0.0.1 and reached over an SSH tunnel or Tailscale, never
