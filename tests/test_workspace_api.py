@@ -785,6 +785,19 @@ def test_every_shipped_theme_is_free() -> None:
     assert plan["plan"] == "free" and plan["features"] == [] and plan["upgrade_url"].startswith("https://")
 
 
+def test_plan_offers_help_to_everyone_and_priority_support_to_pro() -> None:
+    with workspace(AsyncMock(), env=ENV) as (client, _):
+        free = client.get("/zhunt/api/plan", headers=headers()).json()
+    with workspace(AsyncMock(), env=ENV, plan=PRO) as (client, _):
+        pro = client.get("/zhunt/api/plan", headers=headers()).json()
+
+    for plan in (free, pro):
+        assert plan["setup_guide_url"] == "https://zhunt.kindredwildcat.com/setup.html"
+        assert "@" in plan["support_email"]
+    assert "priority_support" in pro["features"] and "priority_support" not in free["features"]
+    assert "one working day" in pro["feature_labels"]["priority_support"]
+
+
 def test_premium_needs_pro_and_the_opt_in_and_stops_at_the_cap() -> None:
     opted_in = {**ENV, "ZHUNT_ALLOW_PAID": "1"}
     with workspace(AsyncMock(), env=ENV, plan=PRO) as (client, _):
