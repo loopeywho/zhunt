@@ -140,7 +140,14 @@ The Connect window. `POST {"platform": "groq", "key": "..."}` saves the key to
 `~/.zhunt/env` (mode 0600) and this process's environment, then reloads keys so the
 provider is usable at once; the response is `{"platform", "key_set": true}` and never
 contains the key. 400 for a value that is not one printable line of 8-512 characters,
-404 for an unknown provider. `DELETE` removes it. `/status` providers carry `key_url`
+404 for an unknown provider. Leave out `platform` (the Connect window's "paste any key"
+box) and the provider is told from the key's prefix: `gsk_` Groq, `AIza` Google AI Studio
+(the free provider; a paid Gemini key looks the same, so `google-paid` is chosen by name),
+`csk-` Cerebras, `sk-ant-` Anthropic, then `sk-proj-` or `sk-` OpenAI. When the prefix is
+unknown, or names a provider not in the catalog, the answer is 422 ("choose the provider")
+and nothing is saved; the client asks and sends `platform`. The success response also
+carries the provider's `name`. Detection reads only the prefix and logs nothing.
+`DELETE` removes it. `/status` providers carry `key_url`
 (where to get a key) and `free_note` (one plain-language line) from the catalog.
 
 ## Bots: `GET /zhunt/api/bots`, `PUT|DELETE /zhunt/api/bots/{handle}`

@@ -839,6 +839,49 @@ def test_a_key_pasted_in_the_connect_window_is_saved_privately_and_used_at_once(
     assert deleted.status_code == 200 and gone == "no key"
 
 
+def detect_catalog() -> dict:
+    return {"providers": {
+        "groq": provider([model("g1", ["chat"])], name="Groq", key_env="GROQ_API_KEY"),
+        "anthropic": provider([model("a1", ["chat"])], name="Anthropic", key_env="ANTHROPIC_API_KEY"),
+        "openai": provider([model("o1", ["chat"])], name="OpenAI", key_env="OPENAI_API_KEY"),
+    }}
+
+
+@pytest.mark.parametrize(
+    "key, platform, env",
+    [
+        ("gsk_live1234567890", "groq", "GROQ_API_KEY"),
+        ("sk-ant-api03-live1234567890", "anthropic", "ANTHROPIC_API_KEY"),
+        ("sk-proj-live1234567890", "openai", "OPENAI_API_KEY"),
+    ],
+)
+def test_a_key_pasted_without_a_provider_is_saved_under_the_provider_its_prefix_names(
+    key: str, platform: str, env: str
+) -> None:
+    clean = {"ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": ""}
+    with patch.dict(os.environ, clean), workspace(AsyncMock(), env={}, data=detect_catalog()) as (client, _):
+        saved = client.post("/zhunt/api/keys", headers=headers(), json={"key": key})
+        content = client.dirs.env_file.read_text()
+        set_now = {p["platform"]: p["key_set"] for p in client.get("/zhunt/api/status", headers=headers()).json()["providers"]}
+
+    assert saved.status_code == 200
+    assert saved.json()["platform"] == platform and saved.json()["key_set"] is True
+    assert key not in saved.text  # never echoed back
+    assert f'{env}="{key}"' in content
+    assert set_now[platform] is True
+
+
+@pytest.mark.parametrize("key", ["mystery-key-1234567890", "AIzaSyLive1234567890", "csk-live1234567890"])
+def test_a_key_whose_provider_is_unclear_or_absent_asks_which_provider(key: str) -> None:
+    with workspace(AsyncMock(), env={}, data=detect_catalog()) as (client, _):
+        response = client.post("/zhunt/api/keys", headers=headers(), json={"key": key})
+        written = client.dirs.env_file.exists() and key in client.dirs.env_file.read_text()
+
+    assert response.status_code == 422
+    assert "choose the provider" in response.json()["detail"]
+    assert key not in response.text and not written
+
+
 def test_the_key_endpoints_need_the_master_key() -> None:
     with workspace(AsyncMock(), env={}, data=solo_catalog()) as (client, _):
         response = client.post("/zhunt/api/keys", json={"platform": "zeta", "key": "zk-live-1234567890"})
