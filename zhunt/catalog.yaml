@@ -16,7 +16,7 @@
 # `version` (UTC YYYYMMDDHHMM) is set by `scripts/catalog_tool.py publish`. A signed
 # feed is used only when its version is newer than this one (zhunt/catalog_feed.py).
 
-version: 202610120341
+version: 202610131257
 
 providers:
   groq:
