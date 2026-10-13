@@ -19,7 +19,9 @@ from typing import Any, Callable
 
 import httpx
 
+from zhunt.agent import briefs
 from zhunt.agent.browser import AgentBrowser, browser_tools, find_browser
+from zhunt.agent.email_tools import EmailAccount
 from zhunt.agent.tools import AgentSettings, Tool, ToolError, all_tools
 
 MAX_STEPS = 12
@@ -27,6 +29,7 @@ GOAL_STEPS = 24  # /goal keeps going longer, re-checking the goal each round
 APPROVAL_TIMEOUT = 30 * 60
 MAX_TASKS = 30
 MIN_LOOP_SECONDS = 300  # at most every 5 minutes: free quotas are precious
+BRIEF_CHECK_SECONDS = 30
 
 SYSTEM = """You are zhunt's agent. You complete the user's task by calling tools, then answer.
 - Think briefly, then act. Use as few steps as the task needs.
@@ -98,8 +101,10 @@ class Loop:
 
 
 class AgentRunner:
-    def __init__(self, settings_path: Path) -> None:
+    def __init__(self, settings_path: Path, briefs_path: Path | None = None) -> None:
         self.settings_path = settings_path
+        self.brief_store = briefs.BriefStore(briefs_path or settings_path.with_name("briefs.json"))
+        self._brief_job: asyncio.Task | None = None
         self.tasks: dict[str, Task] = {}
         self.order: deque[str] = deque()
         self.loops: dict[str, Loop] = {}
@@ -124,13 +129,13 @@ class AgentRunner:
             tools.update({t.name: t for t in browser_tools(self.browser)})
         return tools
 
-    async def _model(self, messages: list[dict[str, Any]], schemas: list[dict[str, Any]], session: str) -> dict[str, Any]:
+    async def _model(self, messages: list[dict[str, Any]], schemas: list[dict[str, Any]], session: str, **extra: Any) -> dict[str, Any]:
         transport = self._transport_factory() if self._transport_factory else httpx.ASGITransport(app=self._app)
         async with httpx.AsyncClient(transport=transport, base_url="http://zhunt.local", timeout=180) as client:
             response = await client.post(
                 "/v1/chat/completions",
                 headers={"Authorization": f"Bearer {self._key}", "x-session-id": session},
-                json={"model": "zhunt-auto", "messages": messages, "tools": schemas, "stream": False},
+                json={"model": "zhunt-auto", "messages": messages, "tools": schemas, "stream": False, **extra},
             )
         body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
         if response.status_code != 200:
@@ -281,3 +286,67 @@ class AgentRunner:
             self.start(loop.goal, mode=loop.mode, tools=loop.tools, loop_id=loop.id)
             loop.next_run = time.time() + loop.every
             await asyncio.sleep(loop.every)
+
+    # ---- briefs -----------------------------------------------------------------------------
+
+    @property
+    def brief_running(self) -> bool:
+        return self._brief_job is not None and not self._brief_job.done()
+
+    async def _brief_model(self, messages: list[dict[str, Any]], session: str) -> dict[str, Any]:
+        return await self._model(messages, [], session, max_tokens=briefs.MAX_OUTPUT_TOKENS)
+
+    def start_brief(self) -> bool:
+        """Make a brief in the background now. False when one is already running or no email is connected."""
+
+        account = EmailAccount.from_env()
+        if account is None or self.brief_running:
+            return False
+        self._brief_job = asyncio.get_running_loop().create_task(briefs.run_brief(self.brief_store, account, self._brief_model))
+        return True
+
+    async def run_brief_schedule(self) -> None:
+        """While the daemon runs: make a brief at each time the user picked, if briefs are switched on.
+        Times that passed while zhunt was closed are not made up for."""
+
+        last = time.time()
+        while True:
+            await asyncio.sleep(BRIEF_CHECK_SECONDS)
+            now = time.time()
+            settings = self.brief_store.load()["settings"]
+            if settings["enabled"] and briefs.due_slot(settings["times"], last, now):
+                self.start_brief()
+            last = now
+
+    def act_on_brief_item(self, brief_id: str, item_id: str) -> Task | None:
+        """Start the item's proposed action as an agent task (fixed template, email read/draft tools only)."""
+
+        data = self.brief_store.load()
+        found = briefs.find_item(data, brief_id, item_id)
+        if found is None:
+            return None
+        _, item = found
+        goal, wanted = briefs.task_for(item)
+        tools = wanted & set(self.tools())
+        if not tools:
+            raise ToolError("connect your email first")
+        task = self.start(goal, tools=tools)
+        item.update(state="started", task_id=task.id)
+        self.brief_store.save(data)
+        return task
+
+    def dismiss_brief_item(self, brief_id: str, item_id: str, skip: str | None) -> dict[str, Any] | None:
+        """Hide an item; skip "sender" or "topic" to leave such mail out of later briefs."""
+
+        data = self.brief_store.load()
+        found = briefs.find_item(data, brief_id, item_id)
+        if found is None:
+            return None
+        _, item = found
+        item["state"] = "dismissed"
+        if skip == "sender" and item.get("sender"):
+            briefs.remember(data["memory"], "senders", item["sender"])
+        elif skip == "topic" and item.get("topic"):
+            briefs.remember(data["memory"], "topics", item["topic"])
+        self.brief_store.save(data)
+        return item

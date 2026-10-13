@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from zhunt.auth import remove_env_value, save_env_value
 from zhunt import images, llm
+from zhunt.agent import briefs
 from zhunt.agent.runner import AgentRunner, parse_interval
 from zhunt.agent import email_tools
 from zhunt.agent.tools import AgentSettings, ToolError
@@ -104,6 +105,8 @@ class _WorkspaceHeaders:
 def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> AgentRunner:
     app.add_middleware(_WorkspaceHeaders)
     runner = AgentRunner(dirs.agent)
+    # briefs are made on their schedule while the daemon runs (the lifespan starts these jobs)
+    app.state.background = [*getattr(app.state, "background", ()), runner.run_brief_schedule]
     app.include_router(build_router(hook, dirs, runner=runner))
     if dirs.static.is_dir():  # the UI ships in a separate change
         app.mount(
@@ -428,6 +431,72 @@ def build_router(
         if not runner.remove_loop(loop_id):
             raise HTTPException(404, "no such loop")
         return {"id": loop_id}
+
+    @router.get("/agent/briefs")
+    def agent_briefs() -> dict[str, Any]:
+        data = runner.brief_store.load()
+        return {"settings": data["settings"], "running": runner.brief_running, "memory": data["memory"],
+                "email_connected": email_tools.EmailAccount.from_env() is not None,
+                "briefs": list(reversed(data["briefs"]))}
+
+    @router.put("/agent/briefs/settings")
+    async def agent_brief_settings(request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=2048)
+        if not isinstance(body, dict):
+            raise HTTPException(400, "send a JSON object")
+        data = runner.brief_store.load()
+        if "enabled" in body:
+            if not isinstance(body["enabled"], bool):
+                raise HTTPException(400, "enabled is true or false")
+            data["settings"]["enabled"] = body["enabled"]
+        if "times" in body:
+            times = briefs.valid_times(body["times"])
+            if times is None:
+                raise HTTPException(400, "times are 1 to 6 local times like \"08:00\"")
+            data["settings"]["times"] = times
+        runner.brief_store.save(data)
+        return data["settings"]
+
+    @router.post("/agent/briefs/run")
+    def agent_brief_run() -> dict[str, Any]:
+        if email_tools.EmailAccount.from_env() is None:
+            raise HTTPException(409, "connect your email first")
+        if not runner.start_brief():
+            raise HTTPException(409, "a brief is already being made")
+        return {"running": True}
+
+    @router.post("/agent/briefs/{brief_id}/items/{item_id}/act")
+    def agent_brief_act(brief_id: str, item_id: str) -> dict[str, Any]:
+        try:
+            task = runner.act_on_brief_item(brief_id, item_id)
+        except ToolError as error:
+            raise HTTPException(409, str(error)) from None
+        if task is None:
+            raise HTTPException(404, "no such brief item")
+        return task.detail()
+
+    @router.post("/agent/briefs/{brief_id}/items/{item_id}/dismiss")
+    async def agent_brief_dismiss(brief_id: str, item_id: str, request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=1024)
+        skip = body.get("skip") if isinstance(body, dict) else None
+        if skip not in (None, "sender", "topic"):
+            raise HTTPException(400, "skip is \"sender\", \"topic\" or null")
+        item = runner.dismiss_brief_item(brief_id, item_id, skip)
+        if item is None:
+            raise HTTPException(404, "no such brief item")
+        return item
+
+    @router.post("/agent/briefs/memory/forget")
+    async def agent_brief_forget(request: Request) -> dict[str, Any]:
+        body = await _json_body(request, limit=1024)
+        kind = body.get("kind") if isinstance(body, dict) else None
+        value = body.get("value") if isinstance(body, dict) else None
+        if kind not in ("senders", "topics") or not isinstance(value, str):
+            raise HTTPException(400, "send {\"kind\": \"senders\"|\"topics\", \"value\": \"...\"}")
+        data = runner.brief_store.load()
+        data["memory"][kind] = [v for v in data["memory"][kind] if v != value]
+        runner.brief_store.save(data)
+        return data["memory"]
 
     @router.get("/email/status")
     def email_status() -> dict[str, Any]:

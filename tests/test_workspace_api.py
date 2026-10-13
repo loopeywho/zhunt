@@ -81,7 +81,7 @@ def workspace(call: AsyncMock, *, env: dict[str, str], data: dict | None = None,
             (static_dir / "index.html").write_text("<h1>workspace</h1>")
             (static_dir / "css" / "themes" / "dark.css").write_text(":root{--bg:#000}")
             (static_dir / "css" / "themes" / "light.css").write_text(":root{--bg:#fff}")
-        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env", bots=root / "home" / "bots", wallpaper=root / "home" / "wallpaper")
+        dirs = WorkspaceDirs(layouts=root / "home" / "layouts", themes=root / "home" / "themes", static=static_dir, env_file=root / "home" / "env", bots=root / "home" / "bots", wallpaper=root / "home" / "wallpaper", agent=root / "home" / "agent.json")
         with patch.dict(os.environ, {**dict.fromkeys(ENV_NAMES, ""), **env}), patch(
             "zhunt.llm.acompletion", call
         ), patch("zhunt.workspace_api.current_plan", return_value=plan or FREE), patch(
@@ -1038,3 +1038,20 @@ def test_email_connects_only_after_a_real_login_and_never_reveals_the_password()
     assert "abcdefghijklmnop" not in status.text and status.json()["connected"] is True
     assert {"list_emails", "read_email", "draft_email", "send_email"} <= tools
     assert after["connected"] is False
+
+
+def test_briefs_start_switched_off_and_need_email_to_run():
+    with workspace(AsyncMock(), env=ENV) as (client, _):
+        first = client.get("/zhunt/api/agent/briefs", headers=headers()).json()
+        bad = client.put("/zhunt/api/agent/briefs/settings", headers=headers(), json={"times": ["8am"]})
+        on = client.put("/zhunt/api/agent/briefs/settings", headers=headers(), json={"enabled": True, "times": ["07:30", "17:00"]})
+        after = client.get("/zhunt/api/agent/briefs", headers=headers()).json()
+        run = client.post("/zhunt/api/agent/briefs/run", headers=headers())
+        missing = client.post("/zhunt/api/agent/briefs/b/items/i/act", headers=headers())
+        skip = client.post("/zhunt/api/agent/briefs/b/items/i/dismiss", headers=headers(), json={"skip": "everything"})
+
+    assert first["settings"] == {"enabled": False, "times": ["08:00", "13:00", "18:00"]}
+    assert first["briefs"] == [] and first["email_connected"] is False and first["running"] is False
+    assert bad.status_code == 400 and on.json() == {"enabled": True, "times": ["07:30", "17:00"]}
+    assert after["settings"]["enabled"] is True
+    assert run.status_code == 409 and missing.status_code == 404 and skip.status_code == 400
