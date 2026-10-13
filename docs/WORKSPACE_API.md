@@ -192,6 +192,33 @@ opened read-only, so nothing is marked read), `draft_email` (write: IMAP APPEND 
 `{"imap": "host:port", "smtp": "host:port", ...}` logs in over IMAP first and saves
 `ZHUNT_EMAIL_*` to `~/.zhunt/env` only on success; `DELETE /email/connect` removes them.
 
+Briefs (Morning, Midday and Evening digests of new email; `~/.zhunt/briefs.json`, 0600). A
+brief fetches new INBOX mail since the last one with no model (read-only mailbox,
+`BODY.PEEK`, headers plus a ~300-character snippet; the first brief covers the last day, at
+most 60 messages). Senders and topics the user skipped are left out before any model call.
+The rest go to the model in batches of up to 20, under ~6,000 input tokens, all on one
+session id so stickiness keeps them on one model. Replies are validated to
+`{id, summary, due, people, action: reply|pay|schedule|read, proposed_action}` (`none` is
+dropped, items in the same thread are merged and list every message in `ids`). If a batch
+fails, the brief is `partial` and the next one resumes after the last mail that was read.
+
+- `GET /agent/briefs` -> `{settings: {enabled, times}, running, email_connected, memory:
+  {senders, topics}, briefs: [newest first]}`; a brief is `{id, title, created, state:
+  done|partial|failed, items, scanned, skipped, older, models, error}` and an item adds
+  `item_id, sender, sender_name, topic, subject, state: open|started|dismissed, task_id`
+- `PUT /agent/briefs/settings {"enabled"?: bool, "times"?: ["08:00", ...]}` (1-6 local
+  times; off by default at 08:00, 13:00 and 18:00; made only while the daemon runs)
+- `POST /agent/briefs/run` makes one now (409 when email is not connected or one is running)
+- `POST /agent/briefs/{brief}/items/{item}/act` starts the item as an agent task and returns
+  its detail. The goal is a fixed template per action (the summary is quoted as data) and the
+  task gets only `list_emails`, `read_email` and, for reply/schedule, `draft_email`, so
+  drafting waits for approval and sending is not offered.
+- `POST /agent/briefs/{brief}/items/{item}/dismiss {"skip": null|"sender"|"topic"}`;
+  `POST /agent/briefs/memory/forget {"kind": "senders"|"topics", "value"}`
+
+`scripts/brief_eval.py <labels.jsonl>` scores extraction against mail you labelled yourself
+(kept outside the repo) through the running daemon.
+
 ## Plan: `GET /zhunt/api/plan`
 
 ```json
