@@ -245,7 +245,7 @@ def _inference_endpoint(
             result = await call(**data)
             if not data.get("stream"):
                 await hook.async_post_call_success_hook(data, None, result)
-                return JSONResponse(_with_model(_plain(result), alias))
+                return JSONResponse(_with_model(_plain(result), alias), headers=_served_by(data))
             chunks = hook.async_post_call_streaming_iterator_hook(None, result, data)
             # The first chunk is read before answering, so a provider that fails
             # at once still gets its own status code rather than a 200.
@@ -257,7 +257,7 @@ def _inference_endpoint(
         return StreamingResponse(
             _sse(chunks, first, framing, alias),
             media_type="text/event-stream",
-            headers={"cache-control": "no-cache", "x-accel-buffering": "no"},
+            headers={"cache-control": "no-cache", "x-accel-buffering": "no", **_served_by(data)},
         )
 
     return endpoint
@@ -310,6 +310,15 @@ def _with_model(payload: dict[str, Any], alias: Any) -> dict[str, Any]:
     if isinstance(alias, str):
         payload["model"] = alias
     return payload
+
+
+def _served_by(data: Mapping[str, Any]) -> dict[str, str]:
+    """``x-zhunt-model``: the catalog model that answered, since the body keeps the alias."""
+
+    metadata = data.get("metadata")
+    zhunt = metadata.get("zhunt") if isinstance(metadata, Mapping) else None
+    model = zhunt.get("model") if isinstance(zhunt, Mapping) else None
+    return {"x-zhunt-model": model} if isinstance(model, str) and model.isascii() else {}
 
 
 def _status_of(error: BaseException) -> int:
