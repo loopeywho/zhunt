@@ -30,8 +30,11 @@ export function fmtCount(n) {
 export function freeTodayText(ft) {
   if (!ft) return '';
   if (!ft.models_ready) return 'No free model is ready right now.';
-  const part = (left, uncapped, unit) => (!uncapped ? `${fmtCount(left)} ${unit}` : left ? `${fmtCount(left)}+ ${unit}` : `${unit} uncapped`);
-  return `Free left today: ${part(ft.requests_left, ft.requests_uncapped, 'requests')} · ${part(ft.tokens_left, ft.tokens_uncapped, 'tokens')} · ${ft.models_ready} model${ft.models_ready === 1 ? '' : 's'} ready`;
+  const ready = `${ft.models_ready} model${ft.models_ready === 1 ? '' : 's'} ready`;
+  // a total is only known for capped models; "+" when some ready model has no daily cap on top
+  const part = (left, uncapped, unit) => (left ? `${fmtCount(left)}${uncapped ? '+' : ''} ${unit}` : uncapped ? null : `0 ${unit}`);
+  const parts = [part(ft.requests_left, ft.requests_uncapped, 'requests'), part(ft.tokens_left, ft.tokens_uncapped, 'tokens')].filter(Boolean);
+  return parts.length ? `Free left today: ${parts.join(' · ')} · ${ready}` : `Free today: no daily caps · ${ready}`;
 }
 
 export function emptyState(title, detail) {
