@@ -5,6 +5,9 @@ import { h } from '../dom.js';
 import { api, ApiError } from '../api.js';
 import { chip, errorBox, swapIfChanged } from './util.js';
 
+// providers whose keys zhunt can recognise on a page, so the agent can save them (key_prefix.py)
+const AUTO_KEYS = new Set(['groq', 'google', 'cerebras']);
+
 export function connectTile(svc) {
   let snap = svc.store.get('status');
   const list = h('div', { class: 'connect-list' });
@@ -114,6 +117,8 @@ export function connectTile(svc) {
     const trainers = free.filter((p) => (p.models || []).some((m) => m.may_train_on_prompts)).map((p) => p.name.replace(/ \(.*\)$/, ''));
     const rows = [
       keyed.some((p) => p.key_set) ? null : noKeysNote(free, first),
+      clipCard,
+      getKeysRow(keyed),
       anyBox(keyed),
       first ? h('h3', { class: 'connect-h' }, 'Recommended') : null,
       first ? row(first, true) : null,
@@ -127,6 +132,66 @@ export function connectTile(svc) {
     if (catalog?.updates) rows.push(h('h3', { class: 'connect-h' }, 'Free-model list'), catalogRow());
     swapIfChanged(list, rows);
   }
+
+  // The agent fetches keys in its own browser: the user signs in, it creates each key and saves it
+  // straight from the page (the key never goes through a model).
+  let getKeysEl = null, getKeysFor = '';
+  function getKeysRow(keyed) {
+    const missing = keyed.filter((p) => !p.key_set && AUTO_KEYS.has(p.platform));
+    const sig = missing.map((p) => p.platform).join();
+    if (!missing.length) return null;
+    if (getKeysEl && sig === getKeysFor) return getKeysEl;
+    getKeysFor = sig;
+    const btn = h('button', { class: 'act primary', type: 'button' }, 'Get keys for me');
+    const note = h('p', { class: 'quiet connect-note', role: 'status' });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await api.agent.getKeys();
+        note.textContent = 'Started in the Agent window. Sign in where its browser asks; it creates the keys and asks before each click.';
+        svc.openWindow?.('agent');
+        window.dispatchEvent(new Event('zhunt:agent-task'));
+      } catch (err) { note.textContent = err.message || String(err); } finally { btn.disabled = false; }
+    });
+    getKeysEl = h('article', { class: 'connect-row', 'data-platform': 'auto' },
+      h('div', { class: 'connect-top' }, h('strong', {}, 'Let the agent get them')),
+      h('p', { class: 'quiet' }, `For ${missing.map((p) => p.name.replace(/ \(.*\)$/, '')).join(', ')}: it opens each key page in its own browser window, you sign in, and it creates and saves the key. Or type /keys in Agent.`),
+      h('div', { class: 'acts' }, btn), note);
+    return getKeysEl;
+  }
+
+  // A key copied to the clipboard (say, from a provider's page) is offered for saving when this
+  // window gets focus. Only the prefix is checked; nothing is saved without a click.
+  let clipCard = null, clipSeen = '';
+  async function checkClipboard() {
+    if (!navigator.clipboard?.readText || !document.hasFocus()) return;
+    let text = '';
+    try { text = (await navigator.clipboard.readText()).trim(); } catch { return; } // permission refused
+    if (!text || text === clipSeen || text.length > 300 || /\s/.test(text)) return;
+    clipSeen = text;
+    let found;
+    try { found = await api.keys.detect(text); } catch { return; }
+    if (!found.platform || found.key_set) return;
+    const save = h('button', { class: 'act primary', type: 'button' }, 'Save it');
+    const ignore = h('button', { class: 'act ghost', type: 'button', onclick: () => { clipCard = null; paint(); } }, 'Ignore');
+    save.addEventListener('click', async () => {
+      save.disabled = true;
+      try {
+        const r = await api.keys.add(found.platform, text);
+        clipCard = null;
+        svc.toast(`${r.name || r.platform} connected`);
+        await svc.store.refresh('status');
+      } catch (err) { svc.toast(err.message || String(err), true); save.disabled = false; }
+    });
+    clipCard = h('article', { class: 'connect-row tone-accent', 'data-platform': 'clipboard' },
+      h('div', { class: 'connect-top' }, h('strong', {}, `A ${found.name} key is on your clipboard`)),
+      h('p', { class: 'quiet' }, `Ending ...${text.slice(-4)}. Save it so zhunt can use ${found.name}?`),
+      h('div', { class: 'acts' }, save, ignore));
+    paint();
+  }
+  const onFocus = () => { checkClipboard(); };
+  window.addEventListener('focus', onFocus);
+  el.addEventListener('pointerenter', onFocus);
 
   // Plain words for a fresh install: zhunt already answers through the keyless providers.
   function noKeysNote(free, first) {
@@ -329,6 +394,6 @@ export function connectTile(svc) {
     el,
     getState: () => ({}),
     focusPrimary: () => (list.querySelector('.connect-row:not(.is-set) button') || el.closest('.pane'))?.focus(),
-    destroy() { unsub(); },
+    destroy() { unsub(); window.removeEventListener('focus', onFocus); },
   };
 }

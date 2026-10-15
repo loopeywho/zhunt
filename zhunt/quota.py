@@ -171,6 +171,20 @@ class QuotaTracker:
             ]
             return min(remaining, default=1.0)
 
+    def usage(self, slot: Slot, limits: Limits) -> dict[str, dict[str, int | None]]:
+        """Use so far in each window, beside its cap (``None``: no published cap)."""
+
+        with self._lock:
+            limits = self.effective_limits(slot[0], limits)
+            state = self._state(slot, self._clock())
+            used = {
+                "rpm": len(state.minute),
+                "tpm": int(sum(entry[1] for entry in state.minute)),
+                "rpd": state.day_requests,
+                "tpd": state.day_tokens,
+            }
+            return {axis: {"used": used[axis], "cap": getattr(limits, axis)} for axis in LIMIT_AXES}
+
     def record_failure(
         self,
         slot: Slot,

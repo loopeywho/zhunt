@@ -5,17 +5,18 @@
 import { h } from '../dom.js';
 import { renderMarkdown } from '../md.js';
 import { api } from '../api.js';
-import { modelLabel, chip, errorBox } from './util.js';
+import { modelLabel, chip, errorBox, fmtCount, freeTodayText } from './util.js';
 
 export const COMMANDS = [
   ['/goal', '<outcome>', 'keep working until the outcome is reached (more steps)'],
-  ['/loop', '<30m|2h|1d> <task>', 'repeat a task on a timer while zhunt runs'],
+  ['/loop', '<30m|2h|1d> <task>', 'repeat a task on a timer (kept across restarts)'],
   ['/loops', '', 'list running loops'],
   ['/unloop', '<id>', 'stop a loop'],
   ['/web', '<task>', 'only use web research tools'],
   ['/files', '<task>', 'only use the shared-folder tools'],
   ['/email', '<task>', 'only use your email (connect it in Connect)'],
   ['/browser', '<task>', 'use the agent\'s own browser window for a website task'],
+  ['/keys', '', 'get free API keys: you sign in, the agent creates and saves them'],
   ['/brief', '', 'make an email brief now'],
   ['/briefs', '[on|off|08:00, 13:00, 18:00]', 'show the latest brief, switch briefs on or off, or set their times'],
   ['/folders', '<path>, <path>', 'choose the folders the agent may use'],
@@ -63,6 +64,7 @@ export function agentTile(svc) {
   let state = { folders: [], loops: [], tasks: [] };
   let briefs = null;
   let briefTimer = null;
+  let freeToday = null; // status.free_today
 
   const bar = h('div', { class: 'agent-bar' });
   const log = h('div', { class: 'msgs agent-log', role: 'log', 'aria-label': 'Agent steps', tabindex: '0' });
@@ -97,7 +99,12 @@ export function agentTile(svc) {
   async function refreshState() {
     try { state = await api.agent.state(); } catch { return; }
     paintBar();
+    // show a task that is still going (started from Connect, or resumed after a restart)
+    const live = !taskId && state.tasks.find((t) => t.state === 'running' || t.state === 'waiting');
+    if (live) openTask(live);
   }
+  const onTask = () => { if (!taskId) refreshState(); };
+  window.addEventListener('zhunt:agent-task', onTask);
 
   async function refreshBriefs() {
     try { briefs = await api.agent.briefs(); } catch { return null; }
@@ -197,7 +204,8 @@ export function agentTile(svc) {
       briefs ? h('button', { class: 'pane-btn wide', type: 'button', title: 'Show the latest brief (/briefs on|off|times)', onclick: () => showBriefs() },
         'Briefs: ' + (briefs.settings.enabled ? briefs.settings.times.join(' · ') : 'off')) : null,
       ...state.loops.map((l) => h('span', { class: 'agent-bar-item' }, chip(`every ${fmtEvery(l.every)}`, 'warn'), ' ' + l.goal.slice(0, 40),
-        h('button', { class: 'pane-btn', type: 'button', 'aria-label': 'Stop loop', title: 'Stop this loop', onclick: () => unloop(l.id) }, 'x'))));
+        h('button', { class: 'pane-btn', type: 'button', 'aria-label': 'Stop loop', title: 'Stop this loop', onclick: () => unloop(l.id) }, 'x'))),
+      freeToday ? h('span', { class: 'agent-bar-item dim', title: 'Daily caps left on the free models that are ready now (Providers has each model)' }, freeTodayText(freeToday)) : null);
   }
 
   const fmtEvery = (s) => (s % 86400 === 0 ? s / 86400 + 'd' : s % 3600 === 0 ? s / 3600 + 'h' : Math.round(s / 60) + 'm');
@@ -245,13 +253,17 @@ export function agentTile(svc) {
     if (cmd === 'loops') { note(state.loops.length ? state.loops.map((l) => `${l.id}: every ${fmtEvery(l.every)} — ${l.goal}`).join('\n') : 'No loops running.'); return; }
     if (cmd === 'unloop') { unloop(args); return; }
     if (cmd === 'brief') { runBrief(); return; }
+    if (cmd === 'keys') {
+      try { openTask(await api.agent.getKeys()); } catch (err) { note(err.message || String(err), true); }
+      return;
+    }
     if (cmd === 'briefs') { briefsCommand(args); return; }
     if (cmd === 'loop') {
       const m = /^(\S+)\s+([\s\S]+)$/.exec(args);
       if (!m) { note('Use: /loop 2h <task>', true); return; }
       try {
         const loop = await api.agent.loop({ every: m[1], goal: m[2] });
-        note(`Loop ${loop.id} started: every ${fmtEvery(loop.every)} while zhunt runs. Stop it with /unloop ${loop.id}.`);
+        note(`Loop ${loop.id} started: every ${fmtEvery(loop.every)}, kept if zhunt restarts. Stop it with /unloop ${loop.id}.`);
         refreshState();
       } catch (err) { note(err.message || String(err), true); }
       return;
@@ -281,8 +293,9 @@ export function agentTile(svc) {
   }
 
   function render(task) {
-    for (const e of task.events) addEvent(e);
-    seen = task.events.length ? task.events[task.events.length - 1].seq + 1 : seen;
+    const events = task.events || []; // a summary (from the task list) has no events yet
+    for (const e of events) addEvent(e);
+    seen = events.length ? events[events.length - 1].seq + 1 : seen;
     const running = task.state === 'running' || task.state === 'waiting';
     sendBtn.textContent = running ? 'busy' : 'run';
     if (!running) { stopPolling(); refreshState(); }
@@ -314,7 +327,8 @@ export function agentTile(svc) {
       node = h('p', { class: 'agent-thought' }, e.text);
     } else if (e.kind === 'tool') {
       const head = h('summary', {}, h('span', { class: 'agent-tool ' + (e.ok === false || e.error ? 'bad' : 'good') }, e.name), ' ', h('span', { class: 'dim' }, argsLine(e.args)),
-        e.ms != null ? h('span', { class: 'meta-dim' }, ` · ${e.ms} ms`) : null);
+        e.ms != null ? h('span', { class: 'meta-dim' }, ` · ${e.ms} ms`) : null,
+        e.model ? h('span', { class: 'meta-dim' }, ' · ', modelLabel(e.model)) : null);
       node = h('details', { class: 'agent-step' }, head, h('pre', { class: 'agent-result' }, e.error || e.result || ''));
     } else if (e.kind === 'approval') {
       const approve = h('button', { class: 'act primary', type: 'button' }, 'Approve');
@@ -336,21 +350,25 @@ export function agentTile(svc) {
     } else if (e.kind === 'decision') {
       const card = log.querySelector(`.agent-approval[data-call="${e.call_id}"]`);
       card?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-      card?.append(h('p', { class: 'quiet' }, e.approved ? 'Approved.' : 'Declined.'));
+      card?.append(h('p', { class: 'quiet' }, e.expired ? 'Not answered before zhunt restarted.' : e.approved ? 'Approved.' : 'Declined.'));
       return;
     } else if (e.kind === 'answer') {
       const text = h('div', { class: 'msg-text' });
       renderMarkdown(e.text, text);
       node = h('article', { class: 'msg assistant' }, h('div', { class: 'msg-role' }, 'agent'), text,
-        h('div', { class: 'msg-meta' }, e.model ? [h('span', { class: 'meta-label' }, 'last step on '), modelLabel(e.model)] : null, e.limit ? h('span', { class: 'meta-dim' }, ' · stopped at the step limit') : null));
+        h('div', { class: 'msg-meta' }, e.model ? [h('span', { class: 'meta-label' }, 'last step on '), modelLabel(e.model)] : null, e.limit ? h('span', { class: 'meta-dim' }, ' · stopped at the step limit') : null,
+          e.tokens ? h('span', { class: 'meta-dim', title: 'Prompt and answer tokens over every step of this task' }, ` · ${fmtCount(e.tokens)} tokens`) : null));
     } else if (e.kind === 'error') {
       node = errorBox('The agent stopped', e.text);
     } else if (e.kind === 'stopped') {
       node = h('p', { class: 'agent-note' }, 'Stopped.');
+    } else if (e.kind === 'resumed') {
+      node = h('p', { class: 'agent-note' }, 'zhunt restarted, so this task is starting again from its goal.');
     }
     if (node) { log.append(node); log.scrollTop = log.scrollHeight; }
   }
 
+  const unsubStatus = svc.store.subscribe('status', (s) => { freeToday = s.data?.free_today || null; paintBar(); });
   paintEmpty();
   refreshState();
   // greet with the latest brief when it still has something to act on
@@ -363,6 +381,6 @@ export function agentTile(svc) {
     el,
     getState: () => ({}),
     focusPrimary: () => input.focus(),
-    destroy() { destroyed = true; stopPolling(); clearTimeout(briefTimer); },
+    destroy() { destroyed = true; stopPolling(); clearTimeout(briefTimer); unsubStatus(); window.removeEventListener('zhunt:agent-task', onTask); },
   };
 }

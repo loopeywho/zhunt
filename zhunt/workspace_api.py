@@ -20,12 +20,13 @@ from fastapi.staticfiles import StaticFiles
 from zhunt.auth import remove_env_value, save_env_value
 from zhunt import images, llm
 from zhunt.agent import briefs
-from zhunt.agent.runner import AgentRunner, parse_interval
+from zhunt.agent.browser import find_browser
+from zhunt.agent.runner import BROWSER_KEY_TOOLS, AgentRunner, get_keys_goal, parse_interval
 from zhunt.agent import email_tools
 from zhunt.agent.tools import AgentSettings, ToolError
 from zhunt.catalog_feed import UPDATES_ENV
 from zhunt.engine import DECISION_LOG_SIZE, EngineProxyHook
-from zhunt.key_prefix import detect_platform
+from zhunt.key_prefix import KEY_PLATFORMS, detect_platform
 from zhunt.licence import Plan, current_plan
 from zhunt.server import _authenticate_local_request
 
@@ -107,8 +108,10 @@ class _WorkspaceHeaders:
 def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> AgentRunner:
     app.add_middleware(_WorkspaceHeaders)
     runner = AgentRunner(dirs.agent)
-    # briefs are made on their schedule while the daemon runs (the lifespan starts these jobs)
-    app.state.background = [*getattr(app.state, "background", ()), runner.run_brief_schedule]
+    # briefs are made on their schedule while the daemon runs, and saved tasks and loops pick up
+    # where a restart left them (the lifespan starts these jobs)
+    app.state.background = [*getattr(app.state, "background", ()), runner.run_brief_schedule, runner.resume]
+    app.state.agent_runner = runner
     app.include_router(build_router(hook, dirs, runner=runner))
     if dirs.static.is_dir():  # the UI ships in a separate change
         app.mount(
@@ -126,6 +129,18 @@ def build_router(
     # Read on every request, so `zhunt licence activate` takes effect without a restart.
     plan = plan or (lambda: current_plan())
     runner.plan = plan
+
+    def save_found_key(key: str) -> str:
+        """Save a key the agent found on a provider's page (it never passes through the model)."""
+
+        provider = hook.catalog.providers.get(detect_platform(key) or "")
+        if provider is None:
+            raise ToolError("zhunt does not know which provider this key is for; paste it in Connect instead")
+        save_env_value(provider.key_env, key.strip(), dirs.env_file)
+        hook.reload_keys()
+        return provider.name
+
+    runner.save_key = save_found_key
     router = APIRouter(
         prefix="/zhunt/api", dependencies=[Depends(_authenticate_local_request)]
     )
@@ -157,6 +172,18 @@ def build_router(
         save_env_value(provider.key_env, key.strip(), dirs.env_file)
         hook.reload_keys()
         return {"platform": provider.platform, "name": provider.name, "key_set": True}
+
+    @router.post("/keys/detect")
+    async def detect_key(request: Request) -> dict[str, Any]:
+        """Which provider a key (say, one on the clipboard) is for, without saving it."""
+
+        body = await _json_body(request, limit=4096)
+        key = body.get("key") if isinstance(body, dict) else None
+        provider = hook.catalog.providers.get(detect_platform(key) or "") if isinstance(key, str) and _KEY.fullmatch(key.strip()) else None
+        if provider is None:
+            return {"platform": None}
+        return {"platform": provider.platform, "name": provider.name,
+                "key_set": bool(hook.selector.key_ids(provider.platform))}
 
     @router.put("/policy/training")
     async def set_training(request: Request) -> dict[str, Any]:
@@ -426,6 +453,20 @@ def build_router(
         if task is None:
             raise HTTPException(404, "no such task")
         return task.summary()
+
+    @router.post("/agent/keys")
+    async def agent_get_keys() -> dict[str, Any]:
+        """Start the agent on getting free keys: it opens each provider's key page in its own
+        browser, the user signs in there, it creates a key and saves it with browser_save_key."""
+
+        if not find_browser():
+            raise HTTPException(409, "this needs Google Chrome or Chromium installed")
+        wanted = [p for p in hook.status()["providers"]
+                  if p["platform"] in KEY_PLATFORMS and not p["key_set"] and not p.get("keyless")
+                  and p.get("key_url") and any(m["free"] for m in p.get("models", []))]
+        if not wanted:
+            raise HTTPException(409, "every free provider zhunt can fetch a key from is already connected")
+        return runner.start(get_keys_goal(wanted), tools=BROWSER_KEY_TOOLS).detail()
 
     @router.post("/agent/loops")
     async def agent_loop(request: Request) -> dict[str, Any]:

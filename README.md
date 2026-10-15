@@ -73,10 +73,11 @@ and it triages your inbox and drafts replies; sending always asks first. For web
 clicking (forms, bookings), it drives its own browser window: your installed Chrome with a
 separate, clean profile; you log in yourself, it never types passwords, and every click or
 submit asks first. Slash commands: `/goal` (keep going until an outcome is met),
-`/loop 1h <task>` (repeat while zhunt runs), `/web`, `/files`, `/email`, `/browser`, `/folders`, `/stop`, `/help`.
+`/loop 1h <task>` (repeat on a timer; tasks and loops survive a restart), `/web`, `/files`, `/email`, `/browser`, `/folders`, `/stop`, `/help`.
 **Team chat** puts several bots in one conversation: each has its own instructions and
 preferred model type, you @mention one, and they hand work to each other with @mentions
-(bots are JSON files in `~/.zhunt/bots/`). **Connect** adds free keys without a terminal,
+(bots are JSON files in `~/.zhunt/bots/`). **Connect** adds free keys without a terminal
+(or **Get keys for me** / `/keys`: you sign in, the agent creates each key and saves it without a model ever seeing it; a key you copy is offered for saving),
 and the chat mic uses Groq's free Whisper for voice input. *For you* shows cards
 for what needs attention (a missing free key, a model resting after its limit, requests
 zhunt rescued by failing over) with one-tap actions; *Panels* are small dashboards you can

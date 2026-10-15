@@ -2,7 +2,7 @@
 // It names the environment variable for a missing key but never asks for the key itself.
 
 import { h, fmtDuration, splitModel, tablist } from '../dom.js';
-import { tierChip, chip, headroomBar, errorBox, emptyState } from './util.js';
+import { tierChip, chip, headroomBar, errorBox, emptyState, fmtCount, freeTodayText } from './util.js';
 
 export function providersTile(svc, state, ctx) {
   let filter = ['all', 'usable', 'blocked'].includes(state.filter) ? state.filter : 'all';
@@ -29,6 +29,7 @@ export function providersTile(svc, state, ctx) {
     policy.replaceChildren(...[
       'policy: ', chip(s.policy?.allow_paid ? 'paid allowed' : 'free only', s.policy?.allow_paid ? 'warn' : ''),
       ' ', chip(s.policy?.allow_training ? 'training allowed' : 'no prompt-training', s.policy?.allow_training ? 'warn' : ''),
+      s.free_today ? h('span', { class: 'free-today' }, '  ' + freeTodayText(s.free_today)) : null,
       snap.error ? h('span', { class: 'meta-err' }, '  stale: ' + snap.error.message) : null,
     ].filter(Boolean));
     let anyCooldown = false;
@@ -49,7 +50,7 @@ export function providersTile(svc, state, ctx) {
       }
       const rows = h('div', { class: 'mrows', role: 'table', 'aria-label': (p.name || p.platform) + ' models' });
       rows.append(h('div', { class: 'mrow mhead', role: 'row' },
-        ['model', 'tiers', 'headroom', 'cooldown', 'reliab.', 'status'].map((c) => h('span', { role: 'columnheader' }, c))));
+        ['model', 'tiers', 'headroom', 'left today', 'cooldown', 'reliab.', 'status'].map((c) => h('span', { role: 'columnheader' }, c))));
       for (const m of models) {
         const left = cooldownLeft(m);
         if (left > 0) anyCooldown = true;
@@ -60,6 +61,7 @@ export function providersTile(svc, state, ctx) {
           h('span', { class: 'mname', role: 'cell' }, splitModel(m.id).name, m.free ? null : chip('paid', 'warn'), m.may_train_on_prompts ? chip('trains', 'warn', 'May train on prompts') : null),
           h('span', { class: 'mtiers', role: 'cell' }, (m.tiers || []).map(tierChip)),
           h('span', { role: 'cell' }, headroomBar(m.headroom)),
+          h('span', { class: 'left-today', role: 'cell', title: usageTitle(m.usage) }, leftToday(m.usage)),
           cd,
           h('span', { class: 'rel', role: 'cell' }, m.reliability === null || m.reliability === undefined ? '-' : Math.round(m.reliability * 100) + '%'),
           h('span', { role: 'cell' }, m.allowed ? (left > 0 ? chip('cooling', 'warn') : chip('ready', 'ok')) : chip(m.blocked_reason || 'blocked', 'err'))));
@@ -70,6 +72,20 @@ export function providersTile(svc, state, ctx) {
     if (!shown) list.append(emptyState('Nothing matches this filter.'));
     clearInterval(tick);
     tick = anyCooldown ? setInterval(updateCountdowns, 1000) : null;
+  }
+
+  // "812 req · 410k tok" left under the daily caps; "no cap" when the provider publishes none
+  function leftToday(u) {
+    if (!u) return '-';
+    const left = (axis, unit) => (u[axis].cap == null ? null : fmtCount(Math.max(u[axis].cap - u[axis].used, 0)) + ' ' + unit);
+    const parts = [left('rpd', 'req'), left('tpd', 'tok')].filter(Boolean);
+    return parts.length ? parts.join(' · ') : 'no cap';
+  }
+
+  function usageTitle(u) {
+    if (!u) return undefined;
+    const names = { rpm: 'requests this minute', tpm: 'tokens this minute', rpd: 'requests today', tpd: 'tokens today' };
+    return Object.entries(u).map(([axis, { used, cap }]) => `${names[axis]}: ${fmtCount(used)}${cap == null ? ' (no cap)' : ' of ' + fmtCount(cap)}`).join('\n');
   }
 
   function updateCountdowns() {

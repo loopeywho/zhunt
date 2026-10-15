@@ -19,11 +19,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
 from zhunt.agent.tools import MAX_RESULT_CHARS, Tool, ToolError, check_url
+from zhunt.key_prefix import find_keys, hide_keys
 
 PROFILE = Path.home() / ".zhunt" / "browser-profile"
 _CANDIDATES = {
@@ -64,6 +65,14 @@ _SNAPSHOT_JS = r"""
   return JSON.stringify({ url: location.href, title: document.title, text, items });
 })()
 """
+
+
+_KEYS_JS = r"""(() => {
+  const parts = [document.body ? document.body.innerText : ''];
+  for (const el of document.querySelectorAll('input, textarea')) parts.push(el.value || '');
+  for (const el of document.querySelectorAll('*')) for (const a of el.attributes) if (a.value.length < 400) parts.push(a.value);
+  return parts.join('\n');
+})()"""
 
 
 def find_browser() -> str | None:
@@ -161,8 +170,18 @@ class AgentBrowser:
         for item in data["items"]:
             extra = f" -> {item['href']}" if item.get("href") else ""
             rows.append(f"[{item['id']}] {item['type']}: {item['text'] or '(no label)'}{extra}")
-        return (f"Page: {data['title']}\nAddress: {data['url']}\n\nInteractive elements (use their numbers):\n"
-                + "\n".join(rows) + f"\n\nPage text:\n{data['text']}")[:MAX_RESULT_CHARS + 4000]
+        # an API key on the page (say, one just created) never reaches the model: browser_save_key
+        # reads it straight from the page and saves it
+        return hide_keys(f"Page: {data['title']}\nAddress: {data['url']}\n\nInteractive elements (use their numbers):\n"
+                         + "\n".join(rows) + f"\n\nPage text:\n{data['text']}")[:MAX_RESULT_CHARS + 4000]
+
+    async def page_keys(self) -> list[tuple[str, str]]:
+        """(platform, key) pairs on the current page: its whole text, field values and copy buttons' data."""
+
+        async with self._lock:
+            await self._ensure()
+            text = await self._eval(_KEYS_JS)
+        return find_keys(text or "")
 
     async def _element(self, index: int) -> dict[str, Any]:
         info = await self._eval(
@@ -171,7 +190,9 @@ class AgentBrowser:
         )
         if not info:
             raise ToolError(f"there is no element [{index}] on the current page; read the page again")
-        return json.loads(info)
+        el = json.loads(info)
+        el["text"] = hide_keys(el["text"])
+        return el
 
     # ---- tools ----
 
@@ -236,8 +257,17 @@ class AgentBrowser:
             self.process.terminate()
 
 
-def browser_tools(browser: AgentBrowser) -> list[Tool]:
+def browser_tools(browser: AgentBrowser, save_key: Callable[[str], str] | None = None) -> list[Tool]:
     idx = {"type": "integer", "description": "The element number from the latest page reading."}
+
+    async def browser_save_key() -> str:
+        if save_key is None:
+            raise ToolError("saving keys is not available here")
+        found = await browser.page_keys()
+        if not found:
+            raise ToolError("there is no API key on this page; create one first, or click the button that shows it, then try again")
+        saved = [f"{save_key(key)} key ending ...{key[-4:]}" for _, key in found[:3]]
+        return "Saved " + ", ".join(saved) + ". zhunt can use it now."
 
     async def browser_open(url: str) -> str:
         return await browser.open(url)
@@ -264,4 +294,6 @@ def browser_tools(browser: AgentBrowser) -> list[Tool]:
         Tool("browser_type", "Type text into a numbered field (never passwords). Does not submit.", {"type": "object", "properties": {"index": idx, "text": {"type": "string"}}, "required": ["index", "text"]}, "read", browser_type),
         Tool("browser_click", "Click a numbered button or element (may submit or buy something). The user must approve.", {"type": "object", "properties": {"index": idx}, "required": ["index"]}, "act", browser_click),
         Tool("browser_press_enter", "Press Enter in a numbered field (usually submits a form or search). The user must approve.", {"type": "object", "properties": {"index": idx}, "required": ["index"]}, "act", browser_press_enter),
-    ]
+    ] + ([
+        Tool("browser_save_key", "Save the API key shown on the current page into zhunt (the key itself is hidden from you; zhunt reads it from the page). The user must approve.", {"type": "object", "properties": {}}, "act", browser_save_key),
+    ] if save_key else [])

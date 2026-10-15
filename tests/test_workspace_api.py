@@ -183,7 +183,7 @@ def test_status_shape_and_blocked_reasons() -> None:
         models = status_models(client)
 
     body = response.json()
-    assert set(body) == {"version", "policy", "spend", "providers", "catalog"}
+    assert set(body) == {"version", "free_today", "policy", "spend", "providers", "catalog"}
     assert body["version"]
     assert body["policy"] == {"allow_paid": False, "allow_training": False, "premium_reason": "pro only"}
     assert body["spend"]["spent"] == 0 and body["spend"]["cap"] == 5.0
@@ -202,8 +202,9 @@ def test_status_shape_and_blocked_reasons() -> None:
     assert providers["zeta"]["key_set"] is False
     assert set(models["alpha/coder"]) == {
         "id", "tiers", "free", "may_train_on_prompts", "allowed", "blocked_reason",
-        "headroom", "cooldown_remaining", "reliability", "limits",
+        "headroom", "usage", "cooldown_remaining", "reliability", "limits",
     }
+    assert models["alpha/coder"]["usage"]["rpd"] == {"used": 0, "cap": 3}
     assert models["alpha/coder"]["tiers"] == ["chat", "coding"]
     assert models["alpha/coder"]["limits"] == {"rpm": None, "rpd": 3, "tpm": None, "tpd": None}
     assert (models["alpha/coder"]["allowed"], models["alpha/coder"]["blocked_reason"]) == (True, None)
@@ -841,7 +842,7 @@ def test_a_key_pasted_in_the_connect_window_is_saved_privately_and_used_at_once(
 
 def detect_catalog() -> dict:
     return {"providers": {
-        "groq": provider([model("g1", ["chat"])], name="Groq", key_env="GROQ_API_KEY"),
+        "groq": provider([model("g1", ["chat"])], name="Groq", key_env="GROQ_API_KEY", key_url="https://console.groq.com/keys"),
         "anthropic": provider([model("a1", ["chat"])], name="Anthropic", key_env="ANTHROPIC_API_KEY"),
         "openai": provider([model("o1", ["chat"])], name="OpenAI", key_env="OPENAI_API_KEY"),
     }}
@@ -880,6 +881,70 @@ def test_a_key_whose_provider_is_unclear_or_absent_asks_which_provider(key: str)
     assert response.status_code == 422
     assert "choose the provider" in response.json()["detail"]
     assert key not in response.text and not written
+
+
+@pytest.mark.parametrize(
+    "key, expected",
+    [("gsk_live1234567890", {"platform": "groq", "name": "Groq", "key_set": False}),
+     ("AIzaSyLive1234567890", {"platform": None}),  # no such provider in this catalog
+     ("mystery-key-1234567890", {"platform": None}),
+     ("two words", {"platform": None})],
+)
+def test_detect_names_the_provider_of_a_copied_key_without_saving_it(key: str, expected: dict) -> None:
+    with workspace(AsyncMock(), env={}, data=detect_catalog()) as (client, _):
+        response = client.post("/zhunt/api/keys/detect", headers=headers(), json={"key": key})
+        written = client.dirs.env_file.exists()
+
+    assert response.status_code == 200 and response.json() == expected
+    assert key not in response.text and not written
+
+
+def test_free_today_adds_up_what_the_ready_free_models_can_still_take() -> None:
+    capped = {"providers": {
+        "zeta": provider([model("only", ["chat"], limits={"rpd": 2, "tpd": 1000})], key_env="ZETA_API_KEY"),
+        "epsilon": provider([model("e1", ["chat"], intelligence=1)], name="Epsilon", key_env="EPS_API_KEY"),
+    }}
+    call = AsyncMock(return_value=ok())
+    with workspace(call, env={"ZETA_API_KEY": ZETA_KEY}, data=capped) as (client, _):
+        before = client.get("/zhunt/api/status", headers=headers()).json()["free_today"]
+        chat(client, "s1")
+        after = client.get("/zhunt/api/status", headers=headers()).json()["free_today"]
+        usage = status_models(client)["zeta/only"]["usage"]
+
+    # epsilon has no key, so it does not count
+    assert before == {"models_ready": 1, "requests_left": 2, "tokens_left": 1000,
+                      "requests_uncapped": False, "tokens_uncapped": False}
+    assert usage["rpd"] == {"used": 1, "cap": 2}
+    assert after["requests_left"] == 1 and after["tokens_left"] < 1000
+
+
+def test_the_get_keys_task_needs_a_browser_and_a_provider_to_fetch() -> None:
+    with workspace(AsyncMock(), env={}, data=detect_catalog()) as (client, _):
+        with patch("zhunt.workspace_api.find_browser", return_value=None):
+            no_browser = client.post("/zhunt/api/agent/keys", headers=headers())
+        with patch("zhunt.workspace_api.find_browser", return_value="/bin/chrome"), \
+                patch("zhunt.agent.runner.AgentRunner._run", AsyncMock()):
+            started = client.post("/zhunt/api/agent/keys", headers=headers())
+    with workspace(AsyncMock(), env={"GROQ_API_KEY": "gsk_live1234567890"}, data=detect_catalog()) as (client, _):
+        with patch("zhunt.workspace_api.find_browser", return_value="/bin/chrome"):
+            nothing_left = client.post("/zhunt/api/agent/keys", headers=headers())
+
+    assert no_browser.status_code == 409 and "Chrome" in no_browser.json()["detail"]
+    assert started.status_code == 200
+    goal = started.json()["goal"]
+    assert "Groq" in goal and "browser_save_key" in goal
+    assert "OpenAI" not in goal and "Anthropic" not in goal  # paid providers are never fetched
+    assert nothing_left.status_code == 409
+
+
+def test_a_key_found_on_a_page_is_saved_and_used_at_once() -> None:
+    with workspace(AsyncMock(), env={}, data=detect_catalog()) as (client, _):
+        save = client.app.app.state.agent_runner.save_key  # the app inside the retry middleware
+        name = save("gsk_live1234567890abcdef")
+        content = client.dirs.env_file.read_text()
+        set_now = {p["platform"]: p["key_set"] for p in client.get("/zhunt/api/status", headers=headers()).json()["providers"]}
+
+    assert name == "Groq" and 'GROQ_API_KEY="gsk_live1234567890abcdef"' in content and set_now["groq"]
 
 
 def test_the_key_endpoints_need_the_master_key() -> None:

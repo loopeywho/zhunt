@@ -107,7 +107,9 @@
 .cta { padding: 6px 10px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--warn) 7%, transparent); }
 .cta p { margin: 2px 0; font-family: var(--font-prose); }
 .mrows { display: block; overflow-x: auto; }
-.mrow { display: grid; grid-template-columns: minmax(150px, 2.2fr) minmax(90px, 1fr) minmax(100px, 1fr) 62px 50px minmax(78px, 0.8fr); gap: 8px; align-items: center; padding: 2px 8px; min-width: 620px; }
+.mrow { display: grid; grid-template-columns: minmax(150px, 2.2fr) minmax(90px, 1fr) minmax(100px, 1fr) minmax(96px, 1fr) 62px 50px minmax(78px, 0.8fr); gap: 8px; align-items: center; padding: 2px 8px; min-width: 720px; }
+.left-today { font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
+.free-today { color: var(--text-dim); }
 .mrow:nth-child(even) { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
 .mrow.mhead { color: var(--text-faint); font-size: var(--fs-small); text-transform: uppercase; letter-spacing: 0.05em; background: none; }
 .mrow.blocked .mname { color: var(--text-dim); }

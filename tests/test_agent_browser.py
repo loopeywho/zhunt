@@ -83,3 +83,41 @@ def test_clicks_and_enter_need_approval_reading_does_not():
     risks = {t.name: t.risk for t in B.browser_tools(B.AgentBrowser())}
     assert risks["browser_click"] == "act" and risks["browser_press_enter"] == "act"
     assert {risks[k] for k in ("browser_open", "browser_read", "browser_follow_link", "browser_type")} == {"read"}
+
+
+KEY = "gsk_" + "Zx9Yw8Vu7Ts6Rq5Po4Nm3L"
+KEY_PAGE = f"""<!doctype html><title>API keys</title>
+<h1>Your new key</h1><p>Copy it now: <code>{KEY}</code></p>
+<input readonly value="{KEY}"><button data-copy="{KEY}">Copy</button>"""
+
+
+def test_a_key_on_the_page_is_hidden_from_the_model_and_saved_straight_from_the_page(site, tmp_path, monkeypatch):
+    monkeypatch.setenv("ZHUNT_BROWSER_HEADLESS", "1")
+    (tmp_path / "keys.html").write_text(KEY_PAGE)
+    saved = []
+
+    def save_key(key):
+        saved.append(key)
+        return "Groq"
+
+    async def run():
+        browser = B.AgentBrowser(profile=tmp_path / "profile")
+        tools = {t.name: t for t in B.browser_tools(browser, save_key)}
+        with patch.object(B, "check_url", lambda url: url):
+            try:
+                page = await tools["browser_open"].run(url=site + "/keys.html")
+                result = await tools["browser_save_key"].run()
+                return page, result
+            finally:
+                await browser.close()
+
+    page, result = asyncio.run(run())
+    assert KEY not in page and "API key hidden" in page  # in the text, the field and the copy button
+    assert saved == [KEY]  # once, though it is on the page three times
+    assert KEY not in result and f"Groq key ending ...{KEY[-4:]}" in result
+
+
+def test_saving_a_key_needs_approval_and_only_exists_with_somewhere_to_save_it():
+    tools = {t.name: t for t in B.browser_tools(B.AgentBrowser(), lambda key: "Groq")}
+    assert tools["browser_save_key"].risk == "act"
+    assert "browser_save_key" not in {t.name for t in B.browser_tools(B.AgentBrowser())}
