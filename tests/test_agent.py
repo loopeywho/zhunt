@@ -154,3 +154,119 @@ def test_tool_sets_limit_what_the_model_is_offered(tmp_path):
 def test_intervals():
     assert parse_interval("30m") == 1800 and parse_interval("2h") == 7200 and parse_interval("1d") == 86400
     assert parse_interval("soon") is None
+
+
+# ---- surviving a restart ------------------------------------------------------------------------
+
+def test_finished_tasks_and_loops_are_saved_privately_and_come_back(tmp_path):
+    _, transport = scripted(reply("It is on Friday."))
+
+    async def go():
+        runner = runner_with(tmp_path, transport)
+        task = runner.start("When is the meeting?", tools={"web_search"})
+        await finish(runner, task)
+        loop = runner.add_loop(3600, "check the news", tools={"web_search", "open_page"})
+        await asyncio.sleep(0.05)
+        loop._timer.cancel()
+        runner.save()
+        return task, loop
+
+    task, loop = asyncio.run(go())
+    saved = tmp_path / "agent_tasks.json"
+    assert saved.stat().st_mode & 0o777 == 0o600
+    again = runner_with(tmp_path, scripted()[1])
+    back = again.tasks[task.id]
+    assert back.state == "done" and back.answer == "It is on Friday." and back.tools == {"web_search"}
+    assert [e["kind"] for e in back.events] == [e["kind"] for e in task.events]
+    assert again.loops[loop.id].goal == "check the news" and again.loops[loop.id].every == 3600
+    assert again.loops[loop.id].tools == {"web_search", "open_page"}
+    # the loop's own runs (it fires on creation) are saved too
+    assert loop.id in {t.loop_id for t in again.tasks.values()}
+
+
+def test_a_task_cut_off_by_a_restart_starts_again_and_its_old_approval_expires(tmp_path):
+    shared = tmp_path / "out"
+    shared.mkdir()
+    _, first = scripted(reply("Saving.", calls=[("write_file", {"path": "a.md", "content": "x"})]))
+
+    async def before_restart():
+        runner = runner_with(tmp_path, first, [shared])
+        task = runner.start("write a")
+        while task.state != "waiting":
+            await asyncio.sleep(0.01)
+        runner.save()  # what the shutdown save does, with the task still waiting
+        return task.id
+
+    task_id = asyncio.run(before_restart())
+    seen, second = scripted(reply("Nothing to do now."))
+
+    async def after_restart():
+        runner = runner_with(tmp_path, second, [shared])
+        job = asyncio.create_task(runner.resume())
+        task = runner.tasks[task_id]
+        await finish(runner, task)
+        job.cancel()
+        await asyncio.gather(job, return_exceptions=True)
+        return task
+
+    task = asyncio.run(after_restart())
+    kinds = [e["kind"] for e in task.events]
+    assert task.state == "done" and task.resumes == 1
+    assert kinds.index("approval") < kinds.index("decision") < kinds.index("resumed") < kinds.index("answer")
+    assert [e for e in task.events if e["kind"] == "decision"][0]["expired"] is True
+    assert not (shared / "a.md").exists()
+    assert seen[0]["messages"][1]["content"] == "write a"  # started again from the goal
+
+
+def test_a_task_cut_off_twice_is_not_started_a_third_time(tmp_path):
+    from zhunt.agent.runner import Task
+
+    runner = runner_with(tmp_path, scripted()[1])
+    task = Task(id="t1", goal="loop forever", state="running", resumes=1)
+    runner.tasks[task.id] = task
+    runner.order.append(task.id)
+    runner.save()
+
+    async def go():
+        again = runner_with(tmp_path, scripted()[1])
+        job = asyncio.create_task(again.resume())
+        await asyncio.sleep(0.05)
+        job.cancel()
+        await asyncio.gather(job, return_exceptions=True)
+        return again.tasks["t1"]
+
+    back = asyncio.run(go())
+    assert back.state == "stopped" and back.events[-1]["kind"] == "error"
+
+
+def test_a_loop_that_missed_runs_while_zhunt_was_closed_runs_once_then_keeps_its_interval(tmp_path):
+    import time as _time
+
+    from zhunt.agent.runner import Loop
+
+    runner = runner_with(tmp_path, scripted()[1])
+    runner.loops["l1"] = Loop(id="l1", every=3600, goal="check", mode="task", tools=None,
+                              next_run=_time.time() - 5 * 3600, runs=2)
+    runner.save()
+    seen, transport = scripted(reply("ok"))
+
+    async def go():
+        again = runner_with(tmp_path, transport)
+        job = asyncio.create_task(again.resume())
+        await asyncio.sleep(0.1)
+        job.cancel()
+        await asyncio.gather(job, return_exceptions=True)
+        for loop in again.loops.values():
+            loop._timer.cancel()
+        return again
+
+    again = asyncio.run(go())
+    loop = again.loops["l1"]
+    assert loop.runs == 3 and len(seen) == 1
+    assert loop.next_run > _time.time() + 3500
+
+
+def test_a_damaged_save_file_starts_empty(tmp_path):
+    (tmp_path / "agent_tasks.json").write_text("{not json")
+    runner = runner_with(tmp_path, scripted()[1])
+    assert runner.tasks == {} and runner.loops == {}

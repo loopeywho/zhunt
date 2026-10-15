@@ -336,7 +336,7 @@ export function agentTile(svc) {
     } else if (e.kind === 'decision') {
       const card = log.querySelector(`.agent-approval[data-call="${e.call_id}"]`);
       card?.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-      card?.append(h('p', { class: 'quiet' }, e.approved ? 'Approved.' : 'Declined.'));
+      card?.append(h('p', { class: 'quiet' }, e.expired ? 'Not answered before zhunt restarted.' : e.approved ? 'Approved.' : 'Declined.'));
       return;
     } else if (e.kind === 'answer') {
       const text = h('div', { class: 'msg-text' });
@@ -347,6 +347,8 @@ export function agentTile(svc) {
       node = errorBox('The agent stopped', e.text);
     } else if (e.kind === 'stopped') {
       node = h('p', { class: 'agent-note' }, 'Stopped.');
+    } else if (e.kind === 'resumed') {
+      node = h('p', { class: 'agent-note' }, 'zhunt restarted, so this task is starting again from its goal.');
     }
     if (node) { log.append(node); log.scrollTop = log.scrollHeight; }
   }

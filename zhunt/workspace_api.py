@@ -107,8 +107,9 @@ class _WorkspaceHeaders:
 def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> AgentRunner:
     app.add_middleware(_WorkspaceHeaders)
     runner = AgentRunner(dirs.agent)
-    # briefs are made on their schedule while the daemon runs (the lifespan starts these jobs)
-    app.state.background = [*getattr(app.state, "background", ()), runner.run_brief_schedule]
+    # briefs are made on their schedule while the daemon runs, and saved tasks and loops pick up
+    # where a restart left them (the lifespan starts these jobs)
+    app.state.background = [*getattr(app.state, "background", ()), runner.run_brief_schedule, runner.resume]
     app.include_router(build_router(hook, dirs, runner=runner))
     if dirs.static.is_dir():  # the UI ships in a separate change
         app.mount(

@@ -3,6 +3,8 @@
 Each model step is an ordinary /v1/chat/completions call to this daemon (in-process), so model
 choice, failover, quotas and privacy rules all apply. Write tools pause the task until the user
 approves or declines in the Agent window. Loops (/loop) re-run a task on a timer while the daemon runs.
+Tasks and loops are saved to ~/.zhunt/agent_tasks.json, so they survive a restart: a task that was
+cut off starts again from its goal (once), and loops keep their schedule.
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ APPROVAL_TIMEOUT = 30 * 60
 MAX_TASKS = 30
 MIN_LOOP_SECONDS = 300  # at most every 5 minutes: free quotas are precious
 BRIEF_CHECK_SECONDS = 30
+SAVE_DELAY = 0.5  # batch the saves of a busy task into one write
+MAX_RESUMES = 1  # a task cut off twice (say, it keeps crashing zhunt) is not started a third time
 
 SYSTEM = """You are zhunt's agent. You complete the user's task by calling tools, then answer.
 - Think briefly, then act. Use as few steps as the task needs.
@@ -70,13 +74,31 @@ class Task:
     events: list[dict[str, Any]] = field(default_factory=list)
     answer: str = ""
     loop_id: str | None = None
+    resumes: int = 0
     _pending: dict[str, asyncio.Future] = field(default_factory=dict, repr=False)
     _job: asyncio.Task | None = field(default=None, repr=False)
+    _changed: Callable[[], None] | None = field(default=None, repr=False)
 
     def event(self, kind: str, **data: Any) -> dict[str, Any]:
         e = {"seq": len(self.events), "ts": time.time(), "kind": kind, **data}
         self.events.append(e)
+        if self._changed:
+            self._changed()
         return e
+
+    def to_json(self) -> dict[str, Any]:
+        return {"id": self.id, "goal": self.goal, "mode": self.mode, "tools": sorted(self.tools) if self.tools else None,
+                "state": self.state, "created": self.created, "events": self.events, "answer": self.answer,
+                "loop_id": self.loop_id, "resumes": self.resumes}
+
+    @classmethod
+    def from_json(cls, raw: dict[str, Any]) -> Task:
+        tools = raw.get("tools")
+        return cls(id=str(raw["id"]), goal=str(raw["goal"]), mode=raw.get("mode") if raw.get("mode") in ("task", "goal") else "task",
+                   tools=set(tools) if isinstance(tools, list) and tools else None, state=str(raw.get("state", "done")),
+                   created=float(raw.get("created", time.time())), events=[e for e in raw.get("events", []) if isinstance(e, dict)],
+                   answer=str(raw.get("answer", "")), loop_id=raw.get("loop_id") if isinstance(raw.get("loop_id"), str) else None,
+                   resumes=int(raw.get("resumes", 0)))
 
     def summary(self) -> dict[str, Any]:
         return {"id": self.id, "goal": self.goal, "mode": self.mode, "state": self.state, "created": self.created,
@@ -100,10 +122,51 @@ class Loop:
     def summary(self) -> dict[str, Any]:
         return {"id": self.id, "every": self.every, "goal": self.goal, "next_run": self.next_run, "runs": self.runs}
 
+    def to_json(self) -> dict[str, Any]:
+        return {**self.summary(), "mode": self.mode, "tools": sorted(self.tools) if self.tools else None}
+
+    @classmethod
+    def from_json(cls, raw: dict[str, Any]) -> Loop:
+        tools = raw.get("tools")
+        return cls(id=str(raw["id"]), every=max(MIN_LOOP_SECONDS, int(raw["every"])), goal=str(raw["goal"]),
+                   mode=raw.get("mode") if raw.get("mode") in ("task", "goal") else "task",
+                   tools=set(tools) if isinstance(tools, list) and tools else None,
+                   next_run=float(raw.get("next_run", time.time())), runs=int(raw.get("runs", 0)))
+
+
+class TaskStore:
+    """~/.zhunt/agent_tasks.json: {tasks: [oldest first], loops: [...]}. Private, written atomically."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+
+    def load(self) -> tuple[list[Task], list[Loop]]:
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return [], []
+        raw = raw if isinstance(raw, dict) else {}
+
+        def parse(kind: Any, items: Any) -> list[Any]:
+            out = []
+            for item in items if isinstance(items, list) else []:
+                try:
+                    out.append(kind.from_json(item))
+                except (KeyError, TypeError, ValueError):
+                    continue  # one damaged entry should not lose the rest
+            return out
+
+        return parse(Task, raw.get("tasks"))[-MAX_TASKS:], parse(Loop, raw.get("loops"))
+
+    def save(self, tasks: list[Task], loops: list[Loop]) -> None:
+        data = {"tasks": [t.to_json() for t in tasks[-MAX_TASKS:]], "loops": [loop.to_json() for loop in loops]}
+        briefs._write_private(self.path, json.dumps(data).encode())
+
 
 class AgentRunner:
-    def __init__(self, settings_path: Path, briefs_path: Path | None = None) -> None:
+    def __init__(self, settings_path: Path, briefs_path: Path | None = None, tasks_path: Path | None = None) -> None:
         self.settings_path = settings_path
+        self.store = TaskStore(tasks_path or settings_path.with_name("agent_tasks.json"))
         self.brief_store = briefs.BriefStore(briefs_path or settings_path.with_name("briefs.json"))
         # Scheduled briefs are a Pro feature; a brief made on request (/brief) is free.
         self.plan: Callable[[], licence.Plan] = licence.current_plan
@@ -115,6 +178,64 @@ class AgentRunner:
         self._key: str = ""
         self._transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None
         self.browser = AgentBrowser()
+        self._save_handle: asyncio.TimerHandle | None = None
+        self._closing = False
+        saved_tasks, saved_loops = self.store.load()
+        for task in saved_tasks:
+            task._changed = self._changed
+            self.tasks[task.id] = task
+            self.order.append(task.id)
+        self.loops = {loop.id: loop for loop in saved_loops}
+
+    # ---- saving -----------------------------------------------------------------------------
+
+    def save(self) -> None:
+        if self._save_handle:
+            self._save_handle.cancel()
+            self._save_handle = None
+        try:
+            self.store.save([self.tasks[i] for i in self.order if i in self.tasks], list(self.loops.values()))
+        except OSError:
+            pass  # a full disk must not break the task itself; the next change tries again
+
+    def _changed(self) -> None:
+        """Note a change; it is written shortly after, batched with any that follow."""
+
+        if self._closing:
+            return  # shutting down: keep running tasks saved as running, so they resume
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.save()
+            return
+        if self._save_handle is None:
+            self._save_handle = loop.call_later(SAVE_DELAY, self.save)
+
+    async def resume(self) -> None:
+        """Background job while the daemon runs: restart what a restart cut off and the saved loops'
+        timers, then hold; on shutdown, save once more with running tasks still marked running."""
+
+        for task in [self.tasks[i] for i in self.order if i in self.tasks]:
+            if task.state not in ("running", "waiting"):
+                continue
+            for e in [e for e in task.events if e["kind"] == "approval"]:
+                if not any(d["kind"] == "decision" and d["call_id"] == e["call_id"] for d in task.events):
+                    task.event("decision", call_id=e["call_id"], approved=False, expired=True)
+            if task.resumes >= MAX_RESUMES:
+                task.state = "stopped"
+                task.event("error", text="zhunt restarted twice while this task ran, so it was not started again.")
+                continue
+            task.resumes += 1
+            task.event("resumed")
+            task._job = asyncio.get_running_loop().create_task(self._run(task))
+        for loop in self.loops.values():
+            loop._timer = asyncio.get_running_loop().create_task(self._tick(loop))
+        self.save()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            self.save()
+            self._closing = True
 
     # ---- wiring -----------------------------------------------------------------------------
 
@@ -150,7 +271,8 @@ class AgentRunner:
     # ---- tasks ------------------------------------------------------------------------------
 
     def start(self, goal: str, *, mode: str = "task", tools: set[str] | None = None, loop_id: str | None = None) -> Task:
-        task = Task(id=uuid.uuid4().hex[:10], goal=goal.strip()[:2000], mode=mode, tools=tools, loop_id=loop_id)
+        task = Task(id=uuid.uuid4().hex[:10], goal=goal.strip()[:2000], mode=mode, tools=tools, loop_id=loop_id,
+                    _changed=self._changed)
         self.tasks[task.id] = task
         self.order.append(task.id)
         while len(self.order) > MAX_TASKS:
@@ -204,8 +326,8 @@ class AgentRunner:
                 messages.append({"role": "assistant", "content": msg.get("content") or "", **({"tool_calls": calls} if calls else {})})
                 if not calls:
                     task.answer = text or "(the agent finished without a written answer)"
-                    task.event("answer", text=task.answer, model=model)
                     task.state = "done"
+                    task.event("answer", text=task.answer, model=model)
                     return
                 for call in calls:
                     result = await self._call(task, tools, call, model)
@@ -214,11 +336,12 @@ class AgentRunner:
             messages.append({"role": "user", "content": "You have used all your steps. Summarise what you found and what is left, without calling tools."})
             reply = await self._model(messages, [], f"agent-{task.id}")
             task.answer = (reply["message"].get("content") or "").strip() or "(stopped after the step limit)"
-            task.event("answer", text=task.answer, model=reply["model"], limit=True)
             task.state = "done"
+            task.event("answer", text=task.answer, model=reply["model"], limit=True)
         except asyncio.CancelledError:
             if task.state not in ("stopped",):
                 task.state = "stopped"
+                self._changed()
             raise
         except Exception as error:  # noqa: BLE001 - any failure ends the task with a readable reason
             task.state = "failed"
@@ -274,21 +397,28 @@ class AgentRunner:
                     next_run=time.time())
         self.loops[loop.id] = loop
         loop._timer = asyncio.get_running_loop().create_task(self._tick(loop))
+        self._changed()
         return loop
 
     def remove_loop(self, loop_id: str) -> bool:
         loop = self.loops.pop(loop_id, None)
         if loop and loop._timer:
             loop._timer.cancel()
+        if loop:
+            self._changed()
         return loop is not None
 
     async def _tick(self, loop: Loop) -> None:
+        """Run at next_run, then every loop.every. Runs missed while zhunt was closed make one
+        catch-up run, not one per missed time."""
+
         while loop.id in self.loops:
-            loop.next_run = time.time()
+            await asyncio.sleep(max(0.0, loop.next_run - time.time()))
+            if loop.id not in self.loops:
+                return
             loop.runs += 1
-            self.start(loop.goal, mode=loop.mode, tools=loop.tools, loop_id=loop.id)
             loop.next_run = time.time() + loop.every
-            await asyncio.sleep(loop.every)
+            self.start(loop.goal, mode=loop.mode, tools=loop.tools, loop_id=loop.id)
 
     # ---- briefs -----------------------------------------------------------------------------
 

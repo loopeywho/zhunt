@@ -184,10 +184,16 @@ link-local addresses are refused), `list_files`, `read_file` (read risk), `write
 - `POST /agent/tasks {"goal", "mode": "task"|"goal", "tools"?: [...]}` -> task detail
 - `GET /agent/tasks/{id}?since=n` -> `{id, goal, mode, state, answer, events[n:]}`; states
   `running | waiting | done | failed | stopped`; events `goal, thought, tool, approval,
-  decision, answer, error, stopped`
+  decision, answer, error, stopped, resumed`
 - `POST /agent/tasks/{id}/decide {"call_id", "approve"}`, `POST /agent/tasks/{id}/stop`
-- `POST /agent/loops {"every": "30m"|"2h"|"1d", "goal", ...}` (minimum 5 minutes, only
-  while the daemon runs), `DELETE /agent/loops/{id}`
+- `POST /agent/loops {"every": "30m"|"2h"|"1d", "goal", ...}` (minimum 5 minutes; runs while
+  the daemon runs), `DELETE /agent/loops/{id}`
+
+The last 30 tasks and every loop are saved in `~/.zhunt/agent_tasks.json` (owner-only), so
+they survive a restart. A task that was running or waiting starts again from its goal, once,
+with a `resumed` event; an approval left unanswered gets a `decision` with `"expired": true`
+and is asked again. A task cut off a second time is stopped with an `error` instead. Loops
+keep their schedule, and runs missed while zhunt was closed make one catch-up run.
 
 Limits: 12 model steps per task (24 in goal mode), approvals time out after 30 minutes.
 
