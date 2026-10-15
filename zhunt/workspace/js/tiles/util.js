@@ -19,6 +19,21 @@ export function modelLabel(id) {
   return h('span', { class: 'model' }, platform ? h('span', { class: 'model-plat' }, platform + '/') : null, name);
 }
 
+// 1234 -> "1.2k", 2500000 -> "2.5M"
+export function fmtCount(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1) + 'k';
+  return String(n);
+}
+
+// status.free_today in words: what the free models can still take today.
+export function freeTodayText(ft) {
+  if (!ft) return '';
+  if (!ft.models_ready) return 'No free model is ready right now.';
+  const part = (left, uncapped, unit) => (!uncapped ? `${fmtCount(left)} ${unit}` : left ? `${fmtCount(left)}+ ${unit}` : `${unit} uncapped`);
+  return `Free left today: ${part(ft.requests_left, ft.requests_uncapped, 'requests')} · ${part(ft.tokens_left, ft.tokens_uncapped, 'tokens')} · ${ft.models_ready} model${ft.models_ready === 1 ? '' : 's'} ready`;
+}
+
 export function emptyState(title, detail) {
   return h('div', { class: 'empty' }, h('p', { class: 'empty-title' }, title), detail ? h('p', { class: 'empty-detail' }, detail) : null);
 }

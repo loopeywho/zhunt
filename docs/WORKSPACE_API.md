@@ -27,6 +27,8 @@ in `/zhunt/api/decisions` by that session id.
 ```json
 {
   "version": "0.1.0.dev0",
+  "free_today": {"models_ready": 6, "requests_left": 12840, "tokens_left": 4100000,
+                 "requests_uncapped": true, "tokens_uncapped": false},
   "policy": {"allow_paid": false, "allow_training": false, "premium_reason": "pro only"},
   "spend": {"month": "2026-10", "spent": 0.0, "cap": 5.0},
   "providers": [
@@ -44,6 +46,8 @@ in `/zhunt/api/decisions` by that session id.
           "allowed": true,
           "blocked_reason": null,
           "headroom": 0.82,
+          "usage": {"rpm": {"used": 2, "cap": 30}, "rpd": {"used": 180, "cap": 1000},
+                    "tpm": {"used": 900, "cap": 8000}, "tpd": {"used": 41000, "cap": 200000}},
           "cooldown_remaining": 0,
           "reliability": 0.91,
           "limits": {"rpm": null, "rpd": null, "tpm": null, "tpd": null}
@@ -66,6 +70,14 @@ the `premium_reason`: `"pro only"` (no Pro licence), `"premium off"` (Pro, but
 while premium models are allowed. `spend` is this UTC month's premium spend (catalog
 prices x tokens) against `ZHUNT_MONTHLY_CAP` (USD, default 5).
 `cooldown_remaining` is seconds. Never include key values, only `key_set`.
+
+`usage` is each quota window's use so far beside its cap (learned limits included;
+`cap: null` means the provider publishes none), for the provider's first key. `free_today`
+adds up, over every key, what the free models that are allowed and not cooling down can
+still take under their daily caps (`rpd`, `tpd`); `*_uncapped` is true when at least one
+of them has no such cap, so the total is a floor. Before each request the router already
+checks the prompt's size against each model's context window and its `tpm`/`tpd` room;
+these fields only show it.
 
 ## `GET /zhunt/api/decisions?limit=50&session=<id>`
 
@@ -147,6 +159,17 @@ box) and the provider is told from the key's prefix: `gsk_` Groq, `AIza` Google 
 unknown, or names a provider not in the catalog, the answer is 422 ("choose the provider")
 and nothing is saved; the client asks and sends `platform`. The success response also
 carries the provider's `name`. Detection reads only the prefix and logs nothing.
+`POST /zhunt/api/keys/detect {"key"}` names the provider a key is for without saving it:
+`{"platform", "name", "key_set"}`, or `{"platform": null}`. The Connect window uses it to
+offer a key it finds on the clipboard when the window gets focus.
+
+`POST /zhunt/api/agent/keys` starts an agent task that fetches free keys in the agent's
+own browser: for each free provider with no key whose keys zhunt can recognise (Groq,
+Google AI Studio, Cerebras) it opens the key page; the user signs in there themselves; it
+creates a key (each click needs approval) and calls `browser_save_key`. That tool reads
+the key from the page and saves it as above. Page readings hide every key-shaped string
+from the model, so a key never reaches a model or a task's events; only its last four
+characters are reported. 409 without Chrome or Chromium, or when nothing is left to fetch.
 `DELETE` removes it. `/status` providers carry `key_url`
 (where to get a key) and `free_note` (one plain-language line) from the catalog.
 
@@ -184,7 +207,8 @@ link-local addresses are refused), `list_files`, `read_file` (read risk), `write
 - `POST /agent/tasks {"goal", "mode": "task"|"goal", "tools"?: [...]}` -> task detail
 - `GET /agent/tasks/{id}?since=n` -> `{id, goal, mode, state, answer, events[n:]}`; states
   `running | waiting | done | failed | stopped`; events `goal, thought, tool, approval,
-  decision, answer, error, stopped, resumed`
+  decision, answer, error, stopped, resumed`. Tasks carry `tokens` (prompt plus answer
+  tokens over every model step), and `answer` events repeat it
 - `POST /agent/tasks/{id}/decide {"call_id", "approve"}`, `POST /agent/tasks/{id}/stop`
 - `POST /agent/loops {"every": "30m"|"2h"|"1d", "goal", ...}` (minimum 5 minutes; runs while
   the daemon runs), `DELETE /agent/loops/{id}`

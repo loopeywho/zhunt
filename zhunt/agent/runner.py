@@ -50,6 +50,22 @@ GOAL_NOTE = """
 - GOAL MODE: keep working until this outcome is reached: "{goal}". Before your final answer, check the goal is really met; if not, keep going."""
 
 SLASH_TOOLSETS = {"browser": {"browser_open", "browser_read", "browser_follow_link", "browser_type", "browser_click", "browser_press_enter"}, "web": {"web_search", "open_page"}, "files": {"list_files", "read_file", "write_file", "move_file"}, "email": {"list_emails", "read_email", "draft_email", "send_email"}}
+BROWSER_KEY_TOOLS = {"browser_open", "browser_read", "browser_follow_link", "browser_click", "browser_save_key"}
+
+KEYS_GOAL = """Get free API keys for zhunt from these providers, one at a time:
+{providers}
+For each one:
+1. browser_open its address.
+2. If the page asks to sign in or sign up, do not try to: note the provider and move on to the next.
+3. When signed in, create a new API key (name it "zhunt" if a name is asked; pick the free plan, never enter card or phone details) using browser_click.
+4. When the new key is shown (it appears to you as hidden), call browser_save_key. If it only shows after a copy or reveal button, click that first.
+Finish with a short list: which keys were saved, and which providers need the user to sign in first in the agent browser window (then they run /keys again)."""
+
+
+def get_keys_goal(providers: list[dict[str, Any]]) -> str:
+    return KEYS_GOAL.format(providers="\n".join(f"- {p['name']}: {p['key_url']}" for p in providers))
+
+
 _INTERVAL = re.compile(r"^(\d+)\s*(m|min|h|hr|d)$", re.I)
 
 
@@ -75,6 +91,7 @@ class Task:
     answer: str = ""
     loop_id: str | None = None
     resumes: int = 0
+    tokens: int = 0  # prompt plus answer tokens over every model step
     _pending: dict[str, asyncio.Future] = field(default_factory=dict, repr=False)
     _job: asyncio.Task | None = field(default=None, repr=False)
     _changed: Callable[[], None] | None = field(default=None, repr=False)
@@ -89,7 +106,7 @@ class Task:
     def to_json(self) -> dict[str, Any]:
         return {"id": self.id, "goal": self.goal, "mode": self.mode, "tools": sorted(self.tools) if self.tools else None,
                 "state": self.state, "created": self.created, "events": self.events, "answer": self.answer,
-                "loop_id": self.loop_id, "resumes": self.resumes}
+                "loop_id": self.loop_id, "resumes": self.resumes, "tokens": self.tokens}
 
     @classmethod
     def from_json(cls, raw: dict[str, Any]) -> Task:
@@ -98,11 +115,11 @@ class Task:
                    tools=set(tools) if isinstance(tools, list) and tools else None, state=str(raw.get("state", "done")),
                    created=float(raw.get("created", time.time())), events=[e for e in raw.get("events", []) if isinstance(e, dict)],
                    answer=str(raw.get("answer", "")), loop_id=raw.get("loop_id") if isinstance(raw.get("loop_id"), str) else None,
-                   resumes=int(raw.get("resumes", 0)))
+                   resumes=int(raw.get("resumes", 0)), tokens=int(raw.get("tokens", 0)))
 
     def summary(self) -> dict[str, Any]:
         return {"id": self.id, "goal": self.goal, "mode": self.mode, "state": self.state, "created": self.created,
-                "steps": sum(1 for e in self.events if e["kind"] == "tool"), "loop_id": self.loop_id}
+                "steps": sum(1 for e in self.events if e["kind"] == "tool"), "loop_id": self.loop_id, "tokens": self.tokens}
 
     def detail(self, since: int = 0) -> dict[str, Any]:
         return {**self.summary(), "answer": self.answer, "events": self.events[since:]}
@@ -178,6 +195,8 @@ class AgentRunner:
         self._key: str = ""
         self._transport_factory: Callable[[], httpx.AsyncBaseTransport] | None = None
         self.browser = AgentBrowser()
+        # set by the workspace API: save a key found on a page, return the provider's name
+        self.save_key: Callable[[str], str] | None = None
         self._save_handle: asyncio.TimerHandle | None = None
         self._closing = False
         saved_tasks, saved_loops = self.store.load()
@@ -193,8 +212,11 @@ class AgentRunner:
         if self._save_handle:
             self._save_handle.cancel()
             self._save_handle = None
+        tasks = [self.tasks[i] for i in self.order if i in self.tasks]
+        if not tasks and not self.loops and not self.store.path.exists():
+            return  # nothing to keep: no file for an agent that was never used
         try:
-            self.store.save([self.tasks[i] for i in self.order if i in self.tasks], list(self.loops.values()))
+            self.store.save(tasks, list(self.loops.values()))
         except OSError:
             pass  # a full disk must not break the task itself; the next change tries again
 
@@ -250,7 +272,7 @@ class AgentRunner:
     def tools(self) -> dict[str, Tool]:
         tools = all_tools(self.settings())
         if find_browser():
-            tools.update({t.name: t for t in browser_tools(self.browser)})
+            tools.update({t.name: t for t in browser_tools(self.browser, self.save_key)})
         return tools
 
     async def _model(self, messages: list[dict[str, Any]], schemas: list[dict[str, Any]], session: str, **extra: Any) -> dict[str, Any]:
@@ -266,7 +288,9 @@ class AgentRunner:
             detail = body.get("error", {}).get("message") if isinstance(body.get("error"), dict) else body.get("detail")
             raise RuntimeError(str(detail or f"HTTP {response.status_code}")[:300])
         choice = (body.get("choices") or [{}])[0]
-        return {"message": choice.get("message") or {}, "model": body.get("model")}
+        usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
+        tokens = sum(v for k in ("prompt_tokens", "completion_tokens") if isinstance(v := usage.get(k), int))
+        return {"message": choice.get("message") or {}, "model": body.get("model"), "tokens": tokens}
 
     # ---- tasks ------------------------------------------------------------------------------
 
@@ -319,6 +343,7 @@ class AgentRunner:
             for step in range(limit):
                 reply = await self._model(messages, schemas, f"agent-{task.id}")
                 msg, model = reply["message"], reply["model"]
+                task.tokens += reply.get("tokens", 0)
                 calls = msg.get("tool_calls") or []
                 text = (msg.get("content") or "").strip()
                 if text and calls:
@@ -327,7 +352,7 @@ class AgentRunner:
                 if not calls:
                     task.answer = text or "(the agent finished without a written answer)"
                     task.state = "done"
-                    task.event("answer", text=task.answer, model=model)
+                    task.event("answer", text=task.answer, model=model, tokens=task.tokens)
                     return
                 for call in calls:
                     result = await self._call(task, tools, call, model)
@@ -335,9 +360,10 @@ class AgentRunner:
             # out of steps: ask for a wrap-up without tools
             messages.append({"role": "user", "content": "You have used all your steps. Summarise what you found and what is left, without calling tools."})
             reply = await self._model(messages, [], f"agent-{task.id}")
+            task.tokens += reply.get("tokens", 0)
             task.answer = (reply["message"].get("content") or "").strip() or "(stopped after the step limit)"
             task.state = "done"
-            task.event("answer", text=task.answer, model=reply["model"], limit=True)
+            task.event("answer", text=task.answer, model=reply["model"], limit=True, tokens=task.tokens)
         except asyncio.CancelledError:
             if task.state not in ("stopped",):
                 task.state = "stopped"

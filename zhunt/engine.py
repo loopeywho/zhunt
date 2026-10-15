@@ -729,6 +729,31 @@ class EngineProxyHook:
         with self._lock:
             self._decisions.append(record)
 
+    def _free_today(self) -> dict[str, Any]:
+        """What the free models can still take today, over every key: requests and tokens left
+        under the daily caps, and whether some ready model has no daily cap at all."""
+
+        out: dict[str, Any] = {"models_ready": 0, "requests_left": 0, "tokens_left": 0,
+                               "requests_uncapped": False, "tokens_uncapped": False}
+        for model in self.catalog.models:
+            if not model.free or self.selector.blocked_reason(model) is not None:
+                continue
+            ready = False
+            for key_id in self.selector.key_ids(model.platform):
+                slot = (model.id, key_id)
+                if self.quota.cooldown_remaining(slot) > 0:
+                    continue
+                usage = self.quota.usage(slot, model.limits)
+                ready = True
+                for axis, total in (("rpd", "requests"), ("tpd", "tokens")):
+                    cap = usage[axis]["cap"]
+                    if cap is None:
+                        out[f"{total}_uncapped"] = True
+                    else:
+                        out[f"{total}_left"] += max(cap - int(usage[axis]["used"] or 0), 0)
+            out["models_ready"] += ready
+        return out
+
     def decisions(self, *, limit: int = 50, session: str | None = None) -> list[dict[str, Any]]:
         """Newest first, optionally only one session's attempts."""
 
@@ -815,6 +840,7 @@ class EngineProxyHook:
                         "allowed": reason is None,
                         "blocked_reason": reason,
                         "headroom": round(self.quota.headroom(slot, model.limits), 3),
+                        "usage": self.quota.usage(slot, model.limits),
                         "cooldown_remaining": round(self.quota.cooldown_remaining(slot), 1),
                         "reliability": round(self.reliability.mean(model.id), 3),
                         "limits": asdict(
@@ -836,6 +862,7 @@ class EngineProxyHook:
             )
         return {
             "version": __version__,
+            "free_today": self._free_today(),
             "policy": {
                 "allow_paid": policy.allow_paid,
                 "allow_training": policy.allow_training,

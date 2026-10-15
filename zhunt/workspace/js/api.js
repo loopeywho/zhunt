@@ -101,6 +101,7 @@ export const api = {
     add: (platform, key) => request('/zhunt/api/keys', { method: 'POST', json: { platform, key } }),
     // no platform: the daemon tells the provider from the key's prefix (422 when it cannot)
     addAny: (key) => request('/zhunt/api/keys', { method: 'POST', json: { key } }),
+    detect: (key) => request('/zhunt/api/keys/detect', { method: 'POST', json: { key } }),
     remove: (platform) => request('/zhunt/api/keys/' + encodeURIComponent(platform), { method: 'DELETE' }),
   },
   bots: {
@@ -125,6 +126,7 @@ export const api = {
     decide: (id, call_id, approve) => request('/zhunt/api/agent/tasks/' + encodeURIComponent(id) + '/decide', { method: 'POST', json: { call_id, approve } }),
     stop: (id) => request('/zhunt/api/agent/tasks/' + encodeURIComponent(id) + '/stop', { method: 'POST' }),
     loop: (body) => request('/zhunt/api/agent/loops', { method: 'POST', json: body }),
+    getKeys: () => request('/zhunt/api/agent/keys', { method: 'POST' }),
     unloop: (id) => request('/zhunt/api/agent/loops/' + encodeURIComponent(id), { method: 'DELETE' }),
     briefs: () => request('/zhunt/api/agent/briefs'),
     briefSettings: (body) => request('/zhunt/api/agent/briefs/settings', { method: 'PUT', json: body }),

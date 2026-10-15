@@ -353,3 +353,21 @@ def test_concurrent_acquires_never_exceed_the_limit() -> None:
         thread.join()
 
     assert results.count(True) == 10
+
+
+def test_usage_reports_each_window_beside_its_cap() -> None:
+    clock = FakeClock()
+    quota = QuotaTracker(clock=clock)
+    limits = Limits(rpm=30, rpd=1000, tpd=None)
+
+    lease = quota.try_acquire(SLOT, limits, tokens=500)
+    quota.settle(lease, 320)
+    quota.try_acquire(SLOT, limits, tokens=100)
+
+    usage = quota.usage(SLOT, limits)
+    assert usage["rpm"] == {"used": 2, "cap": 30}
+    assert usage["rpd"] == {"used": 2, "cap": 1000}
+    assert usage["tpm"] == {"used": 420, "cap": None}
+    assert usage["tpd"] == {"used": 420, "cap": None}
+    clock.advance(61)
+    assert quota.usage(SLOT, limits)["rpm"]["used"] == 0
