@@ -1273,6 +1273,21 @@ def test_truncation_and_its_retry_are_both_recorded_in_telemetry() -> None:
     ]
 
 
+def test_the_decision_log_outlives_a_restart() -> None:
+    call = AsyncMock(side_effect=[chat_reply(finish_reason="length"), chat_reply("recovered")])
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "telemetry.jsonl"
+        with daemon(chat=call, telemetry_path=path) as (client, hook):
+            post_chat(client, chat_body())
+            before = hook.decisions()
+        with daemon(chat=AsyncMock(), telemetry_path=path) as (_, restarted):
+            after = restarted.decisions()
+
+    keys = ("model", "success", "failure", "attempt", "tier", "input_tokens", "output_tokens")
+    assert [{k: d[k] for k in keys} for d in after] == [{k: d[k] for k in keys} for d in before]
+    assert [round(d["ts"]) for d in after] == [round(d["ts"]) for d in before]
+
+
 @pytest.mark.parametrize(
     ("dialect", "path", "body", "reply"),
     [

@@ -31,6 +31,7 @@ class TelemetryLogger:
         output_tokens: int,
         success: bool,
         failure: str | None = None,
+        attempt: int | None = None,
     ) -> dict[str, Any]:
         actual_cost = self.registry.projected_cost(
             decision.model,
@@ -60,11 +61,35 @@ class TelemetryLogger:
         }
         if failure is not None:
             event["failure"] = failure
+        if attempt is not None:
+            event["attempt"] = attempt
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             with self.path.open("a", encoding="utf-8") as telemetry_file:
                 telemetry_file.write(json.dumps(event, separators=(",", ":")) + "\n")
         return event
+
+
+def recent_requests(path: Path, *, since: float, limit: int) -> list[dict[str, Any]]:
+    """The newest ``limit`` request events at or after ``since`` (epoch seconds), oldest
+    first, each with its timestamp as ``ts``."""
+
+    path = path.expanduser()
+    if not path.is_file():
+        return []
+    events: list[dict[str, Any]] = []
+    with path.open("rb") as telemetry_file:
+        telemetry_file.seek(max(telemetry_file.seek(0, 2) - 1_000_000, 0))  # a day fits easily
+        lines = telemetry_file.read().decode("utf-8", "replace").splitlines()
+    for line in lines[-limit * 2:]:
+        try:
+            event = json.loads(line)
+            ts = datetime.fromisoformat(event["timestamp"]).timestamp()
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue  # also the first line when the seek landed mid-line
+        if event.get("event") == "request" and ts >= since:
+            events.append({**event, "ts": ts})
+    return events[-limit:]
 
 
 def summarize_telemetry(

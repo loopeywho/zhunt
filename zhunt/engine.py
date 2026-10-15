@@ -56,7 +56,7 @@ from zhunt.server import (
 )
 from zhunt.spend import SpendLedger, cap_from_env, cost_of, month_of
 from zhunt.state import StateStore
-from zhunt.telemetry import TelemetryLogger
+from zhunt.telemetry import TelemetryLogger, recent_requests
 
 # Original attempt plus up to this many failovers per client request.
 MAX_REPLAYS = 3
@@ -393,6 +393,8 @@ class EngineProxyHook:
         self._pending: dict[str, _Pending] = {}
         self._retries: dict[str, _Retry] = {}
         self._decisions: deque[dict[str, Any]] = deque(maxlen=DECISION_LOG_SIZE)
+        if telemetry is not None:  # so the day's log outlives a restart
+            self._decisions.extend(_decisions_from_telemetry(telemetry))
         self._lock = RLock()
         self.catalog_feed: CatalogFeed | None = None
 
@@ -703,6 +705,7 @@ class EngineProxyHook:
             output_tokens=output_tokens,
             success=success,
             failure=failure.value if failure is not None else None,
+            attempt=pending.attempts,
         )
 
 
@@ -1085,3 +1088,26 @@ def describe(
             "Free-tier engine: premium models are off (zhunt Pro, then `zhunt premium on`)"
         )
     return tuple(lines)
+
+
+def _decisions_from_telemetry(telemetry: TelemetryLogger) -> list[dict[str, Any]]:
+    """The last day's decision records, rebuilt from the telemetry file."""
+
+    events = recent_requests(telemetry.path, since=time.time() - 86_400, limit=DECISION_LOG_SIZE)
+    return [
+        {
+            "ts": event["ts"],
+            "session": event.get("session"),
+            "requested_alias": event.get("requested_alias"),
+            "tier": event.get("tier"),
+            "model": event.get("model"),
+            "degraded": False,
+            "attempt": event.get("attempt", 1),
+            "success": bool(event.get("success")),
+            "failure": event.get("failure"),
+            "input_tokens": event.get("input_tokens"),
+            "output_tokens": event.get("output_tokens"),
+            "latency_ms": None,
+        }
+        for event in events
+    ]
