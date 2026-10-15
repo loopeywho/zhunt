@@ -311,6 +311,8 @@ async def acompletion(
 
     wire, base, model_id = _route(model, api_base)
     body = _chat_body(params, stream=bool(stream), openai=base == _OPENAI_BASE)
+    if model.startswith("gemini/"):
+        messages = _with_thought_signatures(messages)
     body.update(model=model_id, messages=messages)
     if wire == "anthropic":
         request = translate.chat_to_anthropic_request(body)
@@ -326,6 +328,38 @@ async def acompletion(
         body["stream"] = True
         return await _post_stream(url, headers, body, timeout)
     return await _post_json(url, headers, body, timeout)
+
+
+# Gemini 3 rejects a replayed function call without the thought signature it attached;
+# calls another model made (zhunt fails over mid-conversation) never had one. Google's
+# documented placeholder for such calls skips the check.
+_GEMINI_SIGNATURE_PLACEHOLDER = "skip_thought_signature_validator"
+
+
+def _with_thought_signatures(messages: list[Any]) -> list[Any]:
+    """Messages where each assistant turn's first tool call carries a thought signature."""
+
+    out: list[Any] = []
+    for message in messages:
+        calls = message.get("tool_calls") if isinstance(message, Mapping) else None
+        if (
+            message.get("role") == "assistant"
+            and isinstance(calls, list) and calls and isinstance(calls[0], Mapping)
+            and not any(_thought_signature(call) for call in calls)
+        ):
+            first = dict(calls[0])
+            extra = dict(first.get("extra_content") or {})
+            extra["google"] = {**(extra.get("google") or {}), "thought_signature": _GEMINI_SIGNATURE_PLACEHOLDER}
+            first["extra_content"] = extra
+            message = {**message, "tool_calls": [first, *calls[1:]]}
+        out.append(message)
+    return out
+
+
+def _thought_signature(call: Any) -> Any:
+    extra = call.get("extra_content") if isinstance(call, Mapping) else None
+    google = extra.get("google") if isinstance(extra, Mapping) else None
+    return google.get("thought_signature") if isinstance(google, Mapping) else None
 
 
 def _chat_body(params: Mapping[str, Any], *, stream: bool, openai: bool) -> dict[str, Any]:
