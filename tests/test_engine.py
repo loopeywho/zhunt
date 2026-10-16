@@ -623,7 +623,7 @@ def test_a_keyless_provider_is_routable_with_no_key_and_gets_its_own_endpoint() 
     kwargs = call.await_args.kwargs
     assert kwargs["model"] == "openai/free-auto"
     assert kwargs["api_base"] == "https://anon.example/v1"
-    assert kwargs["api_key"] == "anonymous"
+    assert kwargs["api_key"] is None  # no Authorization header: OVHcloud rejects a made-up key
 
 
 def test_named_provider_routes_never_get_an_api_base_override() -> None:
