@@ -130,6 +130,14 @@ def test_other_providers_get_tool_calls_as_sent(provider) -> None:
     assert provider.body["messages"] == TOOL_HISTORY
 
 
+def test_a_call_without_a_key_sends_no_authorization_header(provider) -> None:
+    provider.responses.append(httpx.Response(200, json=CHAT_ANSWER))
+    run(llm.acompletion(model="openai/gpt-oss-120b", messages=MESSAGES, api_key=None,
+                        api_base="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"))
+
+    assert "authorization" not in provider.requests[0].headers
+
+
 def test_raw_newlines_inside_provider_strings_are_accepted(provider) -> None:
     # Kilo's NVIDIA models send reasoning text with unescaped newlines.
     raw = json.dumps(CHAT_ANSWER).replace('"content": "hi"', '"content": "hi", "reasoning": "line one\nline two"').replace("\\n", "\n")

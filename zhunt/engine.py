@@ -149,7 +149,8 @@ def keys_from_env(catalog: Catalog, env: Mapping[str, str]) -> dict[str, list[st
     }
 
 
-# Sent as the key to providers that need none (Kilo Gateway accepts anonymous calls).
+# Stands in for the key of providers that need none, so they count as usable; it is
+# never sent (see async_pre_call_hook).
 _ANONYMOUS_KEY = "anonymous"
 
 
@@ -449,7 +450,8 @@ class EngineProxyHook:
                 status_code=503, detail=f"{provider.key_env} is not configured"
             )
         data["model"] = f"{provider.litellm_provider}/{candidate.model.model_id}"
-        data["api_key"] = api_key
+        # no-key providers get no Authorization header: OVHcloud rejects a made-up key
+        data["api_key"] = None if api_key == _ANONYMOUS_KEY else api_key
         if provider.api_base:
             data["api_base"] = provider.api_base  # set after the client copy was scrubbed
         decision = replace(decision, model=candidate.model.id)

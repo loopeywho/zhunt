@@ -73,7 +73,7 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
       ...Object.keys(labels).map((f) => ({ title: labels[f], group: plan.features.includes(f) ? 'included' : 'pro', hint: plan.features.includes(f) ? 'on' : '' })),
       pro
         ? { title: `Pro${plan.email ? ' for ' + plan.email : ''}${until ? ', renews by ' + until : ''}${plan.in_grace ? ' (expired: run zhunt licence renew)' : ''}`, group: 'plan' }
-        : { title: 'Get zhunt Pro ($7/month, 7-day free trial)', group: 'upgrade', hint: 'opens the website', open: true },
+        : { title: 'zhunt Pro is coming soon: join the waitlist', group: 'upgrade', hint: 'opens the website', open: true },
       ...(pro ? [] : [{ title: 'Already bought it? Run: zhunt licence activate', group: 'upgrade' }]),
       ...(plan.problem ? [{ title: 'Stored licence not in effect: ' + plan.problem, group: 'plan' }] : []),
       ...(plan.setup_guide_url ? [{ title: 'Setup guide: install, first key, connect your apps', group: 'help', hint: 'opens the website', url: plan.setup_guide_url }] : []),

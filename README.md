@@ -5,10 +5,13 @@ prompt to the best *available* free-tier model and switches automatically when o
 runs out of quota or fails. Use it from its own workspace, or as an endpoint
 for coding tools such as Codex and Hermes.
 
-> **Status: v2 pre-release.** The engine, daemon, workspace API and app launchers
-> are built and tested against simulated providers. Verification against the real
-> Groq, Google AI Studio and Cerebras APIs with live keys is still pending, so
-> treat provider behaviour as unproven until that is done.
+> **Status: public pre-release.** Free and open source. Tested against the live
+> providers (Groq, Google AI Studio, Cerebras, Z.ai, Kilo Gateway and OVHcloud) on
+> 2026-10-16, including a fresh install with no keys. Pro is not on sale yet.
+>
+> Website and live demo: <https://zhunt.kindredwildcat.com> ·
+> [try the demo](https://zhunt.kindredwildcat.com/demo/) · feedback:
+> kwokwingfoods@gmail.com
 
 ## How it works
 
