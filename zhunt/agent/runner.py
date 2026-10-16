@@ -290,7 +290,8 @@ class AgentRunner:
         choice = (body.get("choices") or [{}])[0]
         usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
         tokens = sum(v for k in ("prompt_tokens", "completion_tokens") if isinstance(v := usage.get(k), int))
-        return {"message": choice.get("message") or {}, "model": body.get("model"), "tokens": tokens}
+        model = response.headers.get("x-zhunt-model") or body.get("model")  # the body names the alias
+        return {"message": choice.get("message") or {}, "model": model, "tokens": tokens}
 
     # ---- tasks ------------------------------------------------------------------------------
 

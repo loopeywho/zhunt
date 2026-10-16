@@ -96,6 +96,40 @@ def test_a_catalog_api_base_is_used_and_model_ids_keep_their_slashes(provider) -
     assert provider.body["model"] == "kilo-auto/free"
 
 
+def _call(call_id: str, signature: str | None = None) -> dict[str, Any]:
+    call = {"id": call_id, "type": "function", "function": {"name": "web_search", "arguments": "{}"}}
+    if signature:
+        call["extra_content"] = {"google": {"thought_signature": signature}}
+    return call
+
+
+TOOL_HISTORY = [
+    {"role": "user", "content": "look it up"},
+    {"role": "assistant", "content": "", "tool_calls": [_call("a"), _call("b")]},  # another model's turn
+    {"role": "tool", "tool_call_id": "a", "content": "x"},
+    {"role": "tool", "tool_call_id": "b", "content": "y"},
+    {"role": "assistant", "content": "", "tool_calls": [_call("c", "real-sig")]},  # Gemini's own turn
+    {"role": "tool", "tool_call_id": "c", "content": "z"},
+]
+
+
+def test_gemini_gets_a_placeholder_signature_on_tool_calls_it_did_not_make(provider) -> None:
+    provider.responses.append(httpx.Response(200, json=CHAT_ANSWER))
+    run(llm.acompletion(model="gemini/gemini-3.8-flash", messages=TOOL_HISTORY, api_key="k"))
+
+    sent = [m.get("tool_calls") for m in provider.body["messages"] if m.get("tool_calls")]
+    signatures = [[llm._thought_signature(c) for c in calls] for calls in sent]
+    assert signatures == [["skip_thought_signature_validator", None], ["real-sig"]]
+    assert "extra_content" not in TOOL_HISTORY[1]["tool_calls"][0]  # the caller's list is untouched
+
+
+def test_other_providers_get_tool_calls_as_sent(provider) -> None:
+    provider.responses.append(httpx.Response(200, json=CHAT_ANSWER))
+    run(llm.acompletion(model="groq/llama", messages=TOOL_HISTORY, api_key="k"))
+
+    assert provider.body["messages"] == TOOL_HISTORY
+
+
 def test_raw_newlines_inside_provider_strings_are_accepted(provider) -> None:
     # Kilo's NVIDIA models send reasoning text with unescaped newlines.
     raw = json.dumps(CHAT_ANSWER).replace('"content": "hi"', '"content": "hi", "reasoning": "line one\nline two"').replace("\\n", "\n")

@@ -69,6 +69,23 @@ def test_chat_json_answers_name_the_requested_model() -> None:
     assert response.json()["model"] == "zhunt-auto"
 
 
+def test_answers_name_the_model_that_served_them_in_a_header() -> None:
+    # the first attempt is cut short, so the replay on the next tier answers
+    call = AsyncMock(side_effect=[chat_reply(finish_reason="length"), chat_reply("recovered")])
+    with daemon(chat=call) as (client, _):
+        response = client.post("/v1/chat/completions", headers=auth(), json=chat_body())
+
+    assert response.json()["model"] == "zhunt-auto"
+    assert response.headers["x-zhunt-model"] == CODING
+
+
+def test_streams_name_the_model_that_served_them_in_a_header() -> None:
+    with daemon(chat=streaming([("stop", "hi")])) as (client, _):
+        response = client.post("/v1/chat/completions", headers=auth(), json=chat_body(stream=True))
+
+    assert response.headers["x-zhunt-model"] == CHAT
+
+
 def test_a_stream_that_fails_before_its_first_chunk_keeps_the_error_status() -> None:
     call = AsyncMock(side_effect=[provider_error(llm.BadRequestError, 400)])
     with daemon(chat=call) as (client, hook):

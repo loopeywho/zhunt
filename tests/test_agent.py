@@ -75,6 +75,28 @@ def test_read_tools_run_straight_away_and_the_answer_ends_the_task(tmp_path):
     assert {t["function"]["name"] for t in seen[0]["tools"]} >= {"web_search", "open_page", "read_file", "write_file"}
 
 
+def test_steps_name_the_model_zhunt_routed_to_not_the_alias(tmp_path):
+    served = iter(["groq/openai/gpt-oss-120b", "google/gemini-3.8-flash"])
+    shared = tmp_path / "docs"
+    shared.mkdir()
+    (shared / "note.txt").write_text("30 requests a minute")
+    replies = iter([reply(calls=[("read_file", {"path": "note.txt"})], model="zhunt-auto"),
+                    reply("Done.", model="zhunt-auto")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=next(replies), headers={"x-zhunt-model": next(served)})
+
+    async def go():
+        runner = runner_with(tmp_path, lambda: httpx.MockTransport(handler), [shared])
+        task = runner.start("groq limits")
+        await finish(runner, task)
+        return task
+
+    task = asyncio.run(go())
+    assert [e["model"] for e in task.events if e["kind"] in ("tool", "answer")] == [
+        "groq/openai/gpt-oss-120b", "google/gemini-3.8-flash"]
+
+
 @pytest.mark.parametrize("approve", [True, False])
 def test_writes_wait_for_the_user_and_only_happen_when_approved(tmp_path, approve):
     shared = tmp_path / "out"
