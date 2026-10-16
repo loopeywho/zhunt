@@ -165,6 +165,15 @@ def test_static_files_are_served_without_a_key() -> None:
     assert missing.status_code == 404
 
 
+def test_workspace_files_are_revalidated_so_an_update_is_never_stale() -> None:
+    with workspace(AsyncMock(), env=ENV) as (client, _):
+        sheet = client.get("/workspace/css/themes/dark.css")
+        again = client.get("/workspace/css/themes/dark.css", headers={"if-none-match": sheet.headers["etag"]})
+
+    assert sheet.headers["cache-control"] == "no-cache"
+    assert again.status_code == 304
+
+
 def test_without_a_packaged_workspace_directory_only_the_static_mount_is_missing() -> None:
     with workspace(AsyncMock(), env=ENV, static=False) as (client, _):
         assert client.get("/workspace/").status_code == 404

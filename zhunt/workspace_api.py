@@ -87,6 +87,8 @@ class _WorkspaceHeaders:
         (b"content-security-policy", _WORKSPACE_CSP.encode()),
         (b"x-content-type-options", b"nosniff"),
         (b"referrer-policy", b"no-referrer"),
+        # revalidate every load (a 304 when unchanged), so an updated zhunt never runs old modules
+        (b"cache-control", b"no-cache"),
     )
 
     def __init__(self, app: Any) -> None:
