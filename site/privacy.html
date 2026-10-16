@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zhunt — Privacy policy</title>
+    <meta name="description" content="What Zhunt and Kindred Wildcat do with your data: your prompts and keys stay on your computer." />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="./" aria-label="Zhunt home"><span class="brand-mark" aria-hidden="true">z</span><span>Zhunt</span></a>
+      </header>
+      <main class="activate-main guide">
+        <p class="eyebrow">Privacy policy</p>
+        <h1 class="activate-title">Zhunt privacy policy</h1>
+        <section class="install-card legal">
+          <p><strong>Who we are.</strong> Zhunt is made by Kindred Wildcat, a business based in the United Kingdom ([registered postal address]), the controller of the personal data described here. Contact: <a href="mailto:kwokwingfoods@gmail.com">kwokwingfoods@gmail.com</a>.</p>
+          <h2>The short version</h2>
+          <p>Zhunt runs on your computer. We do not run a server that your prompts pass through, we do not receive your prompts, responses or provider API keys, and the app does not phone home unless you turn on catalog updates (below). The only personal data we handle is what is needed to sell you Pro: your email address and subscription status, via Stripe.</p>
+          <h2>What stays on your computer (we never receive it)</h2>
+          <ul><li><strong>Prompts and responses.</strong> Zhunt classifies a request locally and sends it directly to the AI provider it selects (for example Groq, Google AI Studio, Cerebras or, on Pro with your opt-in, Anthropic, OpenAI or Google's paid Gemini API). That provider receives your prompt under its own terms and privacy policy, just as if you had used it directly.</li><li><strong>Provider API keys</strong>, stored in <code>~/.zhunt/env</code> readable only by your user account.</li><li><strong>Usage records</strong>, in <code>~/.zhunt/telemetry.jsonl</code> and <code>~/.zhunt/state.db</code>: time, model, tier, token counts, estimated cost, success or failure. No prompt or response text.</li><li><strong>Your licence key</strong>, in <code>~/.zhunt/licence</code>. It is checked offline.</li></ul>
+          <p>You can delete any of these files at any time.</p>
+          <h2>What the agent sends, and where</h2>
+          <p>When you give the agent a task, it works from your computer. Web searches go to DuckDuckGo, and the pages it reads are fetched directly from their websites, which see your IP address like any visit. If you connect your email, it reads and drafts mail in your own mailbox. None of this passes through us.</p>
+          <h2>AI providers that may train on prompts</h2>
+          <p>Some free tiers say they may use prompts to improve their services. Zhunt does not send requests to those providers unless you turn on <code>ZHUNT_ALLOW_TRAINING</code>. Premium (Pro) requests go directly to Anthropic, OpenAI or Google on your paid API key, whose terms say paid API traffic is not used for training by default.</p>
+          <h2>What we receive when you buy Pro</h2>
+          <ul><li><strong>Stripe</strong> (our payment processor) collects your payment details and email. We never see your full card number. Stripe's privacy policy applies to the data it handles.</li><li><strong>From Stripe we receive</strong>: your email address, subscription id, status and renewal date, used to issue and renew your licence key and to contact you about your subscription.</li><li><strong>Licence service</strong> (a Cloudflare Pages Function): when you open the activation page or run <code>zhunt licence renew</code>, it asks Stripe about your subscription and returns a signed key. It does not store this data. Cloudflare processes request data such as your IP address to deliver and protect the service; we do not keep request logs.</li><li><strong>Catalog updates</strong> (off unless you run <code>zhunt catalog update</code> or switch them on in the Connect window): the app downloads a public, signed file listing free models from zhunt.kindredwildcat.com, at most every 12 hours. The request carries no cookie, licence, key or other identifier; Cloudflare, which hosts the file, sees your IP address like any website visit; we do not keep request logs.</li><li><strong>Emails you send us</strong> (feedback, support) are kept to answer you.</li></ul>
+          <p>Lawful basis (UK GDPR): performance of the contract (licence, billing), legitimate interests (support, fraud prevention), legal obligation (tax records). Stripe and Cloudflare may process data outside the UK under their own safeguards (such as the UK International Data Transfer Addendum).</p>
+          <h2>Retention</h2>
+          <p>Subscription and billing records: as long as you are a customer and as required for tax and accounting (6 years after the end of the tax year they relate to). Support emails: 2 years after the last message, unless still needed to answer you.</p>
+          <h2>Your rights</h2>
+          <p>You can ask for a copy of your data, correction or deletion, and object to processing, by emailing us; we answer within one month. If you are unhappy with how we handle your data, you can complain to the Information Commissioner's Office (<a href="https://ico.org.uk/make-a-complaint/" target="_blank" rel="noopener">ico.org.uk</a>).</p>
+          <h2>Changes</h2>
+          <p>We will post changes here with a new date. Material changes are emailed to customers.</p>
+          <p><em>Last updated: 16 October 2026</em></p>
+        </section>
+      </main>
+      <footer class="site-footer"><div class="footer-meta"><span>© 2026 Kindred Wildcat</span><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="./">Back to zhunt</a></div></footer>
+    </div>
+  </body>
+</html>
