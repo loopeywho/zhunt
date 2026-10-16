@@ -161,10 +161,15 @@ export function connectTile(svc) {
   }
 
   // A key copied to the clipboard (say, from a provider's page) is offered for saving when this
-  // window gets focus. Only the prefix is checked; nothing is saved without a click.
+  // window gets focus. Only the prefix is checked; nothing is saved without a click. This only
+  // runs once the browser already allows clipboard reads: asking on focus would pop up a
+  // permission prompt nobody asked for (the paste box's "From clipboard" asks on a click).
   let clipCard = null, clipSeen = '';
+  async function clipboardAllowed() {
+    try { return (await navigator.permissions.query({ name: 'clipboard-read' })).state === 'granted'; } catch { return false; }
+  }
   async function checkClipboard() {
-    if (!navigator.clipboard?.readText || !document.hasFocus()) return;
+    if (!navigator.clipboard?.readText || !document.hasFocus() || !(await clipboardAllowed())) return;
     let text = '';
     try { text = (await navigator.clipboard.readText()).trim(); } catch { return; } // permission refused
     if (!text || text === clipSeen || text.length > 300 || /\s/.test(text)) return;
@@ -221,10 +226,14 @@ export function connectTile(svc) {
       ...providersForPick().map((p) => h('option', { value: p.platform }, p.name)));
     const save = h('button', { class: 'act primary', type: 'submit' }, 'Save');
     const note = h('p', { class: 'quiet connect-note', role: 'status' });
+    const fromClip = navigator.clipboard?.readText ? h('button', { class: 'act ghost', type: 'button', onclick: async () => {
+      try { input.value = (await navigator.clipboard.readText()).trim(); input.dispatchEvent(new Event('input')); }
+      catch { note.textContent = 'The browser did not allow reading the clipboard. Paste the key instead.'; }
+    } }, 'From clipboard') : null;
     const form = h('form', { class: 'connect-form connect-any', 'data-for': 'any' },
       h('label', { class: 'connect-any-label' }, h('strong', {}, 'Paste any key'),
         h('span', { class: 'quiet' }, ' zhunt tells which provider it is for.')),
-      input, pick, save, note);
+      input, pick, save, fromClip, note);
     // a different key gets detected afresh
     input.addEventListener('input', () => { anyChoice = false; pick.hidden = true; pick.value = ''; note.textContent = ''; });
     form.addEventListener('submit', async (e) => {
