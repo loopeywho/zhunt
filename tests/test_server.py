@@ -213,3 +213,17 @@ def test_count_tokens_estimates_the_prompt() -> None:
                            json={"model": "x", "messages": [{"role": "user", "content": "hi " * 400}]})
 
     assert 0 < short.json()["input_tokens"] < long.json()["input_tokens"]
+
+
+def test_responses_stream_records_provider_usage_in_routing_decisions():
+    async def chunks():
+        yield llm.ModelResponse({"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]})
+        yield llm.ModelResponse({"choices": [], "usage": {"prompt_tokens": 123, "completion_tokens": 45}})
+    with daemon(chat=AsyncMock(return_value=chunks())) as (client, hook):
+        response = client.post('/v1/responses', headers=auth(), json={
+            'model': 'zhunt-auto', 'input': 'Hello', 'stream': True,
+        })
+        assert response.status_code == 200
+        decision = hook.decisions(limit=1)[0]
+        assert decision['input_tokens'] == 123
+        assert decision['output_tokens'] == 45

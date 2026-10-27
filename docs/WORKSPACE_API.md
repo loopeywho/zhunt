@@ -326,3 +326,33 @@ Decided while building the backend; the code and tests treat these as the contra
 - Decision `session` is the `x-session-id` header, or `fallback:<hash>` without one.
   For streamed replies `latency_ms` is the time to the end of the stream.
 - `GET /decisions?limit=` outside 1-200 -> 422 (FastAPI validation).
+
+## Engineering workspace (macOS/Linux)
+
+All `/zhunt/api/engineering` endpoints use the existing master-key authentication.
+Projects and tasks persist in `~/.zhunt/engineering.json` (0600). Sessions and their
+bounded output remain in daemon memory; restarting does not execute commands.
+
+- `GET /engineering`: projects, tasks, sessions, supported-platform flag, CLI availability,
+  and the style nonce used only for xterm's generated theme/sizing styles.
+- `POST /engineering/projects {path}`: register an existing local directory.
+- `POST /engineering/tasks {project, name, isolated:false}`: create a task; isolated
+  tasks create a branch/worktree from HEAD beneath `~/.zhunt/worktrees/`.
+- `POST /engineering/sessions {task, kind}`: start `shell`, `codex-zhunt`,
+  `hermes-zhunt`, `codex`, or `claude`. Routed kinds use `launch.build_plan` and
+  the actual daemon port. Native kinds use the CLI's own configuration and billing.
+- `GET /engineering/sessions/{id}?since=0`: base64 PTY bytes, monotonic byte offset,
+  running/exit status, and `reset` when the requested offset fell outside the 1 MiB buffer.
+- `POST /engineering/sessions/{id}/input {data}`: terminal input (at most 64 KiB).
+- `POST /engineering/sessions/{id}/resize {cols,rows}`: bounded TTY dimensions.
+- `POST /engineering/sessions/{id}/stop`: terminate the shell/agent and its descendants.
+- `DELETE /engineering/sessions/{id}`: remove an exited session from memory.
+- `GET /engineering/tasks/{id}/changes`: Git status, unstaged and staged diffs;
+  external diff/textconv execution disabled. No Git mutations are performed here.
+
+The frontend polls output, acknowledges its offset only after xterm consumes it,
+keeps input ordered, and reattaches after closing/reopening its window. Closing a
+window does not stop a session. Multiple Engineering windows work in the existing
+floating/tiled layouts. At most 16 processes and 64 retained sessions per daemon.
+Terminal processes have normal user filesystem access; worktrees isolate Git files,
+not operating-system permissions. No model automatically runs terminal commands.

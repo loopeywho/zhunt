@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import re
+import secrets
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -69,8 +70,9 @@ class WorkspaceDirs:
 
 # The workspace needs nothing but its own files and this daemon. Locking everything
 # else down also stops a downloaded user theme from beaconing out via url().
+_WORKSPACE_STYLE_NONCE = secrets.token_urlsafe(32)
 _WORKSPACE_CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    f"default-src 'none'; script-src 'self'; style-src 'self' 'nonce-{_WORKSPACE_STYLE_NONCE}'; img-src 'self' data:; "
     "font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; "
     "frame-ancestors 'none'"
 )
@@ -108,6 +110,8 @@ class _WorkspaceHeaders:
 
 
 def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> AgentRunner:
+    from zhunt.engineering import mount_engineering
+    mount_engineering(app, dirs.agent.parent, _WORKSPACE_STYLE_NONCE)
     app.add_middleware(_WorkspaceHeaders)
     runner = AgentRunner(dirs.agent)
     # briefs are made on their schedule while the daemon runs, and saved tasks and loops pick up

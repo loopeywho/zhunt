@@ -14,7 +14,7 @@ export function skyFor(hour) {
   return 'night';
 }
 
-const SHORT = { chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing', providers: 'Providers', logs: 'Logs', connect: 'Connect', team: 'Team', agent: 'Agent' };
+const SHORT = { engineering: 'Engineering', chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing', providers: 'Providers', logs: 'Logs', connect: 'Connect', team: 'Team', agent: 'Agent' };
 
 export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays, toast, openPalette }) {
   const clock = h('span', { class: 'top-clock' });
@@ -30,6 +30,7 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
   let plan = { plan: 'free', features: [], feature_labels: {}, upgrade_url: '' };
   topbar.replaceChildren(
     h('span', { class: 'top-mark' }, 'zhunt'), clock, h('span', { class: 'top-spacer' }), pulse, planBtn, seg,
+    btn('Engineering', 'Projects, tasks and terminals', () => ws.openKind('engineering')),
     btn('+ Window', 'Open a new window (Leader n)', () => newWindowMenu()),
     btn('Theme', 'Choose a theme (Leader t)', () => themeMenu()),
     btn('⌘K', 'Command palette (Ctrl+K)', () => openPalette()));
@@ -92,7 +93,7 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
   async function newWindowMenu() {
     const picked = await overlays.palette(KINDS.map((k) => ({ title: KIND_LABELS[k], group: 'window', kind: k })), { placeholder: 'open which window?' });
     // one-of-a-kind windows come forward instead of opening twice; chat and compare can repeat
-    if (picked) { if (['chat', 'compare', 'agent'].includes(picked.kind)) ws.splitAuto(picked.kind); else ws.openKind(picked.kind); }
+    if (picked) { if (['chat', 'compare', 'agent', 'engineering'].includes(picked.kind)) ws.splitAuto(picked.kind); else ws.openKind(picked.kind); }
   }
 
   // A personal wallpaper (AI-generated) sits over whatever the theme provides, until cleared.
