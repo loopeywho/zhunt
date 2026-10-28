@@ -97,7 +97,9 @@ reorder or hide.
 
 Themes: dark and light (with a sky that follows the time of day), plus Tokyo Night,
 Catppuccin, Catppuccin Latte, Gruvbox, Nord, Everforest, Kanagawa, Rosé Pine, Matte Black
-and Flexoki Light, each with its own wallpaper (`Ctrl+Space t`), all free. A theme is one CSS file of
+and Flexoki Light, with locally bundled photographic backgrounds, theme-specific colour
+shading and soft blur (`Ctrl+Space t`), all free. Photo credits and license are in
+[wallpaper credits](zhunt/workspace/css/wallpapers/CREDITS.md). A theme is one CSS file of
 variables: copy one from `zhunt/workspace/css/themes/` to `~/.zhunt/themes/<name>.css` and
 edit it. Layouts, including window positions and style, are plain JSON in
 `~/.zhunt/layouts/`.
@@ -139,7 +141,7 @@ stopping processes. **Git changes** shows status and staged/unstaged diffs.
 Projects/tasks persist across restarts. Terminal processes and bounded scrollback
 survive window closure and browser reload while the daemon remains running; they
 stop on explicit **Stop session** or daemon shutdown. They do not resume
-automatically after a daemon restart. Stop terminates the process and its children.
+automatically after a daemon restart. Stop terminates the process and its descendants; a program that has deliberately detached itself (double-fork) can survive it.
 This first integrated terminal runtime supports macOS and Linux, not Windows.
 It is a local workspace, not an OS sandbox or a full replacement for every feature
 of the native coding-agent desktop apps.
