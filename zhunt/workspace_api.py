@@ -109,9 +109,9 @@ class _WorkspaceHeaders:
         await self.app(scope, receive, send_with_headers)
 
 
-def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs) -> AgentRunner:
+def mount_workspace(app: FastAPI, hook: EngineProxyHook, dirs: WorkspaceDirs, *, engineering: bool = True) -> AgentRunner:
     from zhunt.engineering import mount_engineering
-    mount_engineering(app, dirs.agent.parent, _WORKSPACE_STYLE_NONCE)
+    mount_engineering(app, dirs.agent.parent, _WORKSPACE_STYLE_NONCE, enabled=engineering)
     app.add_middleware(_WorkspaceHeaders)
     runner = AgentRunner(dirs.agent)
     # briefs are made on their schedule while the daemon runs, and saved tasks and loops pick up

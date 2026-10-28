@@ -36,11 +36,13 @@ application without a repository checkout or development dependencies.
 3. Choose **Shell** and launch. Run your project's normal build or test command.
 4. Use **+ Window → Engineering** for another terminal, and choose floating or
    tiled mode in the top bar. Closing a window keeps the terminal running.
-5. Use **Stop session** to terminate the command and its children. Stopping the
+5. Use **Stop session** to terminate the command and its descendants (a program that detached itself on purpose can survive). Stopping the
    daemon stops every terminal; project/task definitions persist, processes do not.
 
 Terminals run local commands with your user permissions. Keep the daemon local;
-this is not an OS sandbox or a multi-user remote terminal service.
+this is not an OS sandbox or a multi-user remote terminal service. Terminals are
+disabled automatically if you start the daemon with `--allow-non-loopback` on a
+non-localhost `--host`.
 
 ## Coding agents and model routing
 
