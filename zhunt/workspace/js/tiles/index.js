@@ -1,3 +1,4 @@
+import { engineeringTile } from './engineering.js';
 import { chatTile } from './chat.js';
 import { compareTile } from './compare.js';
 import { routingTile } from './routing.js';
@@ -9,9 +10,10 @@ import { connectTile } from './connect.js';
 import { teamTile } from './team.js';
 import { agentTile } from './agent.js';
 
-const FACTORIES = { chat: chatTile, foryou: foryouTile, panels: panelsTile, compare: compareTile, routing: routingTile, providers: providersTile, logs: logsTile, connect: connectTile, team: teamTile, agent: agentTile };
+const FACTORIES = { engineering: engineeringTile, chat: chatTile, foryou: foryouTile, panels: panelsTile, compare: compareTile, routing: routingTile, providers: providersTile, logs: logsTile, connect: connectTile, team: teamTile, agent: agentTile };
 
 export const KIND_LABELS = {
+  engineering: 'Engineering (projects, tasks and terminals)',
   chat: 'Chat', foryou: 'For you', panels: 'Panels', compare: 'Compare', routing: 'Routing (why this model)', providers: 'Providers (keys and quota)', logs: 'Logs', connect: 'Connect models (add free keys)', team: 'Team chat (bots)', agent: 'Agent (does tasks for you)',
 };
 

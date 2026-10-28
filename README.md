@@ -43,16 +43,25 @@ about 84 MB of memory (it used to run on the LiteLLM proxy: 444 MB, 3.3 s,
 
 ## Quick start
 
-Zhunt targets Python 3.12.
+The Engineering workspace is a **source-install developer preview for macOS and
+Linux**, requiring Python 3.12 or newer and Git. With [uv](https://docs.astral.sh/uv/)
+installed:
 
 ```console
-python -m venv .venv && source .venv/bin/activate
-python -m pip install -e '.[dev]'
-
-zhunt serve                # starts the daemon on localhost:4000
-zhunt open                 # opens the workspace in your browser, already signed in
-zhunt keys add             # optional: paste any free key (hidden); zhunt tells the provider from it
+uv tool install --python 3.12 git+https://github.com/loopeywho/zhunt
+zhunt serve                # keep this terminal running
 ```
+
+In a second terminal:
+
+```console
+zhunt open                 # opens the workspace, already signed in
+zhunt keys add             # optional: add a provider key (hidden)
+```
+
+See [Getting started](docs/GETTING_STARTED.md) for pip installation, updates,
+agent setup and a first terminal task. The older native installers do not include
+this workspace and are not the release path for this preview.
 
 With no keys at all zhunt already answers, through OVHcloud AI Endpoints (no key, no
 training on prompts, hosted in the EU), but slowly and under limits shared by everyone.
@@ -104,6 +113,36 @@ zhunt doctor               # check the daemon, keys, policy flags and catalog ag
 
 Cursor and VS Code have no environment or flag route for a custom endpoint, so
 `zhunt launch cursor` and `zhunt launch vscode` print the manual steps instead.
+
+## Engineering workspace
+
+Open **Engineering** in the workspace top bar. Add a project by its local folder
+path, create a named task, then launch a real terminal in that task's directory.
+Choose **Isolated Git worktree** to start a new branch and directory from HEAD
+(uncommitted changes are not copied).
+
+- **Shell** runs your normal local shell for development servers, builds and tests.
+- **Codex · Zhunt routing** and **Hermes · Zhunt routing** use the existing free-first
+  engine, provider quotas, failover and configured privacy/paid policy. The CLIs
+  must be installed on the daemon's PATH. Model/tool compatibility still depends
+  on the provider selected by the router.
+- **Codex · own account** and **Claude Code · own account** use the CLI's existing
+  sign-in/configuration. A confirmation explains that their billing is separate:
+  Zhunt's free routing and spending cap do not apply. Native agent approval controls
+  are retained; no permission-bypass flags are added.
+
+Use **+ Window → Engineering** for additional side-by-side terminals. Engineering
+windows use the same floating/tiled modes, themes and saved layouts as Agent,
+Team chat, Routing and Providers. Switch projects, tasks or sessions without
+stopping processes. **Git changes** shows status and staged/unstaged diffs.
+
+Projects/tasks persist across restarts. Terminal processes and bounded scrollback
+survive window closure and browser reload while the daemon remains running; they
+stop on explicit **Stop session** or daemon shutdown. They do not resume
+automatically after a daemon restart. Stop terminates the process and its children.
+This first integrated terminal runtime supports macOS and Linux, not Windows.
+It is a local workspace, not an OS sandbox or a full replacement for every feature
+of the native coding-agent desktop apps.
 
 ## Free and Pro
 
@@ -240,3 +279,5 @@ The quota, cooldown and failover ideas follow
 [FreeLLMAPI](https://github.com/tashfeenahmed/freellmapi) (MIT); Zhunt's
 implementation is written in Python, with some selection logic adapted from it
 (see `THIRD_PARTY_NOTICES.md`).
+
+Live coding verification and known limits: [Engineering validation](docs/ENGINEERING_VALIDATION.md).

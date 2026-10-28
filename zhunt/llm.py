@@ -224,6 +224,7 @@ async def _post_stream(
 async def _sse_objects(response: httpx.Response) -> AsyncIterator[ModelResponse]:
     try:
         data: list[str] = []
+        seen = False
         async for line in response.aiter_lines():
             if line:
                 if line.startswith("data:"):
@@ -233,7 +234,7 @@ async def _sse_objects(response: httpx.Response) -> AsyncIterator[ModelResponse]
                 continue
             payload, data = "\n".join(data), []
             if payload == "[DONE]":
-                return
+                break
             try:
                 event = json.loads(payload, strict=False)
             except ValueError:
@@ -241,7 +242,11 @@ async def _sse_objects(response: httpx.Response) -> AsyncIterator[ModelResponse]
             if not isinstance(event, Mapping):
                 continue
             _raise_stream_error(event, response.headers)
+            seen = True
             yield ModelResponse(event, response.headers)
+        if not seen:
+            raise InternalServerError("InternalServerError: provider returned no stream events",
+                                      response_headers=response.headers)
     except httpx.HTTPError as error:
         raise APIConnectionError(f"APIConnectionError: stream broke: {error}") from error
     finally:
@@ -393,13 +398,18 @@ async def aresponses(
 
     _, model_id = _split(model)
     chat = translate.responses_to_chat_request(input, params)
+    if stream:
+        chat["stream_options"] = {"include_usage": True}
+    custom_tools = frozenset(t["name"] for t in (params.get("tools") or [])
+                             if isinstance(t, Mapping) and t.get("type") == "custom" and isinstance(t.get("name"), str))
+    tool_names = frozenset(t["function"]["name"] for t in chat.get("tools", []))
     result = await acompletion(
         model=model, api_key=api_key, api_base=api_base, stream=stream, timeout=timeout,
         **chat,
     )
     if stream:
-        return translate.chat_stream_to_responses(result, model_id)
-    return ModelResponse(translate.chat_to_responses(result, model_id), result.headers)
+        return translate.chat_stream_to_responses(result, model_id, custom_tools, tool_names)
+    return ModelResponse(translate.chat_to_responses(result, model_id, custom_tools, tool_names), result.headers)
 
 
 async def anthropic_messages(
@@ -427,6 +437,7 @@ async def anthropic_messages(
             return await _post_stream(url, headers, body, timeout)
         return await _post_json(url, headers, body, timeout)
     chat = translate.anthropic_to_chat_request(messages, params)
+    tool_names = frozenset(t["function"]["name"] for t in chat.get("tools", []))
     result = await acompletion(
         model=model, api_key=api_key, api_base=api_base, stream=stream, timeout=timeout,
         **chat,

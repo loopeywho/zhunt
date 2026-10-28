@@ -95,6 +95,7 @@ async function request(path, { method = 'GET', json, headers = {}, signal, text 
 }
 
 export const api = {
+  engineering: (path = '', method = 'GET', json) => request('/zhunt/api/engineering' + path, { method, json }),
   status: (signal) => request('/zhunt/api/status', { signal }),
   plan: () => request('/zhunt/api/plan'),
   keys: {

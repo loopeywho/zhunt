@@ -69,6 +69,9 @@ export function createKeys({ ws, getCommands, overlays, openPalette, openHelp, s
 
   function onKeyDown(e) {
     if (e.isComposing || e.keyCode === 229) return;
+    // Terminal programs own their editing/interrupt shortcuts, including Ctrl+K.
+    // Focus the window header to use Zhunt's keyboard commands.
+    if (e.target instanceof HTMLElement && e.target.closest('.engineering-terminal')) return;
     const ctrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
 
     // Ctrl+K or Cmd+K (Ctrl+Space can collide with IME / input-source switching; Ctrl+\ stays as the fallback)

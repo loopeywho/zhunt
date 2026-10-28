@@ -499,3 +499,69 @@ def test_a_whisper_rate_limit_is_a_rate_limit_error(provider) -> None:
     provider.responses.append(httpx.Response(429, json={"error": {"message": "limit"}}))
     with pytest.raises(llm.RateLimitError):
         run(llm.atranscription(model="groq/whisper-large-v3-turbo", file=("a.webm", b"x", "audio/webm")))
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_responses_custom_patch_tool_round_trip(provider, stream):
+    patch = '*** Begin Patch\n*** Add File: hello.py\n+print("hello")\n*** End Patch'
+    arguments = json.dumps({"input": patch})
+    call = {"id": "call_patch", "type": "function",
+            "function": {"name": "apply_patch", "arguments": arguments}}
+    if stream:
+        provider.responses.append(httpx.Response(200, content=sse(
+            {"choices": [{"delta": {"tool_calls": [{**call, "index": 0,
+                "function": {"name": "apply_patch", "arguments": arguments[:20]}}]}}]},
+            {"choices": [{"delta": {"tool_calls": [{"index": 0,
+                "function": {"arguments": arguments[20:]}}]}, "finish_reason": "tool_calls"}]},
+        )))
+    else:
+        provider.responses.append(httpx.Response(200, json={"choices": [{
+            "message": {"tool_calls": [call]}, "finish_reason": "tool_calls"}]}))
+    result = run(llm.aresponses(
+        model="groq/test", input=[
+            {"type": "custom_tool_call", "call_id": "old", "name": "apply_patch", "input": patch},
+            {"type": "custom_tool_call_output", "call_id": "old", "output": "Success"},
+        ], tools=[{"type": "custom", "name": "apply_patch", "description": "Edit files"}],
+        tool_choice={"type": "custom", "name": "apply_patch"}, stream=stream,
+    ))
+    assert provider.body["tools"][0]["function"]["parameters"]["required"] == ["input"]
+    assert json.loads(provider.body["messages"][0]["tool_calls"][0]["function"]["arguments"])["input"] == patch
+    assert provider.body["messages"][1] == {"role": "tool", "tool_call_id": "old", "content": "Success"}
+    assert provider.body["tool_choice"]["function"]["name"] == "apply_patch"
+    if stream:
+        assert provider.body["stream_options"] == {"include_usage": True}
+        events = run(collect(result))
+        assert not any(e["type"].startswith("response.function_call_arguments") for e in events)
+        assert next(e for e in events if e["type"] == "response.custom_tool_call_input.delta")["delta"] == patch
+        result = events[-1]["response"]
+    assert result["output"][0]["type"] == "custom_tool_call"
+    assert result["output"][0]["input"] == patch
+    assert result["output"][0]["call_id"] == "call_patch"
+
+
+@pytest.mark.parametrize("body", [b"", b"data: [DONE]\n\n", b"<html>upstream unavailable</html>"])
+def test_empty_provider_stream_is_an_error(provider, body):
+    provider.responses.append(httpx.Response(200, content=body))
+    async def go():
+        stream = await llm.aresponses(model="groq/test", input="Write code", stream=True)
+        return await collect(stream)
+    with pytest.raises(llm.InternalServerError, match="no stream events"):
+        run(go())
+
+
+@pytest.mark.parametrize('name,expected', [
+    ('shell<|channel|>commentary', 'shell'),
+    ('shell<|channel|>json', 'shell'),
+    ('unlisted<|channel|>json', 'unlisted<|channel|>json'),
+    ('shell<|channel|>unknown', 'shell<|channel|>unknown'),
+])
+def test_only_advertised_tool_channel_suffixes_are_recovered(provider, name, expected):
+    provider.responses.append(httpx.Response(200, content=sse({"choices": [{
+        "delta": {"tool_calls": [{"index": 0, "id": "c", "type": "function",
+            "function": {"name": name, "arguments": '{"cmd":"pwd"}'}}]},
+        "finish_reason": "tool_calls"}]})))
+    async def go():
+        stream = await llm.aresponses(model='groq/test', input='pwd', stream=True,
+            tools=[{'type': 'function', 'name': 'shell', 'parameters': {'type': 'object'}}])
+        return await collect(stream)
+    assert run(go())[-1]['response']['output'][0]['name'] == expected

@@ -193,6 +193,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     for task in tasks:
         task.cancel()
+    if hasattr(app.state, 'engineering'):
+        app.state.engineering.shutdown()
     await llm.aclose()
 
 
@@ -508,6 +510,8 @@ def _response_mapping(response: Any) -> Mapping[str, Any]:
 
 def _usage_tokens(response: Any) -> tuple[int | None, int | None]:
     payload = _response_mapping(response)
+    if payload.get("type") in {"response.completed", "response.incomplete"}:
+        payload = _response_mapping(payload.get("response"))
     usage = payload.get("usage")
     if not isinstance(usage, Mapping):
         return None, None

@@ -525,14 +525,16 @@ def responses_to_chat_request(input_value: Any, params: Mapping[str, Any]) -> di
         kind = item.get("type") or ("message" if "role" in item else None)
         if kind == "message":
             messages.append(_responses_message(item))
-        elif kind == "function_call":
-            call = _tool_call(item.get("call_id"), item.get("name"), item.get("arguments"))
+        elif kind in ("function_call", "custom_tool_call"):
+            arguments = (json.dumps({"input": item.get("input", "")})
+                         if kind == "custom_tool_call" else item.get("arguments"))
+            call = _tool_call(item.get("call_id"), item.get("name"), arguments)
             last = messages[-1] if messages else None
             if last is not None and last["role"] == "assistant":
                 last.setdefault("tool_calls", []).append(call)
             else:
                 messages.append({"role": "assistant", "content": None, "tool_calls": [call]})
-        elif kind == "function_call_output":
+        elif kind in ("function_call_output", "custom_tool_call_output"):
             output = item.get("output")
             messages.append(
                 {
@@ -548,12 +550,19 @@ def responses_to_chat_request(input_value: Any, params: Mapping[str, Any]) -> di
         for t in _items(params.get("tools"))
         if t.get("type") == "function"  # built-in tools (web search...) are dropped
     ]
+    for tool in _items(params.get("tools")):
+        if tool.get("type") == "custom":
+            description = (tool.get("description") or "") + "\nPass the raw tool input as the input string."
+            tools.append(_function_tool(tool.get("name"), description, {
+                "type": "object", "properties": {"input": {"type": "string"}},
+                "required": ["input"], "additionalProperties": False,
+            }))
     if tools:
         request["tools"] = tools
         choice = params.get("tool_choice")
         if choice in ("auto", "required", "none"):
             request["tool_choice"] = choice
-        elif isinstance(choice, Mapping) and choice.get("type") == "function":
+        elif isinstance(choice, Mapping) and choice.get("type") in ("function", "custom"):
             request["tool_choice"] = {"type": "function", "function": {"name": choice.get("name")}}
         if isinstance(params.get("parallel_tool_calls"), bool):
             request["parallel_tool_calls"] = params["parallel_tool_calls"]
@@ -634,7 +643,14 @@ def _message_item(item_id: str, text: str, status: str, kind: str = "output_text
     }
 
 
-def _call_item(item_id: str, call_id: Any, name: Any, arguments: str, status: str) -> dict:
+def _call_item(item_id: str, call_id: Any, name: Any, arguments: str, status: str,
+               custom_tools: frozenset[str] = frozenset()) -> dict:
+    if name in custom_tools:
+        raw = json.loads(arguments)["input"] if arguments else ""
+        if not isinstance(raw, str):
+            raise ValueError("Custom tool input must be a string")
+        return {"type": "custom_tool_call", "id": item_id, "call_id": call_id,
+                "name": name, "input": raw, "status": status}
     return {
         "type": "function_call",
         "id": item_id,
@@ -645,7 +661,18 @@ def _call_item(item_id: str, call_id: Any, name: Any, arguments: str, status: st
     }
 
 
-def chat_to_responses(response: Mapping[str, Any], model: str) -> dict[str, Any]:
+def _response_tool_name(name: Any, tool_names: frozenset[str]) -> Any:
+    # Some Chat providers leak Harmony channel markers into tool names.
+    # Only recover an exact advertised tool with a known marker; never guess.
+    if isinstance(name, str):
+        base, marker, channel = name.partition("<|channel|>")
+        if marker and base in tool_names and channel in {"analysis", "commentary", "json", "final"}:
+            return base
+    return name
+
+
+def chat_to_responses(response: Mapping[str, Any], model: str, custom_tools: frozenset[str] = frozenset(),
+                      tool_names: frozenset[str] = frozenset()) -> dict[str, Any]:
     message, finish = _first_choice(response)
     output: list[dict[str, Any]] = []
     text = text_content(message.get("content"))
@@ -657,8 +684,8 @@ def chat_to_responses(response: Mapping[str, Any], model: str) -> dict[str, Any]
         function = call.get("function") if isinstance(call.get("function"), Mapping) else {}
         output.append(
             _call_item(
-                _new_id("fc"), call.get("id"), function.get("name"),
-                function.get("arguments") or "", "completed",
+                _new_id("fc"), call.get("id"), _response_tool_name(function.get("name"), tool_names),
+                function.get("arguments") or "", "completed", custom_tools,
             )
         )
     status = "incomplete" if finish == "length" else "completed"
@@ -668,7 +695,9 @@ def chat_to_responses(response: Mapping[str, Any], model: str) -> dict[str, Any]
 
 
 async def chat_stream_to_responses(
-    chunks: AsyncIterator[Mapping[str, Any]], model: str
+    chunks: AsyncIterator[Mapping[str, Any]], model: str,
+    custom_tools: frozenset[str] = frozenset(),
+    tool_names: frozenset[str] = frozenset(),
 ) -> AsyncIterator[dict[str, Any]]:
     """Chat Completions chunks as Responses stream events."""
 
@@ -722,18 +751,20 @@ async def chat_stream_to_responses(
                     item = {
                         "kind": "call", "id": _new_id("fc"), "index": len(order),
                         "call_id": call.get("id") or _new_id("call"),
-                        "name": function.get("name"), "arguments": "",
+                        "name": _response_tool_name(function.get("name"), tool_names), "arguments": "",
                     }
                     calls[position] = item
                     order.append(item)
                     yield event(
                         "response.output_item.added",
                         output_index=item["index"],
-                        item=_call_item(item["id"], item["call_id"], item["name"], "", "in_progress"),
+                        item=_call_item(item["id"], item["call_id"], item["name"], "", "in_progress", custom_tools),
                     )
                 arguments = function.get("arguments")
                 if isinstance(arguments, str) and arguments:
                     item["arguments"] += arguments
+                    if item["name"] in custom_tools:
+                        continue  # JSON wrapper must be complete before decoding raw input.
                     yield event(
                         "response.function_call_arguments.delta",
                         item_id=item["id"], output_index=item["index"], delta=arguments,
@@ -755,7 +786,15 @@ async def chat_stream_to_responses(
                 item_id=item["id"], output_index=item["index"], content_index=0, part=part,
             )
         else:
-            done = _call_item(item["id"], item["call_id"], item["name"], item["arguments"], "completed")
+            done = _call_item(item["id"], item["call_id"], item["name"], item["arguments"], "completed", custom_tools)
+            if item["name"] in custom_tools:
+                yield event("response.custom_tool_call_input.delta", item_id=item["id"],
+                            output_index=item["index"], delta=done["input"])
+                yield event("response.custom_tool_call_input.done", item_id=item["id"],
+                            output_index=item["index"], input=done["input"])
+                output.append(done)
+                yield event("response.output_item.done", output_index=item["index"], item=done)
+                continue
             yield event(
                 "response.function_call_arguments.done",
                 item_id=item["id"], output_index=item["index"], arguments=item["arguments"],

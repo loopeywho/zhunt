@@ -42,3 +42,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## xterm.js and FitAddon (Engineering terminals)
+
+Vendored browser distributions: `@xterm/xterm` 6.0.0 and `@xterm/addon-fit`
+0.11.0 from npm. MIT licenses are included beside the files in
+`zhunt/workspace/vendor/`. Upstream: https://github.com/xtermjs/xterm.js.
+These files are served locally; the terminal loads no CDN scripts.

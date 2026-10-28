@@ -1,0 +1,7 @@
+.engineering { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; padding: 10px; box-sizing: border-box; overflow: auto; }
+.engineering-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.engineering-row select, .engineering-row input:not([type=checkbox]) { min-width: 100px; flex: 1; max-width: 100%; }
+.engineering p { margin: 0; font-size: 11px; }
+.engineering-terminal { flex: 1; min-height: 240px; background: #101715; overflow: hidden; }
+.engineering-terminal .xterm { height: 100%; padding: 4px; }
+.engineering-diff { flex: 1; min-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
