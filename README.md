@@ -43,16 +43,25 @@ about 84 MB of memory (it used to run on the LiteLLM proxy: 444 MB, 3.3 s,
 
 ## Quick start
 
-Zhunt targets Python 3.12.
+The Engineering workspace is a **source-install developer preview for macOS and
+Linux**, requiring Python 3.12 or newer and Git. With [uv](https://docs.astral.sh/uv/)
+installed:
 
 ```console
-python -m venv .venv && source .venv/bin/activate
-python -m pip install -e '.[dev]'
-
-zhunt serve                # starts the daemon on localhost:4000
-zhunt open                 # opens the workspace in your browser, already signed in
-zhunt keys add             # optional: paste any free key (hidden); zhunt tells the provider from it
+uv tool install --python 3.12 git+https://github.com/loopeywho/zhunt
+zhunt serve                # keep this terminal running
 ```
+
+In a second terminal:
+
+```console
+zhunt open                 # opens the workspace, already signed in
+zhunt keys add             # optional: add a provider key (hidden)
+```
+
+See [Getting started](docs/GETTING_STARTED.md) for pip installation, updates,
+agent setup and a first terminal task. The older native installers do not include
+this workspace and are not the release path for this preview.
 
 With no keys at all zhunt already answers, through OVHcloud AI Endpoints (no key, no
 training on prompts, hosted in the EU), but slowly and under limits shared by everyone.
