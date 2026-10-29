@@ -25,6 +25,18 @@ dependencies = [
 zhunt = "zhunt.cli:app"
 
 [project.optional-dependencies]
+# Keep this for `pip install '.[dev]'`, which is what CI uses.
+dev = [
+    "pytest>=8.3,<9",
+]
+
+# PEP 735 dependency group: `uv sync` installs this by DEFAULT, so a fresh clone
+# gets pytest inside the project environment and `uv run pytest` works. Without
+# it, pytest is absent from the env, so uv falls back to running it in an
+# isolated environment with no project deps - failing at collection with
+# "ModuleNotFoundError: No module named 'tomlkit'" and 8 errors.
+# Keep this in step with the `dev` extra above.
+[dependency-groups]
 dev = [
     "pytest>=8.3,<9",
 ]
