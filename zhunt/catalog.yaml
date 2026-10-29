@@ -25,7 +25,7 @@ providers:
     free_note: "Free tier, no card: fast open models (Llama, GPT-OSS, Qwen)."
     base_url: https://api.groq.com/openai/v1
     key_env: GROQ_API_KEY
-    verified_on: 2026-10-12
+    verified_on: 2026-10-29
     # Llama 3.1 8B, Llama 3.3 70B and MiniMax M2.7 removed 2026-10-12: Groq's /models
     # no longer lists them for a free key and calls return model_not_found.
     # Free-plan limits are not on Groq's public rate-limits page (it shows the
@@ -62,7 +62,7 @@ providers:
     litellm_provider: gemini
     base_url: https://generativelanguage.googleapis.com
     key_env: GEMINI_API_KEY
-    verified_on: 2026-10-10
+    verified_on: 2026-10-29
     # Google publishes no per-model free-tier numbers; they are shown per
     # project in AI Studio (aistudio.google.com/rate-limit), so none are listed.
     # Training: Google's pricing page says free-tier content is used to improve
@@ -103,7 +103,7 @@ providers:
     free_note: "Free tier, no card: very fast GPT-OSS and Qwen; prompt use for training unconfirmed."
     base_url: https://api.cerebras.ai/v1
     key_env: CEREBRAS_API_KEY
-    verified_on: 2026-10-10
+    verified_on: 2026-10-29
     # Free-tier caps from inference-docs.cerebras.ai/support/rate-limits:
     # 5 requests/min, 30K uncached tokens/min (90K total), 1M tokens/day.
     # We apply the stricter 30K figure to every token. The page also lists
@@ -139,6 +139,12 @@ providers:
   # ("trial use only, no personal or confidential data"), so all stay may-train.
   # Left out: inkling-small (served from OpenRouter's shared pool, daily cap already
   # hit), guardrail/perception/tiny models, and openrouter/free.
+  # 2026-10-29: nemotron-3-super-120b-a12b:free removed (gone from /models, calls
+  # return model_not_found); added its successor nemotron-3.5-super-vl (120B-A12B,
+  # 1M context), Cohere north-mini-code (30B-A3B coding model, 256k) and
+  # dots-3-note-preview (280B-A16B, 512k), each from /models with one anonymous call.
+  # Left out: laguna-xs-2.1 (smaller than laguna-s), xing4.0-29b-a4b, flint-v1.0,
+  # lfm-2.5-2.6b, nemotron-3-nano-omni (perception sub-agent) and content-safety.
   kilo:
     name: Kilo Gateway (no key needed)
     base_url: https://api.kilo.ai/api/gateway
@@ -147,7 +153,7 @@ providers:
     keyless: true
     key_url: https://app.kilo.ai
     free_note: "Works with no key at all. Its free models may log prompts and use them for training."
-    verified_on: 2026-10-12
+    verified_on: 2026-10-29
     models:
       - id: kilo-auto/free
         tiers: [chat, coding, reasoning]
@@ -163,11 +169,18 @@ providers:
         context_window: 1000000
         supports_tools: true
         may_train_on_prompts: true
-      - id: nvidia/nemotron-3-super-120b-a12b:free
-        tiers: [chat, coding, reasoning]
-        intelligence: 72
+      - id: nvidia/nemotron-3.5-super-vl:free
+        tiers: [chat, coding, reasoning, long-context]
+        intelligence: 74
         speed: 45
-        context_window: 262144
+        context_window: 1000000
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: dots-studio/dots-3-note-preview:free  # preview
+        tiers: [chat, reasoning, long-context]
+        intelligence: 70
+        speed: 50
+        context_window: 512000
         supports_tools: true
         may_train_on_prompts: true
       - id: poolside/laguna-s-2.1:free
@@ -175,6 +188,13 @@ providers:
         intelligence: 72
         speed: 70
         context_window: 262144
+        supports_tools: true
+        may_train_on_prompts: true
+      - id: cohere/north-mini-code:free
+        tiers: [coding]
+        intelligence: 58
+        speed: 75
+        context_window: 256000
         supports_tools: true
         may_train_on_prompts: true
       - id: nvidia/nemotron-3.5-lightning:free
@@ -190,6 +210,9 @@ providers:
   # page shows display names only; the API ids below are lowercased names and need a
   # live check. Its privacy policy names model training as a basis and points API
   # users to a separate DPA we could not find, so treated as may-train.
+  # 2026-10-29: the live /models list no longer shows the Flash ids, but the pricing
+  # page still lists GLM-4.5-Flash and GLM-4.7-Flash as free and both answered a live
+  # call. GLM-5.3-Flash and -FlashX are paid, so they are left out.
   zai:
     name: Z.ai (GLM)
     base_url: https://api.z.ai/api/paas/v4
@@ -197,7 +220,7 @@ providers:
     litellm_provider: openai
     key_url: https://z.ai/manage-apikey/apikey-list
     free_note: "Free GLM Flash models with an email sign-up; may use prompts for training."
-    verified_on: 2026-10-11
+    verified_on: 2026-10-29
     models:
       - id: glm-4.7-flash
         tiers: [chat, coding, reasoning]
@@ -230,7 +253,7 @@ providers:
     litellm_provider: openai
     key_url: https://console.mistral.ai/api-keys
     free_note: "Free mode with a phone-verified account, no card; may train on prompts unless you opt out in Privacy settings."
-    verified_on: 2026-10-12
+    verified_on: 2026-10-29
     models:
       - id: mistral-small-latest
         tiers: [chat, coding, long-context]
@@ -263,7 +286,7 @@ providers:
     litellm_provider: openai
     key_url: https://cloud.sambanova.ai/apis
     free_note: "Free tier with no card: fast DeepSeek, Llama and GPT-OSS, but only 20 requests a day per model."
-    verified_on: 2026-10-12
+    verified_on: 2026-10-29
     models:
       - id: DeepSeek-V3.1
         tiers: [chat, coding, reasoning]
@@ -298,6 +321,7 @@ providers:
   # (ovhcloud.com/en/public-cloud/free-ai-api). Ids and context from its live /models
   # and one anonymous tool call per model on 2026-10-12. The Qwen3Guard safety
   # classifiers it also lists are not chat models and are left out.
+  # Mistral-7B-Instruct-v0.3 removed 2026-10-29: no longer on the live /models list.
   ovh:
     name: OVHcloud AI Endpoints (no key needed)
     base_url: https://oai.endpoints.kepler.ai.cloud.ovh.net/v1
@@ -306,7 +330,7 @@ providers:
     keyless: true
     key_url: https://www.ovhcloud.com/en/public-cloud/ai-endpoints/
     free_note: "Works with no key, hosted in the EU, no training on prompts; 2 requests a minute per model. Adding a key makes it paid."
-    verified_on: 2026-10-12
+    verified_on: 2026-10-29
     models:
       - id: gpt-oss-120b
         tiers: [chat, coding, reasoning]
@@ -380,15 +404,6 @@ providers:
         speed: 65
         context_window: 65536
         supports_tools: true
-        may_train_on_prompts: false
-      # Returns tool calls as plain text, so it is kept to tool-free chat.
-      - id: Mistral-7B-Instruct-v0.3
-        tiers: [chat]
-        limits: {rpm: 2}
-        intelligence: 25
-        speed: 75
-        context_window: 65536
-        supports_tools: false
         may_train_on_prompts: false
       # Vision model; OVH says tool calls are not supported on it.
       - id: Qwen2.5-VL-72B-Instruct
