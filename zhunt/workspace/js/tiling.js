@@ -1,8 +1,9 @@
 // The window manager: owns the split tree, the pane elements and the dividers.
 //
 // Panes are absolutely positioned and never re-parented, so splitting, closing, swapping, zooming
-// or switching between the two modes keeps every window's scroll position, input text and streams
-// alive. Two modes over the same windows:
+// or switching between modes keeps every window's scroll position, input text and streams
+// alive. Three modes over the same windows:
+//   focus    - one active task beside the model usage panels
 //   tiled    - positions come from the split tree (Omarchy / Hyprland style)
 //   floating - each window keeps its own rectangle (node.win, fractions of the desktop), can be
 //              dragged by its header, resized from its corner, raised and minimised (Hark style)
@@ -21,7 +22,7 @@ const MIN_WIN_H = 150;
 const SLOTS = {
   chat: { x: 0.27, y: 0.02, w: 0.46, h: 0.96 },
   foryou: { x: 0.01, y: 0.02, w: 0.25, h: 0.57 },
-  panels: { x: 0.01, y: 0.61, w: 0.25, h: 0.37 },
+  panels: { x: 0.01, y: 0.02, w: 0.25, h: 0.96 },
   routing: { x: 0.74, y: 0.02, w: 0.25, h: 0.47 },
   providers: { x: 0.74, y: 0.51, w: 0.25, h: 0.47 },
   compare: { x: 0.18, y: 0.06, w: 0.64, h: 0.82 },
@@ -35,6 +36,7 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
   let root = null;
   let focusedId = null;
   let zoomId = null;
+  let focusContentId = null;
   const entries = new Map();   // id -> {kind, inst, pane, idxEl, kindEl, node}
   const dividerEls = new Map(); // split node -> element
   let animTimer = null;
@@ -203,19 +205,32 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
     const float = floating();
     if (float) ensureWins();
     const { rects, dividers: allDividers } = T.computeLayout(root, W, H, gap);
-    const dividers = float ? [] : allDividers;
+    const dividers = float || mode === 'focus' ? [] : allDividers;
     const leaves = T.leaves(root);
-    const full = zoomId && rects.has(zoomId) ? zoomId : (ws.narrow ? focusedId : null);
-    stage.dataset.mode = float ? 'floating' : 'tiled';
+    const full = mode === 'focus' ? null : (zoomId && rects.has(zoomId) ? zoomId : (ws.narrow ? focusedId : null));
+    const widget = leaves.find((n) => n.kind === 'panels');
+    const focused = leaves.find((n) => n.id === focusedId);
+    if (focused && focused.kind !== 'panels') focusContentId = focused.id;
+    const content = leaves.find((n) => n.id === focusContentId && n.kind !== 'panels') || leaves.find((n) => n.kind !== 'panels');
+    const sidebar = Math.min(310, W * 0.3);
+    const widgetHeight = Math.min(190, H * 0.35);
+    stage.dataset.mode = mode === 'focus' ? 'focus' : float ? 'floating' : 'tiled';
     leaves.forEach((node, i) => {
       const e = entries.get(node.id);
       if (!e) return;
-      const r = float ? rectOf(node.win, W, H) : rects.get(node.id);
+      let r = float ? rectOf(node.win, W, H) : rects.get(node.id);
+      if (mode === 'focus') {
+        const both = widget && content;
+        r = !both ? { x: 0, y: 0, w: W, h: H }
+          : ws.narrow
+            ? node === widget ? { x: 0, y: 0, w: W, h: widgetHeight } : { x: 0, y: widgetHeight + gap, w: W, h: H - widgetHeight - gap }
+            : node === widget ? { x: 0, y: 0, w: sidebar, h: H } : { x: sidebar + gap, y: 0, w: W - sidebar - gap, h: H };
+      }
       const isFull = full === node.id;
       place(e, isFull ? { x: 0, y: 0, w: W, h: H } : r);
       const zi = zOrder.indexOf(node.id);
       e.pane.style.zIndex = isFull ? '900' : float ? String(10 + Math.max(0, zi)) : '1';
-      e.pane.classList.toggle('hidden-by-zoom', !!full && !isFull);
+      e.pane.classList.toggle('hidden-by-zoom', mode === 'focus' ? node !== widget && node !== content : !!full && !isFull);
       e.pane.classList.toggle('is-min', float && !isFull && !!node.win?.min);
       e.pane.classList.toggle('is-focused', node.id === focusedId);
       e.pane.classList.toggle('is-zoomed', isFull);
@@ -306,7 +321,7 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
     focusedId = id;
     if (changed) {
       for (const [eid, e] of entries) e.pane.classList.toggle('is-focused', eid === id);
-      if (ws.narrow) layout(false); // one window at a time: show the newly focused one
+      if (ws.narrow || mode === 'focus') layout(false); // one window at a time: show the newly focused one
       else onFocus?.(ws);
     }
     if (floating()) {
@@ -315,6 +330,7 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
       raise(id);
     }
     if (dom) entries.get(id).pane.focus({ preventScroll: true });
+    if (changed && mode === 'focus') onChange?.();
   }
   ws.setFocus = (id, opts) => setFocus(id, opts);
 
@@ -351,7 +367,8 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
   ws.setRoot = (newRoot, focusIndex = 0, newMode = mode) => {
     root = newRoot;
     zoomId = null;
-    mode = newMode === 'floating' ? 'floating' : 'tiled';
+    mode = ['focus', 'floating', 'tiled'].includes(newMode) ? newMode : 'tiled';
+    focusContentId = null;
     sync();
     const leaves = T.leaves(root);
     focusedId = (leaves[clamp(focusIndex, 0, leaves.length - 1)] || leaves[0]).id;
@@ -401,6 +418,7 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
   };
 
   ws.toggleZoom = () => {
+    if (mode === 'focus') { toast?.('Focus already shows one task beside your usage widget'); return; }
     zoomId = zoomId ? null : focusedId;
     layout(true);
     toast?.(zoomId ? 'zoomed' : 'unzoomed');
@@ -439,8 +457,13 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
   }
 
   ws.setMode = (next) => {
-    const m = next === 'floating' ? 'floating' : 'tiled';
+    const m = ['focus', 'floating', 'tiled'].includes(next) ? next : 'tiled';
     if (m === mode) return;
+    if (m === 'focus' && root && !T.leaves(root).some((n) => n.kind === 'panels')) {
+      const previous = focusedId;
+      ws.openKind('panels');
+      setFocus(previous);
+    }
     mode = m;
     zoomId = null;
     if (m === 'floating') zOrder = [...T.leaves(root).map((n) => n.id).filter((id) => id !== focusedId), focusedId];
@@ -486,7 +509,7 @@ export function createWorkspace(stage, { makeTile, onChange, onFocus, toast }) {
   ws.serialize = () => ({
     mode,
     tree: T.toJSON(root, (id) => entries.get(id)?.inst.getState?.() || {}),
-    focus: Math.max(0, T.leaves(root).findIndex((n) => n.id === focusedId)),
+    focus: Math.max(0, T.leaves(root).findIndex((n) => n.id === (mode === 'focus' ? focusContentId || focusedId : focusedId))),
   });
 
   ws.layoutNow = () => layout(false);

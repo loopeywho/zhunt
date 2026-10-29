@@ -78,7 +78,7 @@ export function buildCommands(app) {
   });
 
   // ---- windows ----
-  add({ id: 'mode', group: 'Window', title: 'Switch floating / tiled windows', leader: ['g'], run: () => { ws.setMode(ws.mode === 'floating' ? 'tiled' : 'floating'); toast(ws.mode + ' windows'); } });
+  add({ id: 'mode', group: 'Window', title: 'Switch Focus / Floating / Tiled layout', leader: ['g'], run: () => { ws.setMode({ focus: 'floating', floating: 'tiled', tiled: 'focus' }[ws.mode]); toast(ws.mode + ' windows'); } });
   add({ id: 'minimize', group: 'Window', title: 'Minimise window to the dock (floating)', leader: ['m'], run: () => ws.minimize() });
   add({ id: 'new-window', group: 'Window', title: 'Open a new window...', leader: ['n'], run: () => app.desktop.newWindowMenu() });
 

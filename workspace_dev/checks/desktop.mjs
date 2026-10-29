@@ -69,6 +69,7 @@ const opts = { openWindow() {}, now };
   check('window rectangles survive a save', JSON.stringify(T.toJSON(tree).a.win) === JSON.stringify({ x: 0.5, y: 0, w: 0.5, h: 0.1, min: true }));
   const doc = { version: 1, kind: 'zhunt-layout', tree: raw };
   check('layouts saved before floating windows open tiled', parseDoc(doc).mode === 'tiled');
+  check('a focus layout reopens focused', parseDoc({ ...doc, mode: 'focus' }).mode === 'focus');
   check('a floating layout reopens floating', parseDoc({ ...doc, mode: 'floating' }).mode === 'floating');
 }
 {

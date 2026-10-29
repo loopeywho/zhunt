@@ -28,6 +28,21 @@ python3.12 -m venv ~/.venvs/zhunt
 Then run `~/.venvs/zhunt/bin/zhunt open` in another terminal. This installs the
 application without a repository checkout or development dependencies.
 
+## Workspace layouts and themes
+
+New workspaces start in **Focus**: one agent task beside the free-model capacity
+and recent usage panels. Use **Focus**, **Floating**, or **Tiled** in the top bar
+to change the arrangement without restarting open windows. The dock switches
+between tasks in Focus; Floating supports dragging and resizing; Tiled uses
+resizable dividers. On narrow screens, Focus stacks the usage panels above the task.
+Existing saved layouts are respected. Layout mode and theme are restored on reload.
+
+Use **Theme** in the top bar to choose a colour scheme and wallpaper. The button
+shows the active theme. **Leader g** cycles the three layout modes.
+
+Quota percentages are estimates for models that report them, not a guaranteed
+token balance. The usage panel shows today's entries in the recent decision feed.
+
 ## Your first engineering task
 
 1. Open **Engineering** in the top bar and add an existing local project folder.
@@ -36,11 +51,13 @@ application without a repository checkout or development dependencies.
 3. Choose **Shell** and launch. Run your project's normal build or test command.
 4. Use **+ Window → Engineering** for another terminal, and choose floating or
    tiled mode in the top bar. Closing a window keeps the terminal running.
-5. Use **Stop session** to terminate the command and its children. Stopping the
+5. Use **Stop session** to terminate the command and its descendants (a program that detached itself on purpose can survive). Stopping the
    daemon stops every terminal; project/task definitions persist, processes do not.
 
 Terminals run local commands with your user permissions. Keep the daemon local;
-this is not an OS sandbox or a multi-user remote terminal service.
+this is not an OS sandbox or a multi-user remote terminal service. Terminals are
+disabled automatically if you start the daemon with `--allow-non-loopback` on a
+non-localhost `--host`.
 
 ## Coding agents and model routing
 

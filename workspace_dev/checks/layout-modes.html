@@ -1,0 +1,32 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Zhunt layout regression checks</title>
+<link rel="stylesheet" href="../../zhunt/workspace/css/tiling.css"></head><body>
+<pre id="results"></pre><main id="stage" style="position:relative;width:1100px;height:700px"></main>
+<script type="module">
+import {createWorkspace} from '../../zhunt/workspace/js/tiling.js';
+import * as T from '../../zhunt/workspace/js/tree.js';
+import {parseDoc,PRESETS} from '../../zhunt/workspace/js/layouts.js';
+const out=document.querySelector('#results'), stage=document.querySelector('#stage');
+let destroys=0, failures=0;
+const check=(name,ok)=>{out.textContent+=(ok?'PASS ':'FAIL ')+name+'\n';if(!ok) failures++};
+const ws=createWorkspace(stage,{makeTile(kind){const el=document.createElement('textarea');el.value=kind+' draft';return {el,getState:()=>({draft:el.value}),destroy(){destroys++}}}});
+ws.setRoot(T.split('row',T.tile('panels'),T.split('col',T.tile('chat'),T.tile('engineering'))),1,'floating');
+const nodes=T.leaves(ws.root), refs=nodes.map(n=>ws.entries.get(n.id).pane);
+const before=JSON.stringify(nodes.map(n=>n.win));
+for(const mode of ['tiled','focus','floating','focus']) ws.setMode(mode);
+check('mode switches keep every pane and instance alive',destroys===0&&nodes.every((n,i)=>ws.entries.get(n.id).pane===refs[i]));
+check('draft values survive all modes',nodes.every(n=>ws.entries.get(n.id).inst.el.value===n.kind+' draft'));
+check('floating positions survive all modes',before===JSON.stringify(nodes.map(n=>n.win)));
+const visible=()=>nodes.filter(n=>!ws.entries.get(n.id).pane.classList.contains('hidden-by-zoom')).map(n=>n.kind).join(',');
+check('Focus shows usage and active chat',visible()==='panels,chat');
+ws.setFocus(nodes[2].id);check('switch task in Focus keeps widget visible',visible()==='panels,engineering');
+ws.setFocus(nodes[0].id);check('interacting with widget keeps task visible',visible()==='panels,engineering');
+check('saving while widget focused remembers active task',ws.serialize().focus===2);
+check('Focus survives layout document parsing',parseDoc({version:1,kind:'zhunt-layout',...ws.serialize()}).mode==='focus');
+stage.style.width='390px';ws.layoutNow();
+const a=refs[0].getBoundingClientRect(),b=refs[2].getBoundingClientRect();
+check('narrow Focus stacks widget above task without overlap',a.bottom<=b.top&&a.width===390&&b.width===390);
+ws.setRoot(T.tile('chat'),0,'tiled');const chat=ws.entries.values().next().value.inst;
+ws.setMode('focus');check('entering Focus adds missing usage widget without replacing chat',T.leaves(ws.root).some(n=>n.kind==='panels')&&[...ws.entries.values()].some(e=>e.inst===chat));
+check('new desktop includes usage and agent only',T.leaves(PRESETS.desktop()).map(n=>n.kind).join(',')==='panels,agent');
+out.textContent+='\n'+(failures?'FAILED':'ALL PASSED');
+</script></body></html>
