@@ -139,7 +139,7 @@ stopping processes. **Git changes** shows status and staged/unstaged diffs.
 Projects/tasks persist across restarts. Terminal processes and bounded scrollback
 survive window closure and browser reload while the daemon remains running; they
 stop on explicit **Stop session** or daemon shutdown. They do not resume
-automatically after a daemon restart. Stop terminates the process and its children.
+automatically after a daemon restart. Stop terminates the process and its descendants; a program that has deliberately detached itself (double-fork) can survive it.
 This first integrated terminal runtime supports macOS and Linux, not Windows.
 It is a local workspace, not an OS sandbox or a full replacement for every feature
 of the native coding-agent desktop apps.

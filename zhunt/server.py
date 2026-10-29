@@ -136,8 +136,11 @@ def create_proxy_app(
     telemetry_path: Path | None = None,
     catalog_path: Path | None = None,
     workspace_dirs: WorkspaceDirs | None = None,
+    engineering: bool = True,
 ) -> Any:
-    """The free-tier engine behind a small, authenticated inference surface."""
+    """The free-tier engine behind a small, authenticated inference surface.
+
+    ``engineering`` gates the terminal API, which runs commands as the user."""
 
     from zhunt.engine import build_engine_hook
     from zhunt.workspace_api import WorkspaceDirs, mount_workspace
@@ -148,11 +151,14 @@ def create_proxy_app(
     app = _inference_app(hook, master_key)
     if hook.catalog_feed is not None:
         app.state.background = [hook.catalog_feed.run]
-    runner = mount_workspace(app, hook, workspace_dirs or WorkspaceDirs())
+    runner = mount_workspace(app, hook, workspace_dirs or WorkspaceDirs(), engineering=engineering)
     wrapped = RetryMiddleware(app, hook)
     # the agent calls the full app (with failover replay) in-process, as any client would
     runner.bind(wrapped, master_key)
     return wrapped
+
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def run_proxy(
@@ -163,15 +169,17 @@ def run_proxy(
     telemetry_path: Path | None = None,
     catalog_path: Path | None = None,
 ) -> None:
-    if not allow_non_loopback and host not in {"127.0.0.1", "localhost", "::1"}:
+    if not allow_non_loopback and host not in _LOOPBACK_HOSTS:
         raise ValueError(
             "refusing non-loopback host; pass --allow-non-loopback to opt in"
         )
     import uvicorn
 
+    # Terminals run commands as the user: only on a loopback-bound daemon.
     app = create_proxy_app(
         telemetry_path=telemetry_path or Path.home() / ".zhunt" / "telemetry.jsonl",
         catalog_path=catalog_path,
+        engineering=host in _LOOPBACK_HOSTS,
     )
     for line in app.hook.summary:
         print(line)
