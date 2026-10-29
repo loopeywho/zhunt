@@ -231,7 +231,8 @@ def _app_checks(
                 Status.WARN,
                 name,
                 f"v1 configuration has drifted: {lines}",
-                f"run `zhunt launch {app}` (no config needed) or `zhunt install {app}` to rewrite it",
+                f"run `zhunt launch {app}` (no config file needed), or "
+                f"`zhunt uninstall {app}` to drop this stale manifest",
             )
         )
     for app in ("hermes",):
@@ -259,7 +260,9 @@ def app_drift(home: Path, app: str, *, base_url: str, master_key: str) -> list[D
     """Compare an app's v1-installed config with what the current endpoint needs.
 
     The expected values come from the app's own install recipe, so this stays in
-    step with whatever `zhunt install` would write. Secret fields are compared
+    step with the manifest the legacy `zhunt install` wrote (the command is gone;
+    `zhunt launch` writes no config, and `zhunt uninstall` clears the manifest).
+    Secret fields are compared
     but their values are never reported.
     """
 
