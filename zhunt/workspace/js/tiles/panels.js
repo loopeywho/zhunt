@@ -7,7 +7,7 @@ import { tierChip, modelLabel, headroomBar, chip, swapIfChanged } from './util.j
 
 export const PANELS = {
   capacity: 'Free capacity',
-  today: 'Today',
+  today: 'Recent usage today',
   last: 'Last answer',
   live: 'Live routing',
 };
@@ -69,14 +69,16 @@ export function panelsTile(svc, state, ctx) {
     const ds = decisions.data || [];
     if (kind === 'capacity') {
       if (!s) return h('p', { class: 'quiet' }, status.error ? 'daemon unreachable' : 'loading...');
-      const models = (s.providers || []).flatMap((p) => p.models || []).filter((m) => m.free || s.policy?.allow_paid);
+      const models = (s.providers || []).flatMap((p) => p.models || []).filter((m) => m.free);
       const usable = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0));
       const known = usable.map((m) => m.headroom).filter((x) => x !== null && x !== undefined);
       const avg = known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
       const keys = (s.providers || []).filter((p) => p.key_set).length;
       return [
         h('p', { class: 'big' }, String(usable.length), h('span', { class: 'big-of' }, ` / ${models.length} models ready`)),
-        h('div', { class: 'meter' }, h('span', { class: 'quiet' }, 'quota left'), headroomBar(avg)),
+        h('div', { class: 'meter' }, h('span', { class: 'quiet' }, 'estimated quota left'), headroomBar(avg)),
+        h('p', { class: 'quiet' }, known.length ? `${known.length} of ${usable.length} ready free models report quota estimates` : 'Remaining quota unknown'),
+        h('button', { class: 'act', type: 'button', onclick: () => svc.openWindow('providers') }, 'View free models & limits'),
         h('p', { class: 'quiet' }, `${keys} of ${(s.providers || []).length} providers have a key · ${s.policy?.allow_paid ? 'premium on' : 'free only'}`),
         s.spend && s.policy?.allow_paid ? h('p', { class: 'quiet' }, `premium this month: $${s.spend.spent.toFixed(2)} of $${s.spend.cap.toFixed(2)}`) : null,
       ];

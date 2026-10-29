@@ -7,10 +7,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const target = process.env.KEYS_JS || path.join(here, '../../zhunt/workspace/js/keys.js');
 
 class HTMLElement_ {
-  constructor(tag = 'DIV', { editable = false, pane = false } = {}) {
+  constructor(tag = 'DIV', { editable = false, pane = false, terminal = false } = {}) {
+    this.terminal = terminal;
     this.tagName = tag; this.type = 'text'; this.isContentEditable = editable;
     this.classList = { contains: (c) => pane && c === 'pane' };
   }
+  closest(selector) { return selector === '.engineering-terminal' && this.terminal ? this : null; }
 }
 const handlers = {};
 globalThis.HTMLElement = HTMLElement_;
@@ -50,6 +52,9 @@ let fail = 0;
 const check = (name, ok, extra = '') => { if (!ok) fail += 1; console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : '  ' + extra)); };
 
 const textarea = new HTMLElement_('TEXTAREA');
+const terminal = new HTMLElement_('TEXTAREA', { terminal: true });
+const terminalKey = press({ key: 'k', ctrlKey: true }, terminal);
+check('terminal owns Ctrl+K without opening the palette', !terminalKey.e.defaultPrevented && terminalKey.log.length === 0);
 
 // F8: Alt chords must not hijack text editing
 let r = press({ key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }, textarea);

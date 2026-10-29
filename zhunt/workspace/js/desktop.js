@@ -19,20 +19,21 @@ const SHORT = { engineering: 'Engineering', chat: 'Chat', foryou: 'For you', pan
 export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays, toast, openPalette }) {
   const clock = h('span', { class: 'top-clock' });
   const pulse = h('span', { class: 'top-pulse', role: 'status' });
-  const modeBtns = ['floating', 'tiled'].map((m) => h('button', {
+  const modeBtns = ['focus', 'floating', 'tiled'].map((m) => h('button', {
     class: 'seg-btn', type: 'button', role: 'radio', 'aria-checked': 'false', dataset: { mode: m },
-    title: m === 'floating' ? 'Floating windows you can drag and overlap (Leader g)' : 'Tiled windows that fill the screen (Leader g)',
+    title: m === 'focus' ? 'One task beside your free-model usage widget (Leader g)' : m === 'floating' ? 'Floating windows you can drag and overlap (Leader g)' : 'Tiled windows that fill the screen (Leader g)',
     onclick: () => { ws.setMode(m); refresh(); },
-  }, m === 'floating' ? 'Floating' : 'Tiled'));
+  }, m === 'focus' ? 'Focus' : m === 'floating' ? 'Floating' : 'Tiled'));
   const seg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Window style' }, modeBtns);
   const btn = (label, title, onclick) => h('button', { class: 'top-btn', type: 'button', title, onclick }, label);
   const planBtn = h('button', { class: 'top-btn plan-btn', type: 'button', onclick: () => planSheet() }, 'Free');
   let plan = { plan: 'free', features: [], feature_labels: {}, upgrade_url: '' };
+  const themeBtn = btn('Themes', 'Choose a theme or wallpaper (Leader t)', () => themeMenu());
   topbar.replaceChildren(
     h('span', { class: 'top-mark' }, 'zhunt'), clock, h('span', { class: 'top-spacer' }), pulse, planBtn, seg,
     btn('Engineering', 'Projects, tasks and terminals', () => ws.openKind('engineering')),
     btn('+ Window', 'Open a new window (Leader n)', () => newWindowMenu()),
-    btn('Theme', 'Choose a theme (Leader t)', () => themeMenu()),
+    themeBtn,
     btn('⌘K', 'Command palette (Ctrl+K)', () => openPalette()));
 
   function tick() {
@@ -49,7 +50,7 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
       pulse.className = 'top-pulse' + (snap.error ? ' bad' : '');
       return;
     }
-    const models = (snap.data.providers || []).flatMap((p) => p.models || []).filter((m) => m.free || snap.data.policy?.allow_paid);
+    const models = (snap.data.providers || []).flatMap((p) => p.models || []).filter((m) => m.free);
     const usable = models.filter((m) => m.allowed && !(m.cooldown_remaining > 0)).length;
     pulse.textContent = `${usable} free model${usable === 1 ? '' : 's'} ready`;
     pulse.className = 'top-pulse' + (snap.error ? ' bad' : usable ? ' ok' : ' warn');
@@ -136,15 +137,17 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
     if (picked.action === 'generate') return generateWallpaper();
     if (picked.action === 'clear') { await api.wallpaper.remove().catch(() => {}); applyWallpaper(null); toast("theme wallpaper restored"); return; }
     await themes.apply(picked.name);
+    refresh();
     toast(`theme ${picked.name}`);
   }
 
   function refresh() {
     const mode = ws.mode;
+    themeBtn.textContent = 'Theme · ' + themes.current.replace(/-/g, ' ');
     for (const b of modeBtns) b.setAttribute('aria-checked', String(b.dataset.mode === mode));
     // floating: the dock lists and restores windows; on a narrow screen (one window at a time, either
     // mode) it is the only touch-friendly way to switch windows
-    const showDock = mode === 'floating' || ws.narrow;
+    const showDock = mode !== 'tiled' || ws.narrow;
     dock.hidden = !showDock;
     appEl.classList.toggle('has-dock', showDock); // windows stay clear of the dock
     if (!showDock) return;

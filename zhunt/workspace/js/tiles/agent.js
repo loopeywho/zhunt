@@ -197,7 +197,7 @@ export function agentTile(svc) {
 
   function paintBar() {
     const folders = state.folders.length ? state.folders.map((f) => f.split('/').slice(-2).join('/')).join(', ') : 'none yet';
-    bar.replaceChildren(
+    bar.replaceChildren(...[
       h('span', { class: 'agent-bar-item', title: state.folders.join('\n') || 'Share a folder so the agent can work with your files' },
         'Folders: ', h('strong', {}, folders)),
       h('button', { class: 'pane-btn wide', type: 'button', onclick: chooseFolders }, 'change'),
@@ -205,7 +205,7 @@ export function agentTile(svc) {
         'Briefs: ' + (briefs.settings.enabled ? briefs.settings.times.join(' · ') : 'off')) : null,
       ...state.loops.map((l) => h('span', { class: 'agent-bar-item' }, chip(`every ${fmtEvery(l.every)}`, 'warn'), ' ' + l.goal.slice(0, 40),
         h('button', { class: 'pane-btn', type: 'button', 'aria-label': 'Stop loop', title: 'Stop this loop', onclick: () => unloop(l.id) }, 'x'))),
-      freeToday ? h('span', { class: 'agent-bar-item dim', title: 'Daily caps left on the free models that are ready now (Providers has each model)' }, freeTodayText(freeToday)) : null);
+      freeToday ? h('span', { class: 'agent-bar-item dim', title: 'Daily caps left on the free models that are ready now (Providers has each model)' }, freeTodayText(freeToday)) : null].filter(Boolean));
   }
 
   const fmtEvery = (s) => (s % 86400 === 0 ? s / 86400 + 'd' : s % 3600 === 0 ? s / 3600 + 'h' : Math.round(s / 60) + 'm');

@@ -6,7 +6,7 @@
 //               "b": { "type": "tile", "kind": "routing", "state": {},
 //                      "win": { "x": 0.74, "y": 0.02, "w": 0.25, "h": 0.47, "min": false } } } }
 //
-// "mode" is "floating" or "tiled" (missing = tiled, as written before floating windows existed);
+// "mode" is "focus", "floating" or "tiled" (missing = tiled, as written before floating windows existed);
 // "win" is the window's floating rectangle as fractions of the desktop.
 //
 // Named layouts go to the daemon (/zhunt/api/layouts/<name>); if it is unreachable they are kept in
@@ -23,8 +23,8 @@ const LS_LAST = 'zhunt.layout.last';
 const LS_NAMED = 'zhunt.layouts.named';
 
 export const PRESETS = {
-  // the agent in the middle, what needs you on the left; chat stays one click away
-  desktop: () => T.split('row', T.split('col', T.tile('foryou'), T.tile('panels'), 0.6), T.tile('agent'), 0.3),
+  // One agent task with free-model capacity and usage visible from the first launch.
+  desktop: () => T.split('row', T.tile('panels'), T.tile('agent'), 0.28),
   'single-chat': () => T.tile('chat', { alias: 'zhunt-auto' }),
   'chat-routing': () => T.split('row', T.tile('chat', { alias: 'zhunt-auto' }), T.tile('routing'), 0.62),
   'chat-compare-providers': () => T.split('row',
@@ -32,8 +32,8 @@ export const PRESETS = {
     T.split('col', T.tile('compare'), T.tile('providers'), 0.5), 0.4),
 };
 export const DEFAULT_PRESET = 'desktop';
-// presets that open as floating windows; the rest open tiled
-const FLOATING_PRESETS = new Set(['desktop']);
+// The desktop starts focused; specialist presets open tiled.
+const presetMode = (name) => name === 'desktop' ? 'focus' : 'tiled';
 
 function lsGet(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } }
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch { return false; } }
@@ -47,7 +47,7 @@ export function parseDoc(doc) {
   // future migrations for version < LAYOUT_VERSION go here
   const tree = T.sanitize(doc.tree);
   if (!tree) throw new Error('layout contains no usable tiles');
-  return { tree, focus: Number.isInteger(doc.focus) ? doc.focus : 0, mode: doc.mode === 'floating' ? 'floating' : 'tiled' };
+  return { tree, focus: Number.isInteger(doc.focus) ? doc.focus : 0, mode: ['focus', 'floating', 'tiled'].includes(doc.mode) ? doc.mode : 'tiled' };
 }
 
 export function createLayouts({ workspace, toast }) {
@@ -153,7 +153,7 @@ export function createLayouts({ workspace, toast }) {
     loadPreset(name) {
       const make = PRESETS[name];
       if (!make) throw new Error('unknown preset ' + name);
-      apply({ tree: make(), focus: 0, mode: FLOATING_PRESETS.has(name) ? 'floating' : 'tiled' }, null);
+      apply({ tree: make(), focus: 0, mode: presetMode(name) }, null);
       toast?.(`preset ${name}`);
     },
 
@@ -178,7 +178,7 @@ export function createLayouts({ workspace, toast }) {
         if (!doc) continue;
         try { apply(parseDoc(doc), null); return true; } catch (err) { console.warn('layout restore skipped:', err.message); }
       }
-      apply({ tree: PRESETS[DEFAULT_PRESET](), focus: 2, mode: 'floating' }, null); // focus the chat window
+      apply({ tree: PRESETS[DEFAULT_PRESET](), focus: 1, mode: 'focus' }, null); // focus the chat window
       return false;
     },
   };

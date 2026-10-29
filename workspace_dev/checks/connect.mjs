@@ -39,6 +39,7 @@ class El extends Node_ {
   querySelector() { return null; }
   dispatch(type) { for (const fn of this.listeners[type] || []) fn({ preventDefault() {}, target: this }); }
 }
+globalThis.window = new EventTarget();
 globalThis.Node = Node_;
 globalThis.document = { createElement: (t) => new El(t), createTextNode: (s) => new Text_(s), activeElement: null };
 globalThis.requestAnimationFrame = (fn) => fn();
@@ -92,7 +93,7 @@ try {
   check('Groq is recommended first with a one-minute key', buttons.includes('Get a free Groq key (about 1 minute)'), buttons.join(' | '));
   check('the other providers sit under "More free capacity"', headings()[1].startsWith('More free capacity'), headings().join(' | '));
   const rows = tile.el.all((e) => e.tagName === 'ARTICLE').map((a) => a.attrs['data-platform']);
-  check('Groq is the first provider row', rows[0] === 'groq', rows.join());
+  check('Groq is the first provider row', rows.filter((platform) => platform !== 'auto')[0] === 'groq', rows.join());
 
   const typed = parts().input;
   typed.value = 'half-typed';

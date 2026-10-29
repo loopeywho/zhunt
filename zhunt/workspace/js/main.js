@@ -45,12 +45,12 @@ async function boot() {
   await store.refresh('status');
   if (authShown) return;
 
-  const themes = createThemes({ toast, onChange: (name) => statusbar.setTheme(name) });
+  let desktop = null;
+  const themes = createThemes({ toast, onChange: (name) => { statusbar.setTheme(name); desktop?.refresh(); } });
   statusbar.setTheme(themes.current);
   themes.refresh().then(() => themes.apply(themes.current, { persist: false }));
 
   let layouts = null;
-  let desktop = null;
   const updateWhere = () => {
     desktop?.refresh();
     const all = leaves(ws.root);
