@@ -107,7 +107,7 @@ export function createDesktop({ appEl, topbar, dock, ws, store, themes, overlays
   async function generateWallpaper() {
     const theme = themes.current;
     const description = await overlays.prompt('describe your wallpaper (AI)', {
-      initial: `Calm desktop wallpaper in ${theme.replace(/-/g, ' ')} colours: a minimal landscape, soft light, no text, no people`,
+      initial: `Calm desktop wallpaper in ${theme.replace(/-/g, ' ')} colours: a photorealistic landscape, natural detail, soft atmospheric light, generous negative space, no illustration, no text, no people`,
       hint: 'Made with your free Cloudflare connection (Connect window > AI pictures)',
     });
     if (!description) return;
