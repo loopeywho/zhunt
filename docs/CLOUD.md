@@ -53,6 +53,35 @@ browser ──HTTPS──> edge (Cloudflare) ──> app server(s) ──> paid 
 - **Billing:** the existing Stripe subscription flow, plus a webhook that marks the account
   active/past-due. No card handling of our own.
 
+### Device bridge: the brain in Cloud, the hands on the user's machine
+
+Web-only Cloud loses the tools that need the user's computer: integrated terminals
+(`zhunt/engineering.py`), the agent browser (`zhunt/agent/browser.py`) and files in the
+shared folders (`zhunt/agent/tools.py`). Hark keeps them by splitting the agent: the model
+and agent loop run on its servers, and a thin desktop app holds a WebSocket open to them and
+runs device tools when asked. Cloud should do the same, as an optional part of the plan:
+
+- **Outbound only.** The local app (`zhunt serve` signed in to Cloud) dials out to Cloud over
+  WSS and keeps the connection alive. Cloud never connects in, so nothing on the user's
+  machine listens on a public port and the loopback-only rule for terminals still holds.
+- **Cloud plans, the device acts.** The agent loop runs in Cloud. When it calls a device
+  tool, Cloud sends the call down the socket, the local app runs it with the existing tool
+  code and sends back the result. Web search, briefs and email stay server-side.
+- **Approvals stay local.** Anything that needs approval today (writing files, clicks,
+  terminal input, sending) is approved in the local app, not the web page, so a compromised
+  Cloud account or server cannot run commands on a machine without the user there. The local
+  app also enforces its own folder allowlist; Cloud's copy of the settings is advisory.
+- **Pairing.** The local app pairs once with a short code shown in the web UI, then holds a
+  per-device token it can revoke. One user can pair several devices; each tool call names
+  the device.
+- **Offline is normal.** If no device is connected, device tools are left out of the agent's
+  tool list rather than failing mid-task; scheduled briefs and email still run.
+- **Tool output is untrusted.** Results coming up from the device (pages, files, terminal
+  output) get the same prompt-injection handling as email.
+
+Build it after the pilot proves the web-only engine, and before paid beta, since moving the
+agent loop to Cloud changes how the engine is split.
+
 ## 4. Email access: the expensive decision
 
 | Option | User experience | Cost and obligations |
@@ -99,7 +128,7 @@ privacy policy covers it.
 
 1. **Pilot (owner's own VPS, 5–10 invited users, free).** Multi-tenant engine + auth +
    scheduled briefs on IMAP. Bound to localhost behind a reverse proxy with HTTPS. Measure
-   tokens per user per day.
+   tokens per user per day. Then add the device bridge (section 3) for the pilot users.
 2. **Paid beta ($12, capped at ~50 users).** Stripe webhook, credit cap, privacy policy
    and terms live, backups and monitoring.
 3. **General availability.** Managed database and KMS, OAuth for Gmail/Microsoft if the

@@ -40,7 +40,7 @@ MANUAL_APPS: dict[str, tuple[str, ...]] = {
     ),
     "vscode": (
         "VS Code has no environment variable or command-line route for a custom endpoint.",
-        "Run `zhunt install vscode` to add a custom language model entry, or add one by hand "
+        "No install step is needed: run `zhunt launch vscode`, or add the entry by hand "
         "in Chat > Manage Language Models with endpoint "
         "http://127.0.0.1:{port}/v1/chat/completions and model zhunt-auto.",
         "The key is ZHUNT_MASTER_KEY in ~/.zhunt/env.",
