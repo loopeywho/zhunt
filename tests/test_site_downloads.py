@@ -15,13 +15,16 @@ def test_install_section_points_at_the_v2_package_not_v1_installers():
     assert "OpenRouter" not in html and "Nous Portal" not in html
 
 
-def test_pre_release_takes_no_payments_until_pro_can_be_activated():
-    # Pre-release: the licence service is not configured, so a checkout would charge people
-    # who then get no key. Put the payment link back (Pro card and disclosure) for launch.
+def test_pro_is_on_sale_through_the_payment_link():
+    # Deploy this only once /api/licence is configured, or checkout charges people who get no key.
     html = (SITE / "index.html").read_text(encoding="utf-8")
 
-    assert PAYMENT_LINK not in html and "buy.stripe.com" not in html
-    assert html.count("%5Bzhunt%20Pro%5D%20waitlist") == 2  # Pro card and the note under the plans
+    assert html.count(PAYMENT_LINK) == 2  # Pro card and the checkout disclosure
+    assert "%5Bzhunt%20Pro%5D%20waitlist" not in html
+    assert "(soon)" not in html and "Coming soon" not in html
+    # the price and renewal terms are shown before the customer reaches Stripe
+    assert "$0 today" in html and "renews at $7/month before applicable tax" in html
+    assert 'href="activate.html">Activate Pro</a>' in html
     assert "$7/mo" in html
     assert "£" not in html
     assert "eVqfZg5Vg25ubZo77DcMM00" not in html
