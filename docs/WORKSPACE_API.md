@@ -210,6 +210,15 @@ link-local addresses are refused), `list_files`, `read_file` (read risk), `write
   decision, answer, error, stopped, resumed`. Tasks carry `tokens` (prompt plus answer
   tokens over every model step), and `answer` events repeat it
 - `POST /agent/tasks/{id}/decide {"call_id", "approve"}`, `POST /agent/tasks/{id}/stop`
+- Tool calls from free models are repaired before they run, with no extra model call: a
+  channel marker or `functions.` prefix on the name, a different case or `-` for `_`,
+  arguments encoded twice or with a raw newline, `"5"` for `5`, and keys the tool does not
+  declare. A repair only normalises what the model sent; it never picks a different tool, and
+  approvals apply to the tool that actually runs. A call that cannot be repaired returns one
+  specific error (what is missing and the tool's usage, or the list of available tools).
+  Read-only calls in one step run together (at most 4); calls needing approval run one at a time.
+  A call that failed twice is not run a third time, a tool that takes over 90 seconds is stopped,
+  and one empty model reply is nudged once before the task gives up.
 - `POST /agent/loops {"every": "30m"|"2h"|"1d", "goal", ...}` (minimum 5 minutes; runs while
   the daemon runs), `DELETE /agent/loops/{id}`
 

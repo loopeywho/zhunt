@@ -25,6 +25,7 @@ from zhunt.agent import briefs
 from zhunt import licence
 from zhunt.agent.browser import AgentBrowser, browser_tools, find_browser
 from zhunt.agent.email_tools import EmailAccount
+from zhunt.agent.calls import BadCall, fit_arguments, parse_arguments, resolve_name
 from zhunt.agent.tools import AgentSettings, Tool, ToolError, all_tools
 
 MAX_STEPS = 12
@@ -34,6 +35,9 @@ MAX_TASKS = 30
 MIN_LOOP_SECONDS = 300  # at most every 5 minutes: free quotas are precious
 BRIEF_CHECK_SECONDS = 30
 SAVE_DELAY = 0.5  # batch the saves of a busy task into one write
+TOOL_TIMEOUT = 90  # one stuck tool must not hold a whole task
+MAX_PARALLEL_READS = 4  # independent read-only calls in one step run together
+REPEAT_FAILURES = 2  # the same failing call is not run a third time
 MAX_RESUMES = 1  # a task cut off twice (say, it keeps crashing zhunt) is not started a third time
 
 SYSTEM = """You are zhunt's agent. You complete the user's task by calling tools, then answer.
@@ -93,6 +97,7 @@ class Task:
     resumes: int = 0
     tokens: int = 0  # prompt plus answer tokens over every model step
     _pending: dict[str, asyncio.Future] = field(default_factory=dict, repr=False)
+    _failures: dict[str, int] = field(default_factory=dict, repr=False)
     _job: asyncio.Task | None = field(default=None, repr=False)
     _changed: Callable[[], None] | None = field(default=None, repr=False)
 
@@ -340,6 +345,7 @@ class AgentRunner:
         ]
         schemas = [t.schema() for t in tools.values()]
         limit = GOAL_STEPS if task.mode == "goal" else MAX_STEPS
+        nudged = False
         try:
             for step in range(limit):
                 reply = await self._model(messages, schemas, f"agent-{task.id}")
@@ -350,13 +356,18 @@ class AgentRunner:
                 if text and calls:
                     task.event("thought", text=text[:2000], model=model)
                 messages.append({"role": "assistant", "content": msg.get("content") or "", **({"tool_calls": calls} if calls else {})})
+                if not calls and not text and not nudged:
+                    # free models sometimes return nothing: one nudge is cheaper than a failed task
+                    nudged = True
+                    messages.append({"role": "user", "content": "Your last reply was empty. Call a tool or give your final answer."})
+                    continue
                 if not calls:
                     task.answer = text or "(the agent finished without a written answer)"
                     task.state = "done"
                     task.event("answer", text=task.answer, model=model, tokens=task.tokens)
                     return
-                for call in calls:
-                    result = await self._call(task, tools, call, model)
+                results = await self._call_all(task, tools, calls, model)
+                for call, result in zip(calls, results):
                     messages.append({"role": "tool", "tool_call_id": call.get("id") or "", "content": result[:12_000]})
             # out of steps: ask for a wrap-up without tools
             messages.append({"role": "user", "content": "You have used all your steps. Summarise what you found and what is left, without calling tools."})
@@ -374,21 +385,53 @@ class AgentRunner:
             task.state = "failed"
             task.event("error", text=str(error)[:500])
 
+    async def _call_all(self, task: Task, tools: dict[str, Tool], calls: list[dict[str, Any]], model: str | None) -> list[str]:
+        """Run one step's calls in order, but a run of read-only calls together (they cannot
+        affect each other); anything that needs approval is always handled one at a time."""
+
+        results: list[str] = []
+        gate = asyncio.Semaphore(MAX_PARALLEL_READS)
+
+        async def limited(call: dict[str, Any]) -> str:
+            async with gate:
+                return await self._call(task, tools, call, model)
+
+        index = 0
+        while index < len(calls):
+            batch = [calls[index]]
+            if self._is_read(tools, calls[index]):
+                while index + len(batch) < len(calls) and self._is_read(tools, calls[index + len(batch)]):
+                    batch.append(calls[index + len(batch)])
+            if len(batch) > 1:
+                results.extend(await asyncio.gather(*(limited(c) for c in batch)))
+            else:
+                results.append(await self._call(task, tools, batch[0], model))
+            index += len(batch)
+        return results
+
+    @staticmethod
+    def _is_read(tools: dict[str, Tool], call: dict[str, Any]) -> bool:
+        name = resolve_name((call.get("function") or {}).get("name"), tools)
+        return name is not None and tools[name].risk == "read"
+
     async def _call(self, task: Task, tools: dict[str, Tool], call: dict[str, Any], model: str | None) -> str:
         fn = call.get("function") or {}
-        name = fn.get("name", "")
+        sent = fn.get("name", "")
         call_id = call.get("id") or uuid.uuid4().hex[:8]
+        name = resolve_name(sent, tools)
+        if name is None:
+            task.event("tool", name=str(sent)[:80], args={}, call_id=call_id, error="no such tool")
+            return f"Error: there is no tool called {str(sent)[:80]!r}. Available tools: {', '.join(sorted(tools))}."
+        tool = tools[name]
         try:
-            args = json.loads(fn.get("arguments") or "{}")
-            if not isinstance(args, dict):
-                raise ValueError
-        except ValueError:
-            task.event("tool", name=name, args={}, call_id=call_id, error="the model sent unreadable arguments")
-            return "Error: arguments were not valid JSON."
-        tool = tools.get(name)
-        if tool is None:
-            task.event("tool", name=name, args=args, call_id=call_id, error="no such tool")
-            return f"Error: there is no tool called {name!r}."
+            args = fit_arguments(tool, parse_arguments(fn.get("arguments")))
+        except BadCall as error:
+            task.event("tool", name=name, args={}, call_id=call_id, error=f"bad arguments: {error}"[:300])
+            return f"Error: {error}"
+        key = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
+        if task._failures.get(key, 0) >= REPEAT_FAILURES:
+            task.event("tool", name=name, args=args, call_id=call_id, error="repeated failing call skipped")
+            return "Error: this exact call already failed twice. Change the arguments or use a different approach."
         if tool.risk != "read":
             fut: asyncio.Future = asyncio.get_running_loop().create_future()
             task._pending[call_id] = fut
@@ -405,14 +448,18 @@ class AgentRunner:
                 return "The user declined this action. Do not try it again; continue another way or explain."
         started = time.perf_counter()
         try:
-            result = await tool.run(**args)
+            result = await asyncio.wait_for(tool.run(**args), TOOL_TIMEOUT)
             ok = True
         except ToolError as error:
             result, ok = f"Error: {error}", False
+        except asyncio.TimeoutError:
+            result, ok = f"Error: {name} did not finish within {TOOL_TIMEOUT} seconds.", False
         except TypeError:
             result, ok = "Error: wrong arguments for this tool.", False
         except Exception as error:  # noqa: BLE001
             result, ok = f"Error: {type(error).__name__}", False
+        if not ok:
+            task._failures[key] = task._failures.get(key, 0) + 1
         task.event("tool", name=name, args=args, call_id=call_id, ok=ok, result=result[:1500],
                    ms=round((time.perf_counter() - started) * 1000), model=model)
         return result
