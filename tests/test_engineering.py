@@ -129,3 +129,46 @@ def test_stop_terminates_background_job_and_daemon_shutdown(tmp_path, monkeypatc
             break
         time.sleep(.02)
     assert not status or status.startswith('Z')
+
+
+def test_terminals_are_off_when_the_daemon_is_not_bound_to_localhost(tmp_path):
+    from fastapi.testclient import TestClient
+    from zhunt.server import create_proxy_app
+    from zhunt.workspace_api import WorkspaceDirs
+    root = tmp_path / 'home'
+    dirs = WorkspaceDirs(layouts=root / 'layouts', themes=root / 'themes', static=tmp_path / 'static',
+                         env_file=root / 'env', bots=root / 'bots', wallpaper=root / 'wallpaper',
+                         agent=root / 'agent.json')
+    app = create_proxy_app(env_path=tmp_path / 'zhunt.env', workspace_dirs=dirs, engineering=False)
+    with TestClient(app) as client:
+        assert client.get('/zhunt/api/engineering').status_code == 401
+        state = client.get('/zhunt/api/engineering', headers=headers()).json()
+        assert state['supported'] is False and 'localhost' in state['disabled_reason']
+        for method, path in [('post', '/projects'), ('post', '/sessions'), ('get', '/sessions/x'),
+                             ('post', '/sessions/x/input'), ('delete', '/sessions/x')]:
+            response = getattr(client, method)('/zhunt/api/engineering' + path, headers=headers())
+            assert response.status_code == 403, path
+    assert not (root / 'engineering.json').exists()
+
+
+def test_run_proxy_enables_terminals_only_on_loopback(monkeypatch):
+    import sys
+    import types
+    import zhunt.server as server
+    seen = []
+    monkeypatch.setattr(server, 'create_proxy_app', lambda **kw: seen.append(kw['engineering']) or types.SimpleNamespace(hook=types.SimpleNamespace(summary=[])))
+    monkeypatch.setitem(sys.modules, 'uvicorn', types.SimpleNamespace(run=lambda *a, **k: None))
+    for host, allow in [('127.0.0.1', False), ('localhost', False), ('::1', False), ('0.0.0.0', True)]:
+        server.run_proxy(host=host, port=1, allow_non_loopback=allow)
+    assert seen == [True, True, True, False]
+
+
+@pytest.mark.parametrize('content', ['{not json', '[]', '{"projects": {}, "tasks": []}', ''])
+def test_a_damaged_state_file_is_kept_aside_and_does_not_stop_startup(tmp_path, content):
+    (tmp_path / 'engineering.json').write_text(content)
+    engine = Engineering(tmp_path)
+    assert engine.snapshot()['projects'] == [] and 'engineering.json.bad' in engine.snapshot()['notice']
+    assert (tmp_path / 'engineering.json.bad').read_text() == content
+    project = engine.project(str(tmp_path))
+    assert Engineering(tmp_path).project(str(tmp_path)) == project
+    assert Engineering(tmp_path).snapshot()['notice'] is None

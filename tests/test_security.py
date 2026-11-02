@@ -105,6 +105,7 @@ class DaemonSecurityTests(unittest.TestCase):
         create_app.assert_called_once_with(
             telemetry_path=Path.home() / ".zhunt" / "telemetry.jsonl",
             catalog_path=None,
+            engineering=False,
         )
 
     def test_run_proxy_forwards_explicit_telemetry_path(self) -> None:
@@ -124,6 +125,7 @@ class DaemonSecurityTests(unittest.TestCase):
         create_app.assert_called_once_with(
             telemetry_path=telemetry_path,
             catalog_path=None,
+            engineering=True,
         )
 
 

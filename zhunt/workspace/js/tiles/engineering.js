@@ -55,6 +55,8 @@ export function engineeringTile(svc, state, ctx) {
     policy, h('div', { class: 'engineering-row' }, sessions, stop, remove, status), host, diff,
     h('p', { class: 'dim' }, 'Closing this window detaches. Sessions run until stopped or the daemon exits. Project/task definitions are saved; processes and output are not restored after a daemon restart.'));
   function explain() {
+    if (snapshot.disabled_reason) { policy.textContent = snapshot.disabled_reason; return; }
+    if (snapshot.notice) { policy.textContent = snapshot.notice; return; }
     policy.textContent = kind.value.endsWith('-zhunt')
       ? 'Uses the existing Zhunt router, free quotas, failover and configured privacy/paid policy.'
       : kind.value === 'shell' ? 'Local shell in the task folder. Commands run with your normal user permissions.'
@@ -82,6 +84,7 @@ export function engineeringTile(svc, state, ctx) {
     stop.disabled = !session?.running; remove.disabled = !session || session.running;
     launch.disabled = !selectedTask || snapshot.supported === false || (kind.value !== 'shell' && !snapshot.agents?.[kind.value.replace('-zhunt', '')]);
     status.textContent = `${snapshot.sessions.filter(s => s.running).length} running`;
+    explain();
   }
   project.onchange = () => { selectedTask = ''; selectedSession = ''; attach(); paint(); ctx.changed(); };
   tasks.onchange = () => { selectedTask = tasks.value; selectedSession = ''; attach(); paint(); ctx.changed(); };

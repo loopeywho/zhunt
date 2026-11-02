@@ -330,7 +330,11 @@ Decided while building the backend; the code and tests treat these as the contra
 ## Engineering workspace (macOS/Linux)
 
 All `/zhunt/api/engineering` endpoints use the existing master-key authentication.
-Projects and tasks persist in `~/.zhunt/engineering.json` (0600). Sessions and their
+They are available only when the daemon is bound to loopback (`127.0.0.1`, `localhost`,
+`::1`). With `--allow-non-loopback` and a non-loopback `--host`, `GET /engineering`
+returns `supported: false` with a `disabled_reason` and every other route returns 403,
+because a terminal is code execution as the daemon's user.
+Projects and tasks persist in `~/.zhunt/engineering.json` (0600); an unreadable file is kept as `engineering.json.bad` and the daemon starts with no projects (`notice` in the state). Sessions and their
 bounded output remain in daemon memory; restarting does not execute commands.
 
 - `GET /engineering`: projects, tasks, sessions, supported-platform flag, CLI availability,
@@ -345,7 +349,7 @@ bounded output remain in daemon memory; restarting does not execute commands.
   running/exit status, and `reset` when the requested offset fell outside the 1 MiB buffer.
 - `POST /engineering/sessions/{id}/input {data}`: terminal input (at most 64 KiB).
 - `POST /engineering/sessions/{id}/resize {cols,rows}`: bounded TTY dimensions.
-- `POST /engineering/sessions/{id}/stop`: terminate the shell/agent and its descendants.
+- `POST /engineering/sessions/{id}/stop`: terminate the shell/agent and the descendants still attached to it.
 - `DELETE /engineering/sessions/{id}`: remove an exited session from memory.
 - `GET /engineering/tasks/{id}/changes`: Git status, unstaged and staged diffs;
   external diff/textconv execution disabled. No Git mutations are performed here.
@@ -354,5 +358,5 @@ The frontend polls output, acknowledges its offset only after xterm consumes it,
 keeps input ordered, and reattaches after closing/reopening its window. Closing a
 window does not stop a session. Multiple Engineering windows work in the existing
 floating/tiled layouts. At most 16 processes and 64 retained sessions per daemon.
-Terminal processes have normal user filesystem access; worktrees isolate Git files,
+Terminal processes start without environment variables whose names contain `API_KEY`, `MASTER_KEY`, `TOKEN`, `SECRET` or `PASSWORD` (a name denylist, not a guarantee: other credentials in your environment are inherited), and have normal user filesystem access; worktrees isolate Git files,
 not operating-system permissions. No model automatically runs terminal commands.

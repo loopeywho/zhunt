@@ -180,9 +180,22 @@ class Engineering:
         self.file = directory / 'engineering.json'
         self.lock = threading.RLock()
         self.sessions: dict[str, Session] = {}
-        self.data = json.loads(self.file.read_text()) if self.file.exists() else {'projects': [], 'tasks': []}
-        if not isinstance(self.data, dict) or not all(isinstance(self.data.get(k), list) for k in ('projects', 'tasks')):
-            raise ValueError('Invalid engineering.json; restore the file before starting Zhunt.')
+        self.notice = None
+        self.data = {'projects': [], 'tasks': []}
+        if self.file.exists():
+            try:
+                loaded = json.loads(self.file.read_text())
+                if not isinstance(loaded, dict) or not all(isinstance(loaded.get(k), list) for k in ('projects', 'tasks')):
+                    raise ValueError('unexpected structure')
+                self.data = loaded
+            except (ValueError, OSError):
+                # A damaged file must not stop routing. Keep it for recovery and start empty.
+                aside = self.file.with_name(self.file.name + '.bad')
+                try:
+                    self.file.replace(aside)
+                    self.notice = f'engineering.json was unreadable; it was kept as {aside.name} and projects start empty.'
+                except OSError:
+                    self.notice = 'engineering.json is unreadable and could not be moved aside; fix or remove it.'
 
     def save(self):
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -194,7 +207,7 @@ class Engineering:
 
     def snapshot(self):
         with self.lock:
-            return {**self.data, 'sessions': [s.summary() for s in self.sessions.values()],
+            return {**self.data, 'notice': self.notice, 'sessions': [s.summary() for s in self.sessions.values()],
                     'supported': os.name == 'posix',
                     'agents': {k: bool(shutil.which(k)) for k in ('codex', 'claude', 'hermes')}}
 
@@ -279,10 +292,28 @@ class Engineering:
             session.reader.join(timeout=2)
 
 
-def mount_engineering(app, directory: Path, style_nonce: str):
+DISABLED_REASON = ('Terminals are off because the daemon is not bound to localhost. '
+                   'Restart with the default --host 127.0.0.1 to use them.')
+
+
+def mount_engineering(app, directory: Path, style_nonce: str, enabled: bool = True):
+    router = APIRouter(prefix='/zhunt/api/engineering', dependencies=[Depends(_authenticate_local_request)])
+    if not enabled:
+        # A shell is arbitrary code execution as the user, so it is never offered
+        # behind a network-reachable bind, where one key would be a remote shell.
+        @router.get('')
+        def disabled_state():
+            return {'projects': [], 'tasks': [], 'sessions': [], 'supported': False,
+                    'agents': {}, 'style_nonce': style_nonce, 'disabled_reason': DISABLED_REASON}
+
+        @router.api_route('/{path:path}', methods=['GET', 'POST', 'DELETE'])
+        def disabled(path: str):
+            raise HTTPException(403, DISABLED_REASON)
+
+        app.include_router(router)
+        return
     service = Engineering(directory)
     app.state.engineering = service
-    router = APIRouter(prefix='/zhunt/api/engineering', dependencies=[Depends(_authenticate_local_request)])
 
     def perform(fn, *args):
         try:
