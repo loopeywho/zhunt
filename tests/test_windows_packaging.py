@@ -39,7 +39,7 @@ class WindowsPackagingTests(unittest.TestCase):
         self.assertNotIn("tiktoken", build)
         self.assertIn("--add-data", build)
         self.assertIn('"zhunt\\catalog.yaml"', build)
-        self.assertIn('pip install "."', build)
+        self.assertIn('pip install "$root"', build)  # independent of caller's working directory
         self.assertNotIn("pystray", build)  # the tray indicator was removed
         self.assertIn("--collect-all PIL", build)
 

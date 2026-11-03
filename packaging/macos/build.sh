@@ -73,6 +73,16 @@ cat > "$PAYLOAD/usr/local/bin/zhunt" <<'EOF'
 exec /usr/local/lib/zhunt/zhunt "$@"
 EOF
 chmod 755 "$PAYLOAD/usr/local/bin/zhunt"
+mkdir -p "$PAYLOAD/Applications"
+cp "$ROOT/packaging/macos/Zhunt.command" "$PAYLOAD/Applications/Zhunt.command"
+chmod 755 "$PAYLOAD/Applications/Zhunt.command"
+
+# Portable alternative: no administrator access or system-wide installation.
+cp "$ROOT/packaging/linux/Start-Zhunt.sh" "$PACKAGE/Zhunt.command"
+chmod 755 "$PACKAGE/Zhunt.command"
+ARCHIVE="$OUTPUT/Zhunt-Portable-macos-$ARCH.tar.gz"
+tar -C "$DIST" -czf "$ARCHIVE" zhunt
+(cd "$OUTPUT" && shasum -a 256 "$(basename "$ARCHIVE")") > "$ARCHIVE.sha256"
 
 PKG="$OUTPUT/Zhunt-Setup-macos-$ARCH.pkg"
 pkgbuild \

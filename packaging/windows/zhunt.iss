@@ -24,12 +24,12 @@ Uninstallable=yes
 Source: "..\..\.windows-build\dist\zhunt\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Zhunt Workspace"; Filename: "{app}\{#ExecutableName}"; Parameters: "open"
+Name: "{group}\Zhunt Workspace"; Filename: "{app}\{#ExecutableName}"; Parameters: "desktop"
 Name: "{group}\Zhunt Daemon"; Filename: "{app}\{#ExecutableName}"; Parameters: "serve"
 Name: "{group}\Uninstall Zhunt"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\{#ExecutableName}"; Parameters: "--help"; Description: "Show Zhunt command help"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\{#ExecutableName}"; Parameters: "desktop"; Description: "Open Zhunt Workspace"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 Filename: "{app}\{#ExecutableName}"; Parameters: "uninstall --all"; Flags: runhidden waituntilterminated

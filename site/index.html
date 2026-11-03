@@ -124,7 +124,7 @@
         <p class="eyebrow">Up and running in minutes</p>
         <h2 id="steps-title">Three steps. <span class="gradient-text">No coding.</span></h2>
         <ol class="step-list">
-          <li><span class="num">1</span><h3>Install</h3><p>One command on Mac, Windows or Linux.</p></li>
+          <li><span class="num">1</span><h3>Install</h3><p>Download, extract, and open the desktop launcher.</p></li>
           <li><span class="num">2</span><h3>Connect free models</h3><p>Click "Get free key" and paste it in, or start with a model that needs no key at all.</p></li>
           <li><span class="num">3</span><h3>Ask anything</h3><p>Chat, compare models side by side, or brief your bot team.</p></li>
         </ol>
@@ -180,15 +180,25 @@
 
       <section class="install" id="install" aria-labelledby="install-title">
         <p class="eyebrow">Install</p>
-        <h2 id="install-title">One command. <span class="gradient-text">Then add a free key.</span></h2>
+        <h2 id="install-title">Download free. <span class="gradient-text">Open your workspace.</span></h2>
+        <p>Desktop preview · Python is bundled; no Python or uv installation required. Extract the whole archive before opening the launcher. Zhunt opens in your default browser and runs only on this computer. Keep its terminal window open; Ctrl+C stops it.</p>
+        <div class="plans">
+          <article class="plan"><h3>macOS · Apple Silicon</h3><p>Extract the archive, then open <strong>Zhunt.command</strong>. Unsigned and not notarized: macOS may block it. Only approve a download you trust through System Settings → Privacy &amp; Security. No Intel Mac build is offered here.</p><a class="btn btn-ghost" href="downloads/Zhunt-Portable-macos-arm64.tar.gz">Download for Apple Silicon</a> <a href="downloads/Zhunt-Portable-macos-arm64.tar.gz.sha256">SHA-256</a></article>
+          <article class="plan"><h3>Linux · x86_64</h3><p>Extract the archive and run <code>./zhunt/Start-Zhunt.sh</code> in a terminal. Built on Ubuntu 22.04 / glibc 2.35; older distributions are not supported by this bundle.</p><a class="btn btn-ghost" href="downloads/Zhunt-Setup-linux-x64.tar.gz">Download for Linux x64</a> <a href="downloads/Zhunt-Setup-linux-x64.tar.gz.sha256">SHA-256</a></article>
+          <article class="plan"><h3>Windows · x64</h3><p>Choose Extract All, then open <strong>Start-Zhunt.cmd</strong> in the zhunt folder. Unsigned preview: Windows may show a security warning. No administrator access is required.</p><a class="btn btn-ghost" href="downloads/Zhunt-Portable-win-x64.zip">Download for Windows x64</a> <a href="downloads/Zhunt-Portable-win-x64.zip.sha256">SHA-256</a></article>
+        </div>
+        <p class="note">Preview limitation: integrated Engineering terminals are not supported in these portable builds. Use the source install on macOS or Linux if you need that feature. Workspace startup and local status were smoke-tested; this is not a full feature certification.</p>
+        <p class="note">Android — <strong>Under development</strong> · iOS — <strong>Under development</strong>. No mobile download is available.</p>
+        <details><summary>Prefer a source install? (Python 3.12+ via uv)</summary>
         <div class="terminal">
           <div class="term-head"><i></i><i></i><i></i><span>terminal</span></div>
 <pre><code><span class="c"># needs uv: https://docs.astral.sh/uv</span>
 uv tool install git+https://github.com/loopeywho/zhunt
 zhunt keys add groq      <span class="c"># free key from console.groq.com (or paste it in the app)</span>
 zhunt serve              <span class="c"># starts zhunt on this computer</span>
-zhunt open               <span class="c"># opens your workspace</span></code></pre>
+zhunt open               <span class="c"># run in a second terminal to open your workspace</span></code></pre>
         </div>
+        </details>
         <p class="note">Free keys: <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq</a>, <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>, <a href="https://cloud.cerebras.ai" target="_blank" rel="noopener">Cerebras</a>. One key per provider, under that provider's terms. Preview software: tell us what breaks.</p>
       </section>
 
@@ -199,7 +209,7 @@ zhunt open               <span class="c"># opens your workspace</span></code></p
           <details><summary>Is it really free?</summary><p>Yes. Zhunt uses the free tiers that AI providers offer (Groq, Google, Cerebras and others) and moves to the next one when a limit is reached. It answers with no keys at all; one free key makes it faster. Nothing costs money unless you later choose Pro and add a paid key for premium models.</p></details>
           <details><summary>Can zhunt see my prompts?</summary><p>No. Zhunt runs on your computer and sends each request directly to the provider it picks; there is no zhunt server in between. That provider receives your prompt under its own terms, as if you used it directly.</p></details>
           <details><summary>Do any free providers train on my prompts?</summary><p>Some free tiers say they may. Zhunt labels them and keeps them off unless you switch them on, which adds capacity (including a provider that needs no key at all).</p></details>
-          <details><summary>Do I need to know how to code?</summary><p>No. You run one install command once; everything else happens in the app, including adding keys.</p></details>
+          <details><summary>Do I need to know how to code?</summary><p>No. Download the archive for your computer, extract it, and open the launcher. Keep the terminal window open while using Zhunt. Add provider keys in the app.</p></details>
           <details><summary>What does Pro add?</summary><p>When every free model is busy, Pro steps up to a premium model (Claude, GPT or Gemini Pro) using your own paid key, under a monthly spending cap you choose. Everything else is free.</p></details>
           <details><summary>How do I cancel?</summary><p>Any time before renewal, from the billing link in your Stripe receipt. Pro keeps working to the end of the paid period, and the free version keeps working after that.</p></details>
         </div>

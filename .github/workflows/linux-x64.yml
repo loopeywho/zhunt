@@ -25,6 +25,7 @@ jobs:
           mkdir -p /tmp/zhunt-linux-smoke
           tar -xzf dist/Zhunt-Setup-linux-x64.tar.gz -C /tmp/zhunt-linux-smoke
           sh packaging/linux/verify.sh /tmp/zhunt-linux-smoke/zhunt
+          python scripts/smoke_desktop.py /tmp/zhunt-linux-smoke/zhunt/Start-Zhunt.sh --output .evidence/linux-desktop
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:

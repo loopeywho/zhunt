@@ -16,6 +16,8 @@ from zhunt.ports import resolve_daemon_port
 
 app = typer.Typer(no_args_is_help=True)
 register_connect_commands(app)
+from zhunt.desktop import desktop
+app.command("desktop")(desktop)
 app.add_typer(keys_app, name="keys")
 app.add_typer(licence_app, name="licence")
 app.add_typer(catalog_app, name="catalog")

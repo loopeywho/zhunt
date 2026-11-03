@@ -63,6 +63,8 @@ fi
 cp "$ROOT/README.md" "$PACKAGE/README.md"
 cp "$ROOT/LICENSE" "$PACKAGE/LICENSE"
 cp "$ROOT/packaging/linux/README.md" "$PACKAGE/README-linux.md"
+cp "$ROOT/packaging/linux/Start-Zhunt.sh" "$PACKAGE/Start-Zhunt.sh"
+chmod 755 "$PACKAGE/Start-Zhunt.sh"
 
 ARCHIVE="$OUTPUT/Zhunt-Setup-linux-x64.tar.gz"
 tar -C "$DIST" -czf "$ARCHIVE" zhunt

@@ -33,6 +33,9 @@ jobs:
       - name: Run Windows smoke verification
         shell: pwsh
         run: .\packaging\windows\verify.ps1
+      - name: Check installed desktop with a clean home
+        shell: pwsh
+        run: python scripts/smoke_desktop.py "$env:LOCALAPPDATA\Programs\Zhunt\zhunt.exe" --output .evidence/windows-desktop
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
@@ -40,3 +43,5 @@ jobs:
           path: |
             dist/Zhunt-Setup-win-x64.exe
             dist/Zhunt-Setup-win-x64.exe.sha256
+            dist/Zhunt-Portable-win-x64.zip
+            dist/Zhunt-Portable-win-x64.zip.sha256
