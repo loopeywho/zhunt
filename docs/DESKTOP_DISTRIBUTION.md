@@ -1,5 +1,18 @@
 # Desktop distribution candidate — release-owner handoff
 
+## Frozen-terminal repair follow-up (isolated local candidate)
+
+The baseline evidence below describes commit `4470bc6e99e76e84d175097d5d9a3549b36c445a`.
+A separate `fix/frozen-engineering-terminal` worktree at
+`cache/zhunt-terminal-review` repairs the Mac/Linux frozen helper dispatch without
+changing the baseline artifacts or landing. See `DESKTOP_TERMINAL_REVIEW.md` for
+rebuilt Mac/Linux hashes, real packaged PTY evidence, and remaining platform limits.
+The repaired Linux archive in this worktree passed the clean-HOME shipped-launcher
+terminal smoke on mint-wsl; its local bytes and remote checksum match. The earlier
+failed candidate in `.evidence/linux-repair/` remains failed, retained for provenance.
+The Linux baseline download still has the blocker; Windows PTYs remain unsupported.
+No public release is authorized by this verification.
+
 ## Scope and provenance
 
 Based on fetched `origin/main` at `7ee15ca`. The isolated `fix/desktop-distribution` worktree does not incorporate the dirty Pro checkout, other worktrees, or the unmerged calendar/weather widget commit. No release, tag, push, website deployment or public post was performed.

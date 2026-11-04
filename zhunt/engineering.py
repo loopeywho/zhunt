@@ -74,11 +74,15 @@ class Session:
         os.set_blocking(self.master, False)
         try:
             self.resize(100, 28)
-            # Set the controlling terminal in a fresh interpreter, never preexec_fn
-            # in FastAPI's multithreaded process. The helper then execs the real CLI.
-            helper = Path(__file__).with_name('terminal_child.py')
+            # Never use preexec_fn in FastAPI's multithreaded process. Frozen
+            # builds re-enter the private helper dispatch, not a Python script.
+            if getattr(sys, 'frozen', False):
+                from zhunt.terminal_child import FROZEN_TERMINAL_FLAG
+                helper = [sys.executable, FROZEN_TERMINAL_FLAG]
+            else:
+                helper = [sys.executable, str(Path(__file__).with_name('terminal_child.py'))]
             self.process = subprocess.Popen(
-                [sys.executable, str(helper), *argv], stdin=slave, stdout=slave,
+                [*helper, *argv], stdin=slave, stdout=slave,
                 stderr=slave, cwd=task['path'], env=env, start_new_session=True,
             )
         except BaseException:

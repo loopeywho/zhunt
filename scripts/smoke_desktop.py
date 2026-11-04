@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("executable", type=Path)
     parser.add_argument("--ui", action="store_true")
+    parser.add_argument("--terminal", action="store_true", help="Exercise a real POSIX Engineering PTY")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -61,6 +62,9 @@ def main():
                 status = json.load(response)
             assert status
             evidence = {"platform": __import__("platform").platform(), "executable": exe, "workspace_http": 200, "authenticated_status_http": 200, "fresh_home": str(home), "ui_tested": False}
+            if args.terminal:
+                from smoke_terminal import run_terminal
+                evidence["terminal"] = run_terminal(base, key, home)
             if args.ui:
                 from playwright.sync_api import sync_playwright
                 with sync_playwright() as p:
