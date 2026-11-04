@@ -180,7 +180,17 @@
 
       <section class="install" id="install" aria-labelledby="install-title">
         <p class="eyebrow">Install</p>
-        <h2 id="install-title">One command. <span class="gradient-text">Then add a free key.</span></h2>
+        <h2 id="install-title">Download the desktop preview. <span class="gradient-text">Then add a free key.</span></h2>
+        <div class="hero-actions">
+          <a class="btn btn-glow" href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Portable-macos-arm64.tar.gz">Download Mac · Apple Silicon</a>
+          <a class="btn btn-glow" href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Setup-linux-x64.tar.gz">Download Linux · x86_64</a>
+        </div>
+        <p class="note">Python is bundled. Mac: extract the whole archive and open <code>zhunt/Zhunt.command</code>. Linux (glibc 2.35+): extract and run <code>./zhunt/Start-Zhunt.sh</code>. Keep the launcher terminal open; Ctrl+C stops the local service.</p>
+        <p class="note"><strong>Preview verification:</strong> Mac arm64 and Linux WSL2 passed clean-home startup and authenticated API-driven real terminal checks. Mac workspace rendering was checked in Chrome. Native Linux browser integration and browser terminal keyboard interaction are not certified. Unsigned/not notarized; Gatekeeper/quarantine, automatic browser handoff, native installer lifecycle and full provider execution remain unverified. <a href="https://github.com/loopeywho/zhunt/releases/tag/v0.2.0.dev0">Release notes and limitations</a>.</p>
+        <p class="note">Verify your download: <a href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Portable-macos-arm64.tar.gz.sha256">Mac SHA-256</a> · <a href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Setup-linux-x64.tar.gz.sha256">Linux SHA-256</a>.</p>
+        <p class="note"><strong>Windows:</strong> new binary verification pending (test host unavailable); no tested Windows download in this release. Use the source option below. Integrated Windows terminals are unsupported.</p>
+        <p class="note"><span>Android — Under development</span> · <span>iOS — Under development</span></p>
+        <h3>Source install · Mac, Linux or Windows</h3>
         <div class="terminal">
           <div class="term-head"><i></i><i></i><i></i><span>terminal</span></div>
 <pre><code><span class="c"># needs uv: https://docs.astral.sh/uv</span>
