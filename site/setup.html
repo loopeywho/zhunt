@@ -15,22 +15,30 @@
       </header>
       <main class="activate-main guide">
         <p class="eyebrow">Setup guide</p>
-        <h1 class="activate-title">From install to your first answer in about five minutes.</h1>
-        <p class="section-intro">Zhunt runs on your computer. You need a terminal for the first two steps; after that everything happens in the workspace in your browser.</p>
+        <h1 class="activate-title">Start the Zhunt desktop preview.</h1>
+        <p class="section-intro">Zhunt runs on your computer and opens a workspace in your browser. The v0.2.0.dev0 Mac and Linux portable previews bundle Python: no separate Python or uv install is needed.</p>
 
         <section class="install-card" aria-labelledby="s1">
-          <h2 id="s1">1. Install</h2>
-          <p>Zhunt installs with <a href="https://docs.astral.sh/uv/" target="_blank" rel="noopener">uv</a>, a small Python tool installer. Install uv first if you do not have it, then:</p>
-<pre><code>uv tool install git+https://github.com/loopeywho/zhunt</code></pre>
-          <p>Check it worked: <code>zhunt --help</code> prints the list of commands.</p>
+          <h2 id="s1">1. Download and start the portable preview</h2>
+          <ul>
+            <li><strong>Mac Apple Silicon (arm64):</strong> download <a href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Portable-macos-arm64.tar.gz">Zhunt-Portable-macos-arm64.tar.gz</a>, extract the whole archive and open <code>zhunt/Zhunt.command</code>.</li>
+            <li><strong>Linux x86_64:</strong> download <a href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Setup-linux-x64.tar.gz">Zhunt-Setup-linux-x64.tar.gz</a>, extract it and run <code>./zhunt/Start-Zhunt.sh</code> in a terminal. Built on Ubuntu 22.04 WSL2 / glibc 2.35; requires glibc 2.35 or newer.</li>
+          </ul>
+          <p>The launcher starts a loopback-only service and opens the workspace in your browser. Keep the launcher terminal open; <code>Ctrl+C</code> stops it. Once the workspace opens, skip the source alternative below and continue to step 3.</p>
+          <p>Check the download with its matching <a href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Portable-macos-arm64.tar.gz.sha256">Mac SHA-256 sidecar</a> or <a href="https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/Zhunt-Setup-linux-x64.tar.gz.sha256">Linux SHA-256 sidecar</a> in the download directory: on macOS use <code>shasum -a 256 -c ARCHIVE.sha256</code>; on Linux use <code>sha256sum -c ARCHIVE.sha256</code>, replacing <code>ARCHIVE.sha256</code> with the downloaded sidecar filename.</p>
+          <p><strong>Preview limitations:</strong> unsigned and not notarized. Gatekeeper/quarantine approval flows and automatic browser handoff have not been certified; browser rendering was checked separately. No native Mac PKG/DMG is published; installation/uninstallation was not validated. Intel Mac, native Linux browser integration, browser terminal keyboard interaction, upgrade/uninstall lifecycle and full provider/chat/agent execution are not certified. Linux verification used WSL2, not a native graphical Linux desktop. No provider calls were made in these tests; startup verification is not full product certification.</p>
+          <p>No Windows binary is included or advertised as tested in this release; integrated Windows terminals remain unsupported. Android and iOS are under development, with no mobile downloads. See the <a href="https://github.com/loopeywho/zhunt/releases/tag/v0.2.0.dev0">exact v0.2.0.dev0 release notes and verification scope</a>.</p>
         </section>
 
         <section class="install-card" aria-labelledby="s2">
-          <h2 id="s2">2. Start zhunt and open your workspace</h2>
+          <h2 id="s2">2. Source installation (alternative, not needed for portable downloads)</h2>
+          <p>For the source alternative, install <a href="https://docs.astral.sh/uv/" target="_blank" rel="noopener">uv</a>, then explicitly select Python 3.12:</p>
+<pre><code>uv tool install --python 3.12 git+https://github.com/loopeywho/zhunt</code></pre>
+          <p>Check it worked: <code>zhunt --help</code> prints the list of commands. Start the source installation with:</p>
 <pre><code>zhunt serve     # leave this running
 zhunt open      # in a second terminal: opens the workspace in your browser</code></pre>
-          <p>Always open the workspace with <code>zhunt open</code>. It passes the workspace its key in a way your browser never sends anywhere. A tab opened by hand says "This workspace needs its key"; that is expected.</p>
-          <p>If port 4000 is busy, zhunt picks another and remembers it. <code>zhunt open</code> always finds it.</p>
+          <p>For a source installation, open the workspace with <code>zhunt open</code>. It passes the workspace its key in a way your browser never sends anywhere. A tab opened by hand says "This workspace needs its key"; that is expected.</p>
+          <p>If port 4000 is busy, zhunt picks another and remembers it. <code>zhunt open</code> always finds it. See the <a href="https://github.com/loopeywho/zhunt/blob/main/docs/GETTING_STARTED.md">source getting-started guide</a>. Commands below using <code>zhunt</code> assume this source installation; portable users can use the workspace controls.</p>
         </section>
 
         <section class="install-card" aria-labelledby="s3">
@@ -59,17 +67,13 @@ zhunt launch cursor    # Cursor and VS Code: prints the steps for their settings
 
         <section class="install-card" aria-labelledby="s6">
           <h2 id="s6">6. Pro extras</h2>
-          <p>After checkout, run <code>zhunt licence activate</code> and paste your key. Then, in the Connect window:</p>
-          <ul>
-            <li>switch on <strong>Keep the free-model list up to date</strong> to get newly verified free models every 12 hours;</li>
-            <li>add a paid Anthropic, OpenAI or Google key and run <code>zhunt premium on --cap 5</code> if you want premium models when every free one is busy (billed by that provider, stopping at your cap).</li>
-          </ul>
+          <p>Pro is not on sale in this pre-release. Paid activation instructions will be published when it opens.</p>
         </section>
 
         <section class="install-card" aria-labelledby="s7">
           <h2 id="s7">Something not working?</h2>
 <pre><code>zhunt doctor     # checks zhunt, your keys, settings and connected apps, with a fix for each problem</code></pre>
-          <p>Still stuck? Email <a href="mailto:kwokwingfoods@gmail.com?subject=zhunt%20question">kwokwingfoods@gmail.com</a> with what you tried and what <code>zhunt doctor</code> printed (never include your keys). Pro subscribers: use the <em>Email support</em> item under your plan in the workspace, or start the subject with <code>[zhunt Pro]</code>, and we reply within one working day and help you finish the setup.</p>
+          <p>Still stuck? Email <a href="mailto:kwokwingfoods@gmail.com?subject=zhunt%20question">kwokwingfoods@gmail.com</a> with what you tried and any diagnostic output (never include your keys).</p>
         </section>
       </main>
       <footer class="site-footer"><div class="footer-meta"><span>© 2026 Kindred Wildcat</span><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="./">Back to zhunt</a></div></footer>
