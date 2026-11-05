@@ -44,6 +44,9 @@ class Provider:
     free_note: str = ""
     # Works without any key (the key_env variable then only adds a personal key).
     keyless: bool = False
+    # Runs on this computer (zhunt.local_provider). Never set from catalog files:
+    # only the local settings can add it, so a feed cannot mark a cloud host local.
+    local: bool = False
 
     @property
     def api_base(self) -> str | None:

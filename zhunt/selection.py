@@ -211,12 +211,18 @@ class Selector:
         tokens: int = 1,
         requires_tools: bool = False,
         exclude: frozenset[str] = frozenset(),
+        local: bool = False,
     ) -> list[Candidate]:
-        """Allowed, un-benched candidates for one tier: free first, then paid."""
+        """Allowed, un-benched candidates for one tier: free first, then paid.
+
+        Cloud and local models are never mixed: ``local`` picks which kind.
+        """
 
         found: list[Candidate] = []
         for model in self._catalog.models_for_tier(tier):
             if model.id in exclude or not self._allowed(model, tokens, requires_tools):
+                continue
+            if self.is_local(model) != local:
                 continue
             for key_id in self._keys.get(model.platform, ()):
                 slot = (model.id, key_id)
@@ -245,19 +251,28 @@ class Selector:
         tokens: int = 1,
         requires_tools: bool = False,
         exclude: frozenset[str] = frozenset(),
+        local_only: bool = False,
     ) -> tuple[Candidate, Lease]:
         """Reserve the best candidate with quota left, dropping a tier if needed.
 
         ``exclude`` is a preference (e.g. a model that just truncated): it is honoured
         when another model qualifies and ignored when nothing else does.
+
+        A ``local_only`` (private) request considers only models on this computer.
+        Any other request tries every cloud model on every tier first; a local
+        model, being slow, is its last resort.
         """
 
         if exclude:
             try:
-                return self._acquire(tier, tokens, requires_tools, exclude)
+                return self._acquire(tier, tokens, requires_tools, exclude, local_only)
             except NoCandidateError:
                 pass
-        return self._acquire(tier, tokens, requires_tools, frozenset())
+        return self._acquire(tier, tokens, requires_tools, frozenset(), local_only)
+
+    def is_local(self, model: CatalogModel) -> bool:
+        provider = self._catalog.providers.get(model.platform)
+        return provider is not None and provider.local
 
     def _acquire(
         self,
@@ -265,29 +280,41 @@ class Selector:
         tokens: int,
         requires_tools: bool,
         exclude: frozenset[str],
+        local_only: bool,
     ) -> tuple[Candidate, Lease]:
 
         lower_first = sorted(
             (t for t in Tier if t.rank <= tier.rank), key=lambda t: -t.rank
         )
-        for attempt in lower_first:
-            for candidate in self.ranked(
-                attempt, tokens=tokens, requires_tools=requires_tools, exclude=exclude
-            ):
-                lease = self._quota.try_acquire(
-                    candidate.slot, candidate.model.limits, tokens=tokens
-                )
-                if lease is not None:
-                    return (
-                        Candidate(
-                            model=candidate.model,
-                            key_id=candidate.key_id,
-                            tier=attempt,
-                            degraded=attempt != tier,
-                            score=candidate.score,
-                        ),
-                        lease,
+        for local in (True,) if local_only else (False, True):
+            for attempt in lower_first:
+                for candidate in self.ranked(
+                    attempt,
+                    tokens=tokens,
+                    requires_tools=requires_tools,
+                    exclude=exclude,
+                    local=local,
+                ):
+                    lease = self._quota.try_acquire(
+                        candidate.slot, candidate.model.limits, tokens=tokens
                     )
+                    if lease is not None:
+                        return (
+                            Candidate(
+                                model=candidate.model,
+                                key_id=candidate.key_id,
+                                tier=attempt,
+                                degraded=attempt != tier or (local and not local_only),
+                                score=candidate.score,
+                            ),
+                            lease,
+                        )
+        if local_only:
+            raise NoCandidateError(
+                "private chat: no local model can take this request (none set up, "
+                "too long for its context, or it needs tools the local model lacks); "
+                "nothing was sent to any cloud provider"
+            )
         raise NoCandidateError(
             f"no allowed model is available for tier {tier.value!r} (missing key, "
             "over quota, benched after errors, or blocked by privacy/paid settings)"

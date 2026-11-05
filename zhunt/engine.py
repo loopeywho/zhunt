@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 
-from zhunt import __version__, licence, llm
+from zhunt import __version__, licence, llm, local_provider
 from zhunt.adapters.base import (
     AdapterError,
     strip_thinking_blocks,
@@ -184,7 +184,20 @@ def registry_from_catalog(catalog: Catalog) -> ModelRegistry:
     }
     aliases: dict[str, Any] = {"zhunt-auto": {"tier": "auto"}}
     aliases.update({f"zhunt-{name}": {"tier": name} for name in tiers})
+    # Private chats are classified like zhunt-auto; the engine keeps them local.
+    aliases.update({alias: {"tier": "auto"} for alias in local_provider.LOCAL_ALIASES})
     return ModelRegistry.from_data({"aliases": aliases, "tiers": tiers})
+
+
+def with_local(catalog: Catalog, env: Mapping[str, str]) -> tuple[Catalog, str | None]:
+    """``catalog`` plus the local model from ``env``, and why it is missing if
+    its settings are wrong (then no local model is added)."""
+
+    try:
+        config = local_provider.config_from_env(env)
+    except local_provider.LocalConfigError as error:
+        return local_provider.with_local_provider(catalog, None), str(error)
+    return local_provider.with_local_provider(catalog, config), None
 
 
 def classify_failure(
@@ -398,6 +411,8 @@ class EngineProxyHook:
             self._decisions.extend(_decisions_from_telemetry(telemetry))
         self._lock = RLock()
         self.catalog_feed: CatalogFeed | None = None
+        # Why the local model's settings were rejected, if they were.
+        self.local_problem: str | None = None
 
     async def async_pre_call_hook(
         self,
@@ -425,6 +440,8 @@ class EngineProxyHook:
             except AdapterError as error:
                 raise HTTPException(status_code=400, detail=str(error)) from error
             decision, request = routed.decision, routed.request
+            if local_provider.is_private(payload.get("model"), headers):
+                request = replace(request, local_only=True)
             attempts, escalated, exclude = 1, False, frozenset()
         else:
             decision, request = retry.decision, retry.request
@@ -432,12 +449,15 @@ class EngineProxyHook:
             exclude = retry.exclude
 
         tokens = (request.estimated_input_tokens or 1) + request.estimated_output_tokens
+        if request.local_only:
+            await self._check_local_ready()
         try:
             candidate, lease = self.selector.acquire(
                 decision.tier,
                 tokens=tokens,
                 requires_tools=bool(payload.get("tools")),
                 exclude=exclude,
+                local_only=request.local_only,
             )
         except NoCandidateError as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
@@ -536,6 +556,24 @@ class EngineProxyHook:
             if pending is not None:
                 self._finish(pending, last_chunk, failure)
 
+    async def _check_local_ready(self) -> None:
+        """Stop a private chat with a clear message when the local model cannot
+        take it. Nothing is sent anywhere else either way."""
+
+        nothing_sent = "nothing was sent to any cloud provider"
+        provider = self.catalog.providers.get(local_provider.PLATFORM)
+        if provider is None:
+            reason = self.local_problem or "no local model is set up (run `zhunt local setup`)"
+            raise HTTPException(status_code=503, detail=f"private chat: {reason}; {nothing_sent}")
+        if not await local_provider.is_answering(provider.base_url):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"private chat: the local model at {provider.base_url} is not "
+                    f"answering (start it with `zhunt local start`); {nothing_sent}"
+                ),
+            )
+
     def has_retry(self, attempt_id: str) -> bool:
         with self._lock:
             return attempt_id in self._retries
@@ -573,6 +611,8 @@ class EngineProxyHook:
             return
         if pending.escalated or pending.attempt_id is None:
             return  # one promotion per client request
+        if self.selector.is_local(model):
+            return  # a replay would only rerun the same slow local generation
         promoted = self.coordinator.escalate(pending.decision, failure)
         if promoted.tier == pending.decision.tier:
             return  # already at the top tier: a replay would only repeat the call
@@ -595,6 +635,10 @@ class EngineProxyHook:
         if kind is None:
             return
         candidate = pending.candidate
+        if self.selector.is_local(candidate.model):
+            # The client sees this error. No bench (a restarted server must work at
+            # once) and no replay (a private chat has nowhere else to go).
+            return
         self._learn_from_error(candidate.model, error)
         self._bench(candidate.model, candidate.key_id, kind, retry_after)
         self._queue_retry(pending, pending.decision, escalated=pending.escalated)
@@ -785,7 +829,7 @@ class EngineProxyHook:
         """Route with a new catalog from now on, without a restart. Quota, cooldown,
         reliability and learned limits are keyed by model id, so they carry over."""
 
-        catalog = active.catalog
+        catalog, self.local_problem = with_local(active.catalog, os.environ)
         registry = registry_from_catalog(catalog)
         with self._lock:
             self.selector.set_catalog(catalog)
@@ -862,6 +906,7 @@ class EngineProxyHook:
                     "key_url": provider.key_url,
                     "free_note": provider.free_note,
                     "keyless": provider.keyless,
+                    "local": provider.local,
                     "models": models,
                 }
             )
@@ -1034,7 +1079,7 @@ def build_engine_hook(
         active = load_active()
     else:
         active = ActiveCatalog(load_catalog(catalog_path), 0, "file")
-    catalog = active.catalog
+    catalog, local_problem = with_local(active.catalog, env)
     # Defaults to ~/.zhunt/state.db (or $ZHUNT_STATE_DB); memory-only if unusable.
     store = StateStore.open(state_path)
     quota = QuotaTracker(store=store)
@@ -1058,6 +1103,9 @@ def build_engine_hook(
         spend=SpendLedger(store),
         monthly_cap=cap_from_env(dict(env)),
     )
+    hook.local_problem = local_problem
+    if local_problem:
+        hook.summary += (f"Local model: not used: {local_problem}",)
     # A --catalog file is used as given; otherwise the feed can replace the catalog live.
     if active.source != "file":
         hook.catalog_feed = CatalogFeed(active, hook.apply_catalog, plan=hook.current_plan)

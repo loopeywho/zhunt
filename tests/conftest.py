@@ -13,6 +13,10 @@ def _isolated_state_db(tmp_path, monkeypatch):
     monkeypatch.setenv("ZHUNT_CATALOG_CACHE", str(tmp_path / "catalog.json"))
     for name in ("ZHUNT_CATALOG_UPDATES", "ZHUNT_CATALOG_URL", "ZHUNT_CATALOG_PUBKEY"):
         monkeypatch.delenv(name, raising=False)
+    # ...nor a local model the tester has set up (zhunt local setup)
+    for name in ("ZHUNT_LOCAL_URL", "ZHUNT_LOCAL_PORT", "ZHUNT_LOCAL_MODEL",
+                 "ZHUNT_LOCAL_CONTEXT", "ZHUNT_LOCAL_TOOLS"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)
