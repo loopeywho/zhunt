@@ -266,3 +266,47 @@ def test_a_new_catalog_from_the_feed_keeps_the_local_model(local_up) -> None:
 
     assert response.status_code == 200
     assert is_local_call(call.await_args)
+
+
+@pytest.mark.parametrize(
+    ("path", "function", "body"),
+    [
+        ("/v1/responses", "aresponses", {"model": "zhunt-auto", "input": "Hello"}),
+        (
+            "/v1/messages",
+            "anthropic_messages",
+            {"model": "zhunt-auto", "max_tokens": 50,
+             "messages": [{"role": "user", "content": "Hello"}]},
+        ),
+    ],
+)
+def test_the_private_header_works_on_every_wire_format(local_up, path, function, body) -> None:
+    import os
+
+    upstream = AsyncMock(return_value=llm.ModelResponse({"id": "r", "output": []}))
+    with daemon(AsyncMock(), env=LOCAL_ENV) as (client, _), patch(f"zhunt.llm.{function}", upstream):
+        client.post(
+            path,
+            headers={"Authorization": f"Bearer {os.environ['ZHUNT_MASTER_KEY']}", **PRIVATE},
+            json=body,
+        )
+
+    assert upstream.await_count == 1
+    assert is_local_call(upstream.await_args)
+
+
+def test_without_a_local_model_the_private_header_blocks_every_wire_format() -> None:
+    import os
+
+    upstream = AsyncMock()
+    with daemon(AsyncMock(), env={"FAKE_API_KEY": "k"}) as (client, _), patch(
+        "zhunt.llm.aresponses", upstream
+    ):
+        response = client.post(
+            "/v1/responses",
+            headers={"Authorization": f"Bearer {os.environ['ZHUNT_MASTER_KEY']}", **PRIVATE},
+            json={"model": "zhunt-auto", "input": "Hello"},
+        )
+
+    assert response.status_code == 503 and NOTHING_SENT in response.text
+    upstream.assert_not_awaited()

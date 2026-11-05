@@ -30,3 +30,11 @@ sharing it:
 shasum -a 256 dist/Zhunt-Setup-macos-*.dmg
 pkgutil --check-signature dist/Zhunt-Setup-macos-*.pkg
 ```
+
+## Local model (optional, Apple Silicon)
+
+The installed CLI can also set up a model that runs on this Mac for private
+chats: `zhunt local check`, then `zhunt local setup --zhunt-plus <folder>`. It
+builds the pinned, patched InferSSD engine from a local checkout and registers
+the server; nothing is downloaded and no model is bundled. See
+`docs/LOCAL_PROVIDER.md` for what is tested and what is not.
