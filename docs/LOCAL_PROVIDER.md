@@ -21,8 +21,9 @@ private goes only there.
   - the chat is longer than the local context;
   - the chat needs tools the local model lacks.
 
-  A failed local call is not retried on the cloud. It is also not benched, so a restarted server works at once.
-- **Ranking.** Ordinary chats try every free cloud model on every tier first, then paid models if premium is on. Only after that is the local model the last resort. This order is structural, not a score, so sampled reliability cannot put the slow local model ahead. A truncated local answer is not rerun.
+  A failed local call is not retried on the cloud. It is also not benched, so a restarted server works at once. Calls to a loopback address ignore `HTTP_PROXY`/`HTTPS_PROXY`, so a private chat cannot pass through a configured proxy.
+- **Scope.** Only the three chat endpoints honour the private mark: `/v1/chat/completions`, `/v1/responses` and `/v1/messages`. The workspace's compare, transcription and image features are separate actions the user starts, and they ignore it.
+- **Ranking.** Ordinary chats try cloud models first, tier by tier as before (free before paid within a tier). The local model is used only when no cloud model on any tier can take the chat. This order is structural, not a score, so sampled reliability cannot put the slow local model ahead. A truncated local answer is not rerun.
 
 ## `zhunt local` commands
 
@@ -32,11 +33,11 @@ private goes only there.
 | `zhunt local setup --zhunt-plus PATH` | Five steps: hardware check, SSD timing, engine, model, server. **Engine:** clones the local InferSSD checkout (a folder, never a URL), checks out the pinned revision `368df4f`, checks and then applies patches 0001-0003 from the Zhunt Plus folder, and builds with Metal. It asks first. **Model:** picks the largest complete model found, or `--model`. **Server:** asks first, starts the Zhunt Plus launcher in the background, waits until it answers, then registers it in `~/.zhunt/env`. |
 | `zhunt local start` / `stop` / `status` | Start or stop the server set up earlier, or show the registered address and whether it answers. |
 
-Nothing is downloaded. The model must already be on disk. The defaults are port 8080 (InferSSD's), context 1024 and an 11 GiB engine budget.
+Zhunt itself downloads nothing, and the model must already be on disk. The engine's CMake files do contain fetch steps (KleidiAI, BoringSSL/LibreSSL), but they sit behind options the Metal build script does not turn on. Without running the build, it is unverified that it makes no network requests. The defaults are port 8080 (InferSSD's), context 1024 and an 11 GiB engine budget.
 
 ## What was tested
 
-- 776 tests pass with `uv run pytest`, including 30 for the provider and privacy rule and 13 for `zhunt local`.
+- 777 tests pass with `uv run pytest`, including 31 for the provider, the privacy rule and the proxy bypass, and 13 for `zhunt local`.
 - Every daemon test uses a faked provider call. The "server down" case uses a real connection to an unused loopback port.
 - In a real run on the dev Mac (Apple Silicon, 24 GB), using `prepare_engine`'s own code with only the build commands stubbed:
   - the local InferSSD checkout was cloned into a scratch folder;
@@ -64,5 +65,4 @@ Nothing is downloaded. The model must already be on disk. The defaults are port 
 
 - **Workspace UI.** Add a private-chat switch and a local-model status line. Show the user anything about to leave the machine (search queries) before it is sent.
 - **Agent tools.** Private mode covers model calls only. The agent's browser and email tools reach the internet whatever the chat's mode.
-- **HTTP proxy.** The shared HTTP client honours `HTTP_PROXY`. If a user has one set without `NO_PROXY=127.0.0.1,localhost`, local calls could pass through it. Consider `trust_env=False` for the local route. The health check already does this.
 - **Start at login.** A launchd agent to start the local server at login, and a packaged installer step for it.

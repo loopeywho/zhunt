@@ -310,3 +310,26 @@ def test_without_a_local_model_the_private_header_blocks_every_wire_format() -> 
 
     assert response.status_code == 503 and NOTHING_SENT in response.text
     upstream.assert_not_awaited()
+
+
+def test_local_calls_ignore_an_http_proxy_but_cloud_calls_keep_it(monkeypatch) -> None:
+    import asyncio
+
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+
+    async def transports():
+        local = llm._client(direct=llm._is_loopback("http://127.0.0.1:8080/v1"))
+        cloud = llm._client(direct=llm._is_loopback("https://api.example.com/v1"))
+        found = (
+            local._transport_for_url(llm.httpx.URL("http://127.0.0.1:8080/v1")),
+            cloud._transport_for_url(llm.httpx.URL("https://api.example.com/v1")),
+        )
+        await llm.aclose()
+        return found
+
+    local, cloud = asyncio.run(transports())
+    assert type(local._pool).__name__ == "AsyncConnectionPool"  # straight to the server
+    assert type(cloud._pool).__name__ == "AsyncHTTPProxy"
+    assert llm._is_loopback("http://localhost:7777/v1") and llm._is_loopback("http://[::1]:1/")
+    assert not llm._is_loopback("http://localhost.example.com/v1")

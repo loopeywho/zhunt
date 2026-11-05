@@ -163,7 +163,8 @@ def setup(
         else:
             _confirm(
                 f"Build InferSSD {local_setup.PINNED_REVISION[:7]} with "
-                f"{len(patches)} patches in {engine_dir}? (about 2 to 12 minutes)",
+                f"{len(patches)} patches in {engine_dir}? (about 2 to 12 minutes; "
+                f"it should need no downloads, which a real build has not yet confirmed)",
                 yes,
             )
             local_setup.prepare_engine(
