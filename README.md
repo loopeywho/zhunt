@@ -7,7 +7,7 @@ for coding tools such as Codex and Hermes.
 
 > **Status: public pre-release.** Free and open source. Tested against the live
 > providers (Groq, Google AI Studio, Cerebras, Z.ai, Kilo Gateway and OVHcloud) on
-> 2026-10-16, including a fresh install with no keys. Pro is not on sale yet.
+> 2026-10-16, including a fresh install with no keys. Pro ($7/month, 7-day free trial) is on sale on the website.
 >
 > Website and live demo: <https://zhunt.kindredwildcat.com> ·
 > [try the demo](https://zhunt.kindredwildcat.com/demo/) · feedback:
