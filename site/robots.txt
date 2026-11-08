@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /activate
+
+Sitemap: https://zhunt.kindredwildcat.com/sitemap.xml

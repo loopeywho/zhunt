@@ -15,16 +15,13 @@ def test_install_section_points_at_the_v2_package_not_v1_installers():
     assert "OpenRouter" not in html and "Nous Portal" not in html
 
 
-def test_pro_is_on_sale_through_the_payment_link():
-    # Deploy this only once /api/licence is configured, or checkout charges people who get no key.
+def test_pre_release_takes_no_payments_until_pro_can_be_activated():
+    # Pre-release: the licence service is not configured, so a checkout would charge people
+    # who then get no key. Put the payment link back (Pro card and disclosure) for launch.
     html = (SITE / "index.html").read_text(encoding="utf-8")
 
-    assert html.count(PAYMENT_LINK) == 2  # Pro card and the checkout disclosure
-    assert "%5Bzhunt%20Pro%5D%20waitlist" not in html
-    assert "(soon)" not in html and "Coming soon" not in html
-    # the price and renewal terms are shown before the customer reaches Stripe
-    assert "$0 today" in html and "renews at $7/month before applicable tax" in html
-    assert 'href="activate.html">Activate Pro</a>' in html
+    assert PAYMENT_LINK not in html and "buy.stripe.com" not in html
+    assert html.count("%5Bzhunt%20Pro%5D%20waitlist") == 2  # Pro card and the note under the plans
     assert "$7/mo" in html
     assert "£" not in html
     assert "eVqfZg5Vg25ubZo77DcMM00" not in html
@@ -66,3 +63,19 @@ def test_setup_guide_is_linked_and_only_names_real_commands():
         words = command.split()
         args = words if words[0] in {"keys", "licence", "premium"} else words[:1]
         assert CliRunner().invoke(app, [*args, "--help"]).exit_code == 0, command
+
+
+def test_pages_give_link_previews_and_crawlers_what_they_need():
+    # Shared links on LinkedIn and X show a card only with these; the image must be absolute.
+    for page in ("index.html", "setup.html", "privacy.html", "terms.html"):
+        html = (SITE / page).read_text(encoding="utf-8")
+        for tag in ('rel="canonical"', 'property="og:title"', 'property="og:description"',
+                    'property="og:url"', 'name="twitter:card" content="summary_large_image"'):
+            assert tag in html, (page, tag)
+        assert 'property="og:image" content="https://zhunt.kindredwildcat.com/media/zhunt-demo-poster.jpg"' in html
+    assert (SITE / "media" / "zhunt-demo-poster.jpg").is_file()
+    # Without these files Cloudflare Pages answers with the home page instead.
+    robots = (SITE / "robots.txt").read_text(encoding="utf-8")
+    assert "Sitemap: https://zhunt.kindredwildcat.com/sitemap.xml" in robots
+    sitemap = (SITE / "sitemap.xml").read_text(encoding="utf-8")
+    assert sitemap.startswith("<?xml") and "<loc>https://zhunt.kindredwildcat.com/</loc>" in sitemap
