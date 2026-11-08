@@ -202,6 +202,8 @@ state. If anything fails, zhunt keeps the catalog it shipped with and says why.
   its API show whether a key is set, never its value.
 - The master key that protects the local API is created on first run. `zhunt open`
   passes it in the URL fragment, which the browser never sends to a server.
+- Saved chats and projects stay in `~/.zhunt/chats` (owner-only files, never uploaded).
+  Delete a chat from History, or switch a chat window to "private" to save nothing.
 - Request telemetry stays in `~/.zhunt/telemetry.jsonl` (no prompt or response
   content). Zhunt never phones home, unless you turn on catalog updates.
 - **Catalog updates are off by default.** Nothing is fetched unless you run

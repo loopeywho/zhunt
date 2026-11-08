@@ -327,6 +327,27 @@ Decided while building the backend; the code and tests treat these as the contra
   For streamed replies `latency_ms` is the time to the end of the stream.
 - `GET /decisions?limit=` outside 1-200 -> 422 (FastAPI validation).
 
+## Saved chats and projects
+
+Chat windows save their conversations locally in `~/.zhunt/chats` (one 0600 file per chat plus
+`index.json` and `projects.json`; the index is rebuilt from the chat files if it is missing or
+damaged). All routes use the master key.
+
+- `GET /chats?project=<id>|none&q=` -> `{chats: [{id, title, project, updated, count, rev, snippet?}], limit}`.
+  The list comes from the index; only `q` (title and message text, case-insensitive) reads the files.
+- `GET /chats/{id}` -> `{id, title, project, alias, created, updated, rev, messages: [{role, content, model?}]}`.
+- `PUT /chats/{id} {messages, project?, alias?, rev?}` creates or replaces a chat; ids are 16 lowercase
+  hex characters made by the client. `rev` must equal the stored revision for an existing chat, else
+  **409** (a second window with an older copy cannot overwrite newer messages). Returns `{id, rev, updated}`.
+  Limits: 400 messages, 100,000 characters per message, a 1 MiB body, 1000 chats (409 when full; nothing
+  is pruned silently). Roles are `user` and `assistant`; an empty chat is refused (400), so no empty files.
+- `DELETE /chats/{id}`.
+- `GET /projects` -> `{projects: [{id, name, instructions}], limit}`; `PUT /projects/{id} {name, instructions?}`
+  (name unique, at most 50 projects, instructions up to 4000 characters); `DELETE /projects/{id}`.
+  Deleting a project leaves its chats untouched; a chat whose project is gone shows as "no project".
+  A project's instructions are sent as the system message of every chat in it.
+- Symlinked or malformed chat files are skipped, never followed or repaired.
+
 ## Engineering workspace (macOS/Linux)
 
 All `/zhunt/api/engineering` endpoints use the existing master-key authentication.

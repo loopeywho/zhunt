@@ -134,3 +134,24 @@
 .logtable tr:hover td { background: var(--surface-3); }
 .logtable .c-in, .logtable .c-out, .logtable .c-latency, .logtable .c-att { text-align: right; }
 .logtable .c-failure { white-space: normal; min-width: 14ch; }
+
+/* ---- chat: saved chats and projects ---- */
+.chat { position: relative; }
+.chat-header { flex-wrap: wrap; }
+.chat-header select.ctl { min-width: 0; max-width: 11em; }
+.chat-history { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; overflow-y: auto; background: var(--bg); }
+.chat-history[hidden] { display: none; }
+.chat-history .row { display: flex; gap: 6px; align-items: center; }
+.chat-history .row input[type=search] { flex: 1; min-width: 0; }
+.hist-list { display: flex; flex-direction: column; gap: 4px; }
+.hist-item { display: flex; align-items: stretch; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.hist-item.current { border-color: var(--accent); }
+.hist-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 6px 8px; background: none; border: 0; color: var(--text); cursor: pointer; font: inherit; }
+.hist-open:hover { background: var(--surface-2); }
+.hist-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-sub, .hist-snippet { font-size: var(--fs-small); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-empty { margin: 4px 0; }
+.hist-projects h3 { margin: 8px 0 4px; font-size: var(--fs-small); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.hist-proj { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
+.hist-field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.hist-field span { font-size: var(--fs-small); color: var(--text-dim); }
