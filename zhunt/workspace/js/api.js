@@ -157,6 +157,17 @@ export const api = {
     return request('/zhunt/api/decisions?' + q, { signal });
   },
   compare: (messages, models, signal) => request('/zhunt/api/compare', { method: 'POST', json: { messages, models }, signal }),
+  chats: {
+    list: ({ q = '', project = '' } = {}) => request('/zhunt/api/chats?' + new URLSearchParams({ ...(q ? { q } : {}), ...(project ? { project } : {}) })),
+    get: (id) => request('/zhunt/api/chats/' + encodeURIComponent(id)),
+    put: (id, doc) => request('/zhunt/api/chats/' + encodeURIComponent(id), { method: 'PUT', json: doc }),
+    remove: (id) => request('/zhunt/api/chats/' + encodeURIComponent(id), { method: 'DELETE' }),
+  },
+  projects: {
+    list: () => request('/zhunt/api/projects'),
+    put: (id, project) => request('/zhunt/api/projects/' + encodeURIComponent(id), { method: 'PUT', json: project }),
+    remove: (id) => request('/zhunt/api/projects/' + encodeURIComponent(id), { method: 'DELETE' }),
+  },
   layouts: {
     list: () => request('/zhunt/api/layouts'),
     get: (name) => request('/zhunt/api/layouts/' + encodeURIComponent(name)),

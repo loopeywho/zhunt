@@ -4,6 +4,7 @@ import { h, uid, fmtMs, fmtNum } from '../dom.js';
 import { renderMarkdown } from '../md.js';
 import { api, streamChat, transcribe, ApiError } from '../api.js';
 import { tierChip, modelLabel, errorBox, chip } from './util.js';
+import { createHistory, newId } from './chat-history.js';
 
 export const ALIASES = [
   ['zhunt-auto', 'auto'],
@@ -14,12 +15,24 @@ export const ALIASES = [
 ];
 
 const MAX_HISTORY = 24;
+const ID16 = /^[a-f0-9]{16}$/;
 const SUGGESTIONS = ['Explain this error message', 'Write a regex for UK postcodes', 'Plan a 3-day trip to Penang', 'Summarise a long article'];
 
 export function chatTile(svc, state, ctx) {
   const session = 'ui-' + Math.random().toString(36).slice(2, 8);
   let alias = ALIASES.some(([v]) => v === state.alias) ? state.alias : 'zhunt-auto';
-  const history = []; // {role, content} sent to the model
+  const history = []; // {role, content, model?} (model is only kept for saving; it is not sent)
+  // Saved chats: a chat is saved as it goes unless this window is "private". The id is made on the
+  // first message; revs holds the server's revision per chat so a stale second window gets a 409.
+  let chatId = ID16.test(state.chat) ? state.chat : null;
+  let project = ID16.test(state.project) ? state.project : null;
+  let priv = state.private === true;
+  let projects = [];
+  const revs = new Map();
+  const conflicts = new Set();
+  let saveChain = Promise.resolve();
+  let saveWarned = false;
+  let openToken = 0;
   let busy = false;
   let controller = null;
   let lastSeenTs = 0;
@@ -30,8 +43,18 @@ export function chatTile(svc, state, ctx) {
   const select = h('select', { id: selectId, class: 'ctl', 'aria-label': 'Model alias', title: 'Which Zhunt alias to request' },
     ALIASES.map(([v, label]) => h('option', { value: v, selected: v === alias }, label)));
   select.addEventListener('change', () => { alias = select.value; ctx.changed(); });
-  const clearBtn = h('button', { class: 'pane-btn wide', type: 'button', title: 'Clear conversation', onclick: reset }, 'clear');
-  const header = h('div', { class: 'row' }, select, clearBtn);
+  const projectSelect = h('select', { class: 'ctl', 'aria-label': 'Project for this chat', title: 'Project: its instructions are sent with every message' });
+  projectSelect.addEventListener('change', () => { project = projectSelect.value || null; ctx.changed(); if (history.length) save(); });
+  const historyBtn = h('button', { class: 'pane-btn wide', type: 'button', title: 'Saved chats and projects', onclick: () => panel.toggle() }, 'history');
+  const newBtn = h('button', { class: 'pane-btn wide', type: 'button', title: 'Start a new chat (the current one stays in History)', onclick: startNew }, 'new');
+  const saveBtn = h('button', { class: 'pane-btn wide', type: 'button', onclick: toggleSaving });
+  const header = h('div', { class: 'row chat-header' }, select, projectSelect, historyBtn, newBtn, saveBtn);
+  const panel = createHistory(svc, {
+    current: () => chatId,
+    open: (id) => openChat(id),
+    deleted: (id) => { revs.delete(id); if (id === chatId) startNew(); },
+    projects: (list) => { projects = list; paintProjects(); },
+  });
 
   const msgs = h('div', { class: 'msgs', role: 'log', 'aria-label': 'Conversation', 'aria-live': 'off', tabindex: '0' });
   msgs.dataset.keepScroll = '1';
@@ -86,7 +109,7 @@ export function chatTile(svc, state, ctx) {
     micBtn.setAttribute('aria-pressed', 'true');
     micBtn.classList.add('recording');
   }
-  const el = h('div', { class: 'chat' }, msgs, form, live);
+  const el = h('div', { class: 'chat' }, msgs, form, live, panel.el);
 
   function paintEmpty() {
     if (msgs.childElementCount) return;
@@ -126,16 +149,112 @@ export function chatTile(svc, state, ctx) {
     return { node, text, meta };
   }
 
-  function reset() {
+  function reset(focus = true) {
     generation += 1;
     if (busy) { stop(); setBusy(false); controller = null; }
     history.length = 0;
     msgs.replaceChildren();
     paintEmpty();
-    input.focus();
+    if (focus) input.focus();
   }
 
   function stop() { controller?.abort(); }
+
+  function paintSaving() {
+    saveBtn.textContent = priv ? 'private' : 'saved';
+    saveBtn.setAttribute('aria-pressed', String(priv));
+    saveBtn.title = priv ? 'This window is not saving chats. Click to save again.' : 'Chats are saved on this computer as you go. Click to stop saving.';
+  }
+  function paintProjects() {
+    if (project && projects.length && !projects.some((p) => p.id === project)) { project = null; ctx.changed(); } // deleted elsewhere
+    projectSelect.replaceChildren(h('option', { value: '' }, 'no project'), ...projects.map((p) => h('option', { value: p.id }, p.name)));
+    projectSelect.value = project || '';
+  }
+  paintSaving();
+  paintProjects();
+  api.projects.list().then((r) => { projects = r.projects; paintProjects(); }, () => {});
+
+  function toggleSaving() {
+    if (!priv) {
+      if (chatId && revs.has(chatId) && !confirm('Stop saving this chat? The copy already saved stays in History until you delete it there.')) return;
+      priv = true;
+    } else {
+      priv = false;
+      if (history.length) save();
+    }
+    paintSaving();
+    ctx.changed();
+  }
+
+  function startNew() {
+    reset();
+    chatId = null;
+    openToken += 1;
+    ctx.changed();
+  }
+
+  // Save the conversation so far. Saves run one after another, keyed by chat id, so a reply that
+  // finishes right before the user switches chats is still written to the chat it belongs to.
+  function save() {
+    if (priv || !history.length || history[history.length - 1].role !== 'assistant') return;
+    if (!chatId) { chatId = newId(); ctx.changed(); }
+    const id = chatId;
+    if (conflicts.has(id)) return;
+    const messages = history.map((m) => (m.model ? { role: m.role, content: m.content, model: m.model } : { role: m.role, content: m.content }));
+    const doc = { project, alias, messages };
+    saveChain = saveChain.then(async () => {
+      if (conflicts.has(id)) return;
+      try {
+        const res = await api.chats.put(id, { ...doc, rev: revs.get(id) ?? null });
+        revs.set(id, res.rev);
+      } catch (err) {
+        if (err.status === 409 && revs.has(id)) {
+          conflicts.add(id);
+          svc.toast('This chat was changed in another window, so this window has stopped saving it. Reopen it from History.', true);
+        } else if (!saveWarned) {
+          saveWarned = true;
+          svc.toast('Could not save this chat: ' + (err.message || err), true);
+        }
+      }
+    });
+  }
+
+  async function openChat(id) {
+    const mine = ++openToken;
+    const restoring = !history.length && !msgs.querySelector('.msg'); // opening the window, not the user's click
+    let chat;
+    try { chat = await api.chats.get(id); } catch (err) {
+      if (mine !== openToken) return;
+      if (err.status === 404) { if (id === chatId) { chatId = null; ctx.changed(); } svc.toast('That chat is no longer saved.', true); } else svc.toast(err.message || String(err), true);
+      return;
+    }
+    if (mine !== openToken || destroyed) return;
+    reset(!restoring);
+    chatId = chat.id;
+    revs.set(chat.id, chat.rev);
+    conflicts.delete(chat.id);
+    project = ID16.test(chat.project) ? chat.project : null;
+    if (ALIASES.some(([v]) => v === chat.alias)) { alias = chat.alias; select.value = alias; }
+    history.push(...chat.messages.map((m) => ({ role: m.role, content: m.content, ...(m.model ? { model: m.model } : {}) })));
+    paintProjects();
+    renderHistory();
+    ctx.changed();
+  }
+
+  // Saved text is untrusted: user turns are set as text, assistant turns go through the markdown renderer.
+  function renderHistory() {
+    msgs.replaceChildren();
+    for (const m of history) {
+      const node = addMsg(m.role);
+      if (m.role === 'user') node.text.textContent = m.content;
+      else {
+        renderMarkdown(m.content, node.text);
+        if (m.model) node.meta.append(h('div', { class: 'meta-line' }, h('span', { class: 'meta-label' }, 'answered by'), modelLabel(m.model)));
+      }
+    }
+    if (!history.length) paintEmpty();
+    scrollDown();
+  }
 
   async function send() {
     const content = input.value.trim();
@@ -160,8 +279,10 @@ export function chatTile(svc, state, ctx) {
     const paint = () => { raf = 0; if (stale()) return; const stick = nearBottom(); renderMarkdown(acc, reply.text); if (stick) scrollDown(); };
     try {
       // the window must start on a user turn (some providers reject a leading assistant message)
-      const outgoing = history.slice(-MAX_HISTORY);
+      const outgoing = history.slice(-MAX_HISTORY).map(({ role, content: text }) => ({ role, content: text }));
       while (outgoing.length && outgoing[0].role !== 'user') outgoing.shift();
+      const rules = projects.find((p) => p.id === project)?.instructions;
+      if (rules) outgoing.unshift({ role: 'system', content: rules }); // after the trim above, which would drop it
       const res = await streamChat({
         model: alias, messages: outgoing, session, signal: ctrl.signal,
         onDelta: (d) => { if (stale()) return; acc += d; reply.node.classList.remove('pending'); if (!raf) raf = requestAnimationFrame(paint); },
@@ -172,7 +293,8 @@ export function chatTile(svc, state, ctx) {
       if (!acc) acc = '(empty reply)';
       reply.node.classList.remove('pending');
       renderMarkdown(acc, reply.text);
-      history.push({ role: 'assistant', content: res.text });
+      history.push({ role: 'assistant', content: res.text, ...(res.model ? { model: res.model } : {}) });
+      save();
       if (res.truncated && res.text) reply.text.append(h('p', { class: 'dim' }, '(the stream ended without a finish signal: this reply may be cut short)'));
       live.textContent = res.truncated ? 'Reply may be incomplete' : 'Reply complete';
       // free the composer now: the routing-decision lookup below can take a couple of seconds
@@ -186,7 +308,7 @@ export function chatTile(svc, state, ctx) {
       if (stale()) return; // cleared or closed while in flight: the new conversation is none of our business
       reply.node.classList.remove('pending');
       if (err.name === 'AbortError') {
-        if (acc) { renderMarkdown(acc, reply.text); history.push({ role: 'assistant', content: acc }); } else { history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty(); }
+        if (acc) { renderMarkdown(acc, reply.text); history.push({ role: 'assistant', content: acc }); save(); } else { history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty(); }
         reply.meta.textContent = 'stopped';
       } else if (err instanceof ApiError && err.status === 401) {
         history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty();
@@ -276,11 +398,13 @@ export function chatTile(svc, state, ctx) {
     }
   }
 
+  if (chatId && !priv) openChat(chatId);
+
   return {
     el,
     header,
-    getState: () => ({ alias }),
+    getState: () => ({ alias, project, chat: priv ? null : chatId, private: priv }),
     focusPrimary: () => input.focus(),
-    destroy() { destroyed = true; generation += 1; controller?.abort(); recorder?.stop(); },
+    destroy() { save(); destroyed = true; generation += 1; controller?.abort(); recorder?.stop(); },
   };
 }

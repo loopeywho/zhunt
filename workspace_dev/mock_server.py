@@ -80,6 +80,9 @@ def catalog_payload(**extra):
     }
 LOCK = threading.Lock()
 BOTS = {}
+CHATS = {}  # id -> chat (with rev), like ~/.zhunt/chats
+PROJECTS = {}
+LAST_CHAT = {}  # the most recent /v1/chat/completions body, for tests
 TEAM = {
     "researcher": "Three free options: **Obsidian** (local files), **Joplin** (open source, own sync), **Notion** free plan (easy sharing).\n\n@writer can you turn this into a short recommendation?",
     "writer": "**Pick Joplin for the simplest free start.** Obsidian if you like plugins, Notion if you share a lot.\n\n@critic does this read clearly?",
@@ -272,6 +275,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._layouts("get", u.path.rsplit("/", 1)[1])
         if u.path == "/zhunt/api/bots":
             return self._send(200, {"bots": [BOTS[k] for k in sorted(BOTS)]})
+        if u.path == "/mock/last_chat":
+            return self._send(200, LAST_CHAT)
+        if u.path == "/zhunt/api/chats":
+            q = parse_qs(u.query)
+            needle, proj = q.get("q", [""])[0].lower(), q.get("project", [""])[0]
+            rows = []
+            for c in sorted(CHATS.values(), key=lambda c: c["updated"], reverse=True):
+                if proj == "none" and c.get("project") or proj not in ("", "none") and c.get("project") != proj:
+                    continue
+                meta = {k: c[k] for k in ("id", "title", "project", "updated", "rev")} | {"count": len(c["messages"])}
+                if needle:
+                    hit = next((m["content"] for m in c["messages"] if needle in m["content"].lower()), None)
+                    if needle not in c["title"].lower() and hit is None:
+                        continue
+                    meta["snippet"] = c["title"] if needle in c["title"].lower() else hit[:120]
+                rows.append(meta)
+            return self._send(200, {"chats": rows, "limit": 1000})
+        if u.path.startswith("/zhunt/api/chats/"):
+            chat = CHATS.get(u.path.rsplit("/", 1)[1])
+            return self._send(200, chat) if chat else self._send(404, {"detail": "no saved chat with that id"})
+        if u.path == "/zhunt/api/projects":
+            return self._send(200, {"projects": sorted(PROJECTS.values(), key=lambda p: p["name"].lower()), "limit": 50})
         if u.path == "/zhunt/api/plan":
             pro = STATE["plan"] == "pro"
             return self._send(200, {
@@ -294,6 +319,23 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path.startswith("/zhunt/api/layouts/") and self._authed():
             return self._layouts("put", u.path.rsplit("/", 1)[1])
+        if u.path.startswith("/zhunt/api/chats/") and self._authed():
+            cid, body = u.path.rsplit("/", 1)[1], self._json_body() or {}
+            old = CHATS.get(cid)
+            if not body.get("messages"):
+                return self._send(400, {"detail": "there is nothing to save yet"})
+            if old and body.get("rev") != old["rev"]:
+                return self._send(409, {"detail": "this chat was saved from another window; reopen it from History"})
+            first = next((m["content"] for m in body["messages"] if m["role"] == "user"), "New chat")
+            CHATS[cid] = {"id": cid, "title": first[:60], "project": body.get("project"), "alias": body.get("alias", ""), "created": time.time(),
+                          "updated": time.time(), "rev": (old["rev"] + 1) if old else 1, "messages": body["messages"]}
+            return self._send(200, {"id": cid, "rev": CHATS[cid]["rev"], "updated": CHATS[cid]["updated"]})
+        if u.path.startswith("/zhunt/api/projects/") and self._authed():
+            pid, body = u.path.rsplit("/", 1)[1], self._json_body() or {}
+            if not str(body.get("name", "")).strip():
+                return self._send(400, {"detail": "name is required"})
+            PROJECTS[pid] = {"id": pid, "name": body["name"].strip(), "instructions": str(body.get("instructions", ""))}
+            return self._send(200, PROJECTS[pid])
         if u.path.startswith("/zhunt/api/bots/") and self._authed():
             handle = u.path.rsplit("/", 1)[1]
             body = self._json_body() or {}
@@ -322,6 +364,11 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path.startswith("/zhunt/api/layouts/") and self._authed():
             return self._layouts("delete", u.path.rsplit("/", 1)[1])
+        if u.path.startswith("/zhunt/api/chats/") and self._authed():
+            return self._send(200, {"id": CHATS.pop(u.path.rsplit("/", 1)[1], {}).get("id")}) if u.path.rsplit("/", 1)[1] in CHATS else self._send(404, {"detail": "no saved chat with that id"})
+        if u.path.startswith("/zhunt/api/projects/") and self._authed():
+            PROJECTS.pop(u.path.rsplit("/", 1)[1], None)
+            return self._send(200, {"id": u.path.rsplit("/", 1)[1]})
         if u.path.startswith("/zhunt/api/bots/") and self._authed():
             BOTS.pop(u.path.rsplit("/", 1)[1], None)
             return self._send(200, {"handle": u.path.rsplit("/", 1)[1]})
@@ -458,6 +505,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"detail": "invalid JSON"})
         alias = body.get("model", "zhunt-auto")
         msgs = body.get("messages") or []
+        LAST_CHAT.clear()
+        LAST_CHAT.update(body)
         prompt = str(msgs[-1].get("content", "")) if msgs else ""
         session = self.headers.get("x-session-id")
         p = prompt.lower()

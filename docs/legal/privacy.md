@@ -20,6 +20,9 @@ address and subscription status, via Stripe.
   the AI provider it selects (for example Groq, Google AI Studio, Cerebras or, on Pro with
   your opt-in, Anthropic, OpenAI or Google's paid Gemini API). That provider receives your prompt under its own terms and
   privacy policy, just as if you had used it directly.
+- **Saved chats and projects**, in `~/.zhunt/chats` readable only by your user account. Chat
+  windows save the conversation here as you go; delete any chat from History, switch a window
+  to private (it then saves nothing), or delete the folder. Zhunt never uploads them.
 - **Provider API keys**, stored in `~/.zhunt/env` readable only by your user account.
 - **Usage records**, in `~/.zhunt/telemetry.jsonl` and `~/.zhunt/state.db`: time, model,
   tier, token counts, estimated cost, success or failure. No prompt or response text.
