@@ -155,3 +155,12 @@
 .hist-proj { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
 .hist-field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .hist-field span { font-size: var(--fs-small); color: var(--text-dim); }
+
+/* ---- chat: per-message buttons and the in-place editor ---- */
+.msg-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; opacity: 0.55; transition: opacity 0.12s; }
+.msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; }
+.msg-actions[hidden] { display: none; }
+.act-btn { padding: 0 6px; height: 20px; font: inherit; font-size: var(--fs-small); color: var(--text-dim); background: none; border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.act-btn:hover, .act-btn:focus-visible { color: var(--text); border-color: var(--border-strong); background: var(--surface-2); }
+.edit-input { width: 100%; box-sizing: border-box; resize: vertical; }
+.edit-row { display: flex; gap: 6px; margin-top: 4px; }

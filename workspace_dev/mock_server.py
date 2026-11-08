@@ -18,7 +18,7 @@ Implements docs/WORKSPACE_API.md with realistic fake data (stdlib only):
   *    /zhunt/api/catalog[/update(s)]   the bundled catalog; switch is Pro-only; nothing is fetched
   GET  /zhunt/api/themes[/name]         built-ins from the workspace dir + a user theme from a temp dir
   POST /zhunt/api/keys                  with or without "platform" (prefix detection, 422 when unclear); stores nothing
-  POST /mock/control                    {"layouts_broken": bool, "status_down": bool, "plan": "free"|"pro",
+  POST /mock/control                    {"force_next": "nomodel"|"midstream"|..., "layouts_broken": bool, "status_down": bool, "plan": "free"|"pro",
                                          "no_keys": true (fresh install: only keyless providers)} (no auth), test hook
 
 Usage: python3 workspace_dev/mock_server.py [--port 8765] [--key mockkey]
@@ -384,7 +384,7 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path == "/mock/control":
             body = self._json_body() or {}
-            STATE.update({k: v for k, v in body.items() if k in ("layouts_broken", "status_down", "plan")})
+            STATE.update({k: v for k, v in body.items() if k in ("layouts_broken", "status_down", "plan", "force_next")})
             if body.get("no_keys"):  # a fresh install: only the keyless providers work
                 for prov in CATALOG:
                     prov["key_set"] = bool(prov.get("keyless"))
@@ -510,6 +510,8 @@ class Handler(BaseHTTPRequestHandler):
         prompt = str(msgs[-1].get("content", "")) if msgs else ""
         session = self.headers.get("x-session-id")
         p = prompt.lower()
+        if STATE.get("force_next"):  # a test hook: the next completion behaves like a prompt with this keyword
+            p += " " + str(STATE.pop("force_next"))
         tier = classify(alias, prompt)
         in_tok = max(1, sum(len(str(m.get("content", ""))) for m in msgs) // 4)
 
