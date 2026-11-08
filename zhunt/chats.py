@@ -126,25 +126,28 @@ class ChatStore:
                 rows = [m for m in rows if not m.get("project")]
             elif project:
                 rows = [m for m in rows if m.get("project") == project]
-            needle = (q or "").strip().lower()
-            if not needle:
-                return rows
-            found = []
-            for meta in rows:  # search reads the files; the plain list never does
-                chat = self._valid(_safe_read(self._chat_path(meta["id"])), meta["id"])
-                if not chat:
-                    continue
-                if needle in chat["title"].lower():
-                    found.append({**meta, "snippet": chat["title"]})
-                    continue
-                for message in chat["messages"]:
-                    content = str(message.get("content", ""))
-                    at = content.lower().find(needle)
-                    if at >= 0:
-                        start = max(0, at - 40)
-                        found.append({**meta, "snippet": content[start:at + len(needle) + 80].replace("\n", " ")})
-                        break
-            return found
+            rows = [dict(m) for m in rows]
+        needle = (q or "").strip().lower()
+        if not needle:
+            return rows
+        found = []
+        # Search reads the files, so it runs outside the lock: saves are never held up behind it. Files
+        # are replaced atomically, so a read sees a whole old or new chat; a deleted one is just skipped.
+        for meta in rows:
+            chat = self._valid(_safe_read(self._chat_path(meta["id"])), meta["id"])
+            if not chat:
+                continue
+            if needle in chat["title"].lower():
+                found.append({**meta, "snippet": chat["title"]})
+                continue
+            for message in chat["messages"]:
+                content = str(message.get("content", ""))
+                at = content.lower().find(needle)
+                if at >= 0:
+                    start = max(0, at - 40)
+                    found.append({**meta, "snippet": content[start:at + len(needle) + 80].replace("\n", " ")})
+                    break
+        return found
 
     def get(self, chat_id: str) -> dict[str, Any]:
         chat = self._valid(_safe_read(self._chat_path(chat_id)), chat_id)
@@ -169,6 +172,8 @@ class ChatStore:
                     raise ChatError(409, "this chat was saved from another window; reopen it from History")
                 created, rev = existing.get("created", existing["updated"]), existing["rev"] + 1
             else:
+                if body.get("rev") is not None:  # the client held a saved copy that is gone: do not bring it back
+                    raise ChatError(404, "this chat was deleted from another window")
                 if len(index) >= MAX_CHATS:
                     raise ChatError(409, f"there are already {MAX_CHATS} saved chats; delete some from History")
                 created, rev = time.time(), 1

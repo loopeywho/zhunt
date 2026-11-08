@@ -31,7 +31,8 @@ export function chatTile(svc, state, ctx) {
   const revs = new Map();
   const conflicts = new Set();
   let saveChain = Promise.resolve();
-  let saveWarned = false;
+  const warned = new Set(); // chats whose save failure has already been explained
+  let scheduledLen = 0; // messages in the last save this window scheduled
   let openToken = 0;
   let busy = false;
   let controller = null;
@@ -189,6 +190,7 @@ export function chatTile(svc, state, ctx) {
   function startNew() {
     reset();
     chatId = null;
+    scheduledLen = 0;
     openToken += 1;
     ctx.changed();
   }
@@ -200,6 +202,7 @@ export function chatTile(svc, state, ctx) {
     if (!chatId) { chatId = newId(); ctx.changed(); }
     const id = chatId;
     if (conflicts.has(id)) return;
+    scheduledLen = history.length;
     const messages = history.map((m) => (m.model ? { role: m.role, content: m.content, model: m.model } : { role: m.role, content: m.content }));
     const doc = { project, alias, messages };
     saveChain = saveChain.then(async () => {
@@ -211,8 +214,14 @@ export function chatTile(svc, state, ctx) {
         if (err.status === 409 && revs.has(id)) {
           conflicts.add(id);
           svc.toast('This chat was changed in another window, so this window has stopped saving it. Reopen it from History.', true);
-        } else if (!saveWarned) {
-          saveWarned = true;
+        } else if (err.status === 413) {
+          conflicts.add(id); // too long to save: stop retrying it
+          svc.toast('This chat is too long to save any more. Start a new chat to keep saving.', true);
+        } else if (err.status === 404 && revs.has(id)) {
+          conflicts.add(id);
+          svc.toast('This chat was deleted in another window, so it is no longer being saved.', true);
+        } else if (!warned.has(id)) {
+          warned.add(id);
           svc.toast('Could not save this chat: ' + (err.message || err), true);
         }
       }
@@ -236,6 +245,7 @@ export function chatTile(svc, state, ctx) {
     project = ID16.test(chat.project) ? chat.project : null;
     if (ALIASES.some(([v]) => v === chat.alias)) { alias = chat.alias; select.value = alias; }
     history.push(...chat.messages.map((m) => ({ role: m.role, content: m.content, ...(m.model ? { model: m.model } : {}) })));
+    scheduledLen = history.length; // what was just loaded is already saved
     paintProjects();
     renderHistory();
     ctx.changed();
@@ -281,6 +291,7 @@ export function chatTile(svc, state, ctx) {
       // the window must start on a user turn (some providers reject a leading assistant message)
       const outgoing = history.slice(-MAX_HISTORY).map(({ role, content: text }) => ({ role, content: text }));
       while (outgoing.length && outgoing[0].role !== 'user') outgoing.shift();
+      if (project) { try { projects = (await api.projects.list()).projects; } catch { /* keep the copy we have */ } }
       const rules = projects.find((p) => p.id === project)?.instructions;
       if (rules) outgoing.unshift({ role: 'system', content: rules }); // after the trim above, which would drop it
       const res = await streamChat({
@@ -293,7 +304,8 @@ export function chatTile(svc, state, ctx) {
       if (!acc) acc = '(empty reply)';
       reply.node.classList.remove('pending');
       renderMarkdown(acc, reply.text);
-      history.push({ role: 'assistant', content: res.text, ...(res.model ? { model: res.model } : {}) });
+      const entry = { role: 'assistant', content: res.text, ...(res.model ? { model: res.model } : {}) };
+      history.push(entry);
       save();
       if (res.truncated && res.text) reply.text.append(h('p', { class: 'dim' }, '(the stream ended without a finish signal: this reply may be cut short)'));
       live.textContent = res.truncated ? 'Reply may be incomplete' : 'Reply complete';
@@ -302,7 +314,10 @@ export function chatTile(svc, state, ctx) {
       setBusy(false);
       controller = null;
       svc.store.refresh('decisions');
-      await attachDecision(reply.meta, prevTs, res.model);
+      const answeredBy = await attachDecision(reply.meta, prevTs, res.model);
+      // The stream only names the alias ("zhunt-auto"); the routing decision names the model that answered.
+      // Record it in the saved chat too (only if this chat is still the one on screen).
+      if (answeredBy && answeredBy !== entry.model && history.includes(entry)) { entry.model = answeredBy; save(); }
     } catch (err) {
       if (raf) cancelAnimationFrame(raf);
       if (stale()) return; // cleared or closed while in flight: the new conversation is none of our business
@@ -367,11 +382,11 @@ export function chatTile(svc, state, ctx) {
         if (final || (errorCase && fresh.length) || attempt === 4) {
           if (fresh.length) lastSeenTs = Math.max(lastSeenTs, ...fresh.map((d) => d.ts));
           renderMeta(metaEl, final, fresh.filter((d) => !d.success).reverse(), streamModel, errorCase);
-          return;
+          return final ? final.model : null;
         }
       } catch (err) {
         if (err.status === 401) return;
-        if (attempt === 4) { renderMeta(metaEl, null, [], streamModel, errorCase); return; }
+        if (attempt === 4) { renderMeta(metaEl, null, [], streamModel, errorCase); return null; }
       }
       await new Promise((r) => setTimeout(r, 250 + attempt * 150));
     }
@@ -405,6 +420,6 @@ export function chatTile(svc, state, ctx) {
     header,
     getState: () => ({ alias, project, chat: priv ? null : chatId, private: priv }),
     focusPrimary: () => input.focus(),
-    destroy() { save(); destroyed = true; generation += 1; controller?.abort(); recorder?.stop(); },
+    destroy() { if (history.length !== scheduledLen) save(); destroyed = true; generation += 1; controller?.abort(); recorder?.stop(); },
   };
 }

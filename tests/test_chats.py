@@ -128,3 +128,22 @@ def test_projects_group_chats_and_deleting_one_leaves_chats_without_a_project(cl
     assert api(client, "get", "/projects").json()["projects"] == []
     assert api(client, "get", f"/chats/{A}").json()["project"] == P  # the chat is untouched; the UI shows "no project"
     assert api(client, "delete", f"/projects/{P}").status_code == 404
+
+
+def test_a_chat_deleted_elsewhere_is_not_brought_back_by_a_stale_save(client):
+    saved = api(client, "put", f"/chats/{A}", json={"messages": msgs(("user", "hi"))}).json()
+    api(client, "delete", f"/chats/{A}")
+    stale = api(client, "put", f"/chats/{A}", json={"rev": saved["rev"], "messages": msgs(("user", "hi"), ("assistant", "back?"))})
+    assert stale.status_code == 404 and api(client, "get", "/chats").json()["chats"] == []
+    assert api(client, "put", f"/chats/{A}", json={"messages": msgs(("user", "fresh"))}).status_code == 200  # a new chat with no rev is fine
+
+
+def test_search_does_not_hold_the_lock_while_it_reads_files(tmp_path, monkeypatch):
+    import zhunt.chats as module
+    store = ChatStore(tmp_path)
+    store.put(A, {"messages": msgs(("user", "alpha"), ("assistant", "beta"))})
+    held = []
+    original = module._safe_read
+    monkeypatch.setattr(module, "_safe_read", lambda path: held.append(store.lock._is_owned()) or original(path))
+    store.list(q="beta")
+    assert held and not any(held)
