@@ -63,3 +63,19 @@ def test_setup_guide_is_linked_and_only_names_real_commands():
         words = command.split()
         args = words if words[0] in {"keys", "licence", "premium"} else words[:1]
         assert CliRunner().invoke(app, [*args, "--help"]).exit_code == 0, command
+
+
+def test_pages_give_link_previews_and_crawlers_what_they_need():
+    # Shared links on LinkedIn and X show a card only with these; the image must be absolute.
+    for page in ("index.html", "setup.html", "privacy.html", "terms.html"):
+        html = (SITE / page).read_text(encoding="utf-8")
+        for tag in ('rel="canonical"', 'property="og:title"', 'property="og:description"',
+                    'property="og:url"', 'name="twitter:card" content="summary_large_image"'):
+            assert tag in html, (page, tag)
+        assert 'property="og:image" content="https://zhunt.kindredwildcat.com/media/zhunt-demo-poster.jpg"' in html
+    assert (SITE / "media" / "zhunt-demo-poster.jpg").is_file()
+    # Without these files Cloudflare Pages answers with the home page instead.
+    robots = (SITE / "robots.txt").read_text(encoding="utf-8")
+    assert "Sitemap: https://zhunt.kindredwildcat.com/sitemap.xml" in robots
+    sitemap = (SITE / "sitemap.xml").read_text(encoding="utf-8")
+    assert sitemap.startswith("<?xml") and "<loc>https://zhunt.kindredwildcat.com/</loc>" in sitemap
