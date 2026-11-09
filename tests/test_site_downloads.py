@@ -58,11 +58,30 @@ def test_setup_guide_is_linked_and_only_names_real_commands():
     blocks = re.findall(r"<code>(.*?)</code>", page, re.S)
     code = "\n".join(line.split("#")[0] for block in blocks for line in block.splitlines())
     commands = set(re.findall(r"\bzhunt ((?:[a-z]+)(?: [a-z]+)?)", code))
-    assert {"serve", "open", "doctor", "keys add", "launch codex", "licence activate", "premium on"} <= commands
+    assert {"serve", "open", "doctor", "keys add", "launch codex"} <= commands
+    assert not {"licence activate", "premium on"} & commands
     for command in sorted(commands):
         words = command.split()
         args = words if words[0] in {"keys", "licence", "premium"} else words[:1]
         assert CliRunner().invoke(app, [*args, "--help"]).exit_code == 0, command
+
+
+def test_setup_preserves_portable_preview_and_not_on_sale_disclosures():
+    page = (SITE / "setup.html").read_text(encoding="utf-8")
+    for text in (
+        "zhunt/Zhunt.command", "./zhunt/Start-Zhunt.sh",
+        "glibc 2.35 or newer", "unsigned and not notarized",
+        "integrated Windows terminals remain unsupported",
+        "uv tool install --python 3.12 git+https://github.com/loopeywho/zhunt",
+        "Pro is not on sale in this pre-release. Paid activation instructions will be published when it opens.",
+    ):
+        assert text in page
+    assert page.index("zhunt/Zhunt.command") < page.index("uv tool install")
+    for name in ("Zhunt-Portable-macos-arm64.tar.gz", "Zhunt-Setup-linux-x64.tar.gz"):
+        url = "https://github.com/loopeywho/zhunt/releases/download/v0.2.0.dev0/" + name
+        assert f'href="{url}"' in page
+        assert f'href="{url}.sha256"' in page
+    assert "After checkout" not in page and "Pro subscribers:" not in page
 
 
 def test_pages_give_link_previews_and_crawlers_what_they_need():
