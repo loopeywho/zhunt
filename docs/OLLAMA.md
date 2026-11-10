@@ -42,6 +42,23 @@ To use the cloud, opt in on that request, either way:
 
 `/api/tags` lists the local aliases first when a local model is set up (`zhunt-local`, `zhunt-private`), then the cloud opt-in aliases, each as `name:latest`.
 
+## Named local models (Modelfile style)
+
+Ollama lets you build a named model from a base model plus a system prompt and settings, and scripts ask for it by name (for example `translator`). Zhunt does the same with a profile file, `~/.zhunt/local_models.json` (or the file named by `ZHUNT_LOCAL_MODELS`), kept outside the repo because system prompts are personal:
+
+```json
+{"translator": {"url": "http://127.0.0.1:8082/v1", "model": "qwen3-8b",
+              "system": "You are ...",
+              "options": {"temperature": 0.7, "top_k": 20, "top_p": 0.95, "stop": ["<|im_end|>"]}}}
+```
+
+- A request on `/api/chat` or `/api/generate` that names a profile (`translator` or `translator:latest`) goes straight to that server, with the profile's system prompt and options. A system message or option in the request wins, as with Ollama. `x-zhunt-model` is `local/<name>`.
+- A profile is a model on this computer: the request is never sent to the cloud, and if its server is not answering the answer is a 503 ending "nothing was sent to any cloud provider". The `url` must be on this computer.
+- Names without a profile keep the rules above.
+- These requests do not go through Zhunt's router, so they are not yet in telemetry.
+
+Checked 11 November 2026: A custom Ollama model (Qwen3 8B Q4_K_M with a system prompt) rebuilt as a profile on a local llama.cpp server scored 0.907 on a Chinese-to-English subtitle translation benchmark (27 segments) against Ollama's 0.915, at about the same speed; 16 of 27 translations were identical and the rest differed in wording.
+
 ## Authentication
 
 Ollama clients send no key, so these routes accept a request without one when it plainly comes from this computer and not from a web page. All of these must hold:
@@ -57,7 +74,7 @@ Risk: any program running as any user on this computer can use these routes with
 
 ## Not supported
 
-- `501` with `{"error": "Zhunt does not support <path> yet"}`: `/api/embeddings`, `/api/embed`, `/api/pull`, `/api/push`, `/api/show`, `/api/create`, `/api/copy`, `DELETE /api/delete`, `GET /api/ps`. Embeddings stay on Ollama for now.
+- `501` with `{"error": "Zhunt does not support <path> yet"}`: `/api/pull`, `/api/push`, `/api/show`, `/api/create`, `/api/copy`, `DELETE /api/delete`, `GET /api/ps`. Embeddings: see `EMBEDDINGS.md`.
 - Other `/api/*` paths: 404.
 - Images are forwarded to the routed model as image parts, not dropped. Zhunt's catalog has no vision flag, so routing does not yet prefer a vision-capable model: an image sent to a model without vision may be rejected or ignored by that provider. Which catalog models accept images is unverified. Scripts that classify images should pin a tier or model known to take them, or stay on Ollama until the catalog marks vision.
 - Telemetry records these requests as OpenAI Chat Completions requests (the translated form), not as a separate Ollama dialect.
