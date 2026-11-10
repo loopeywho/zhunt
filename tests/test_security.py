@@ -24,11 +24,11 @@ class DaemonSecurityTests(unittest.TestCase):
             }
             self.assertTrue(inference <= paths)
             # Everything else is the workspace: its static files or its
-            # authenticated API, or the Ollama routes (see tests/test_ollama.py). No admin UI, docs or health routes are exposed.
+            # authenticated API, or the Ollama routes, including the `/` heartbeat (see tests/test_ollama.py). No admin UI, docs or health routes are exposed.
             extra = paths - inference
             self.assertTrue(
                 all(
-                    path == "/workspace" or path.startswith(("/zhunt/api/", "/api/"))
+                    path in ("/workspace", "/") or path.startswith(("/zhunt/api/", "/api/"))
                     for path in extra
                 ),
                 sorted(extra),

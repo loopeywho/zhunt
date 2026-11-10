@@ -6,6 +6,7 @@ translated back. The translation is pure; ``mount`` adds the routes."""
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import os
@@ -33,7 +34,7 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 # Ollama endpoints Zhunt does not serve: (method, path).
 UNSUPPORTED = {
     ("POST", "/api/embeddings"), ("POST", "/api/embed"), ("POST", "/api/pull"),
-    ("POST", "/api/push"), ("POST", "/api/show"), ("POST", "/api/create"),
+    ("POST", "/api/push"), ("POST", "/api/create"),
     ("POST", "/api/copy"), ("DELETE", "/api/delete"), ("GET", "/api/ps"),
 }
 
@@ -351,7 +352,9 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
         for name in [*local, *sorted(aliases())]:
             full = f"{name}:latest"
             models.append({
-                "name": full, "model": full, "modified_at": stamp, "size": 0, "digest": "",
+                "name": full, "model": full, "modified_at": stamp, "size": 0,
+                # `ollama list` prints digest[:12] and crashes on an empty one.
+                "digest": hashlib.sha256(full.encode()).hexdigest(),
                 "details": {"format": "", "family": "zhunt", "parameter_size": "", "quantization_level": ""},
             })
         return JSONResponse({"models": models})
@@ -360,6 +363,29 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
         if (denied := check_access(request)) is not None:
             return denied
         return JSONResponse({"version": VERSION})
+
+    async def running(request: Request) -> Response:
+        """The `ollama` CLI checks the server with ``HEAD /`` before every command."""
+
+        if (denied := check_access(request)) is not None:
+            return denied
+        return Response("Ollama is running", media_type="text/plain")
+
+    async def show(request: Request) -> Response:
+        """``ollama run`` asks about a model before chatting. Every name routes
+        somewhere (see ``route_name``), so every name gets a plain description."""
+
+        if (denied := check_access(request)) is not None:
+            return denied
+        body = await server._json_object(request)
+        name = body.get("model") or body.get("name") if isinstance(body, dict) else None
+        if not isinstance(name, str) or not name:
+            return error_response(400, "model is required")
+        return JSONResponse({
+            "modelfile": "", "parameters": "", "template": "{{ .Prompt }}", "modified_at": _now(),
+            "details": {"format": "", "family": "zhunt", "parameter_size": "", "quantization_level": ""},
+            "model_info": {}, "capabilities": ["completion"],
+        })
 
     async def unsupported(request: Request) -> Response:
         if (denied := check_access(request)) is not None:
@@ -370,5 +396,7 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
     app.add_api_route("/api/generate", chat_route("generate"), methods=["POST"])
     app.add_api_route("/api/tags", tags, methods=["GET"])
     app.add_api_route("/api/version", version, methods=["GET"])
+    app.add_api_route("/api/show", show, methods=["POST"])
+    app.add_api_route("/", running, methods=["GET", "HEAD"])
     for method, path in sorted(UNSUPPORTED):
         app.add_api_route(path, unsupported, methods=[method])
