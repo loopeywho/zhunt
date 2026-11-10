@@ -115,9 +115,41 @@ def contains_tool_content(content: Any) -> bool:
     return False
 
 
+# What one inline image is counted as. Its base64 text is not tokens: a 69 KB
+# 1280x720 frame is ~92,000 characters (~23,000 "tokens" by length) but Gemma 4
+# reads it as 560 tokens, so counting the text made every private image chat
+# "too long" for an 8K local context (10 Nov). 1,600 is about the most a large
+# image costs on the cloud models (e.g. Claude), so the estimate stays safe.
+IMAGE_TOKENS = 1600
+
+
+def _without_images(value: Any) -> tuple[Any, int]:
+    """``value`` with inline image data blanked, and how many images there were."""
+
+    if isinstance(value, str):
+        return ("", 1) if value.startswith("data:image/") else (value, 0)
+    if isinstance(value, Mapping):
+        if value.get("type") == "base64" and isinstance(value.get("data"), str):
+            return {k: v for k, v in value.items() if k != "data"}, 1  # Anthropic image source
+        out, count = {}, 0
+        for key, item in value.items():
+            out[key], n = _without_images(item)
+            count += n
+        return out, count
+    if isinstance(value, list):
+        out_list, count = [], 0
+        for item in value:
+            cleaned, n = _without_images(item)
+            out_list.append(cleaned)
+            count += n
+        return out_list, count
+    return value, 0
+
+
 def estimate_tokens(payload: Mapping[str, Any]) -> int:
-    serialized = json.dumps(payload, separators=(",", ":"), default=str)
-    return max(1, len(serialized) // 4)
+    cleaned, images = _without_images(payload)
+    serialized = json.dumps(cleaned, separators=(",", ":"), default=str)
+    return max(1, len(serialized) // 4 + images * IMAGE_TOKENS)
 
 
 def system_first(items: list[Any]) -> list[Any]:
