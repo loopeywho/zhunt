@@ -5,6 +5,7 @@ import { renderMarkdown } from '../md.js';
 import { api, streamChat, transcribe, ApiError } from '../api.js';
 import { tierChip, modelLabel, errorBox, chip } from './util.js';
 import { createHistory, newId } from './chat-history.js';
+import { chatToMarkdown, downloadText, exportName, titleOf } from './chat-export.js';
 
 export const ALIASES = [
   ['zhunt-auto', 'auto'],
@@ -29,6 +30,7 @@ export function chatTile(svc, state, ctx) {
   let priv = state.private === true;
   let projects = [];
   const revs = new Map();
+  const nodeOf = new WeakMap(); // history entry -> its message element, for the per-message buttons
   const conflicts = new Set();
   let saveChain = Promise.resolve();
   const warned = new Set(); // chats whose save failure has already been explained
@@ -49,7 +51,8 @@ export function chatTile(svc, state, ctx) {
   const historyBtn = h('button', { class: 'pane-btn wide', type: 'button', title: 'Saved chats and projects', onclick: () => panel.toggle() }, 'history');
   const newBtn = h('button', { class: 'pane-btn wide', type: 'button', title: 'Start a new chat (the current one stays in History)', onclick: startNew }, 'new');
   const saveBtn = h('button', { class: 'pane-btn wide', type: 'button', onclick: toggleSaving });
-  const header = h('div', { class: 'row chat-header' }, select, projectSelect, historyBtn, newBtn, saveBtn);
+  const exportBtn = h('button', { class: 'pane-btn wide', type: 'button', title: 'Download this chat as a Markdown file', onclick: exportChat }, 'export');
+  const header = h('div', { class: 'row chat-header' }, select, projectSelect, historyBtn, newBtn, saveBtn, exportBtn);
   const panel = createHistory(svc, {
     current: () => chatId,
     open: (id) => openChat(id),
@@ -157,6 +160,7 @@ export function chatTile(svc, state, ctx) {
     msgs.replaceChildren();
     paintEmpty();
     if (focus) input.focus();
+    paintActions();
   }
 
   function stop() { controller?.abort(); }
@@ -173,6 +177,7 @@ export function chatTile(svc, state, ctx) {
   }
   paintSaving();
   paintProjects();
+  paintActions();
   api.projects.list().then((r) => { projects = r.projects; paintProjects(); }, () => {});
 
   function toggleSaving() {
@@ -256,6 +261,7 @@ export function chatTile(svc, state, ctx) {
     msgs.replaceChildren();
     for (const m of history) {
       const node = addMsg(m.role);
+      nodeOf.set(m, node.node);
       if (m.role === 'user') node.text.textContent = m.content;
       else {
         renderMarkdown(m.content, node.text);
@@ -263,21 +269,29 @@ export function chatTile(svc, state, ctx) {
       }
     }
     if (!history.length) paintEmpty();
+    paintActions();
     scrollDown();
   }
 
-  async function send() {
-    const content = input.value.trim();
+  // send() runs one turn: from the composer, or (replace) the same turn again in place, for regenerate and
+  // edit. replace = { from, entries, content, editing }. A replacement touches neither history nor the old
+  // messages until the new reply has succeeded; they are only hidden meanwhile. Any failure (stop, error,
+  // another chat opened) just discards the attempt and shows the old messages again.
+  async function send(replace = null) {
+    const content = replace ? replace.content : input.value.trim();
     if (!content || busy) return;
-    input.value = '';
-    autosize();
+    if (!replace) { input.value = ''; autosize(); }
     const mine = generation;
     const stale = () => mine !== generation;
     let released = false;
-    const user = addMsg('user');
-    user.text.textContent = content;
-    history.push({ role: 'user', content });
+    const hidden = replace ? replace.entries.map((e) => nodeOf.get(e)).filter(Boolean) : [];
+    for (const node of hidden) node.hidden = true;
+    const user = !replace || replace.editing ? addMsg('user') : null;
+    if (user) user.text.textContent = content;
+    const userEntry = user ? { role: 'user', content } : null;
+    if (userEntry) { nodeOf.set(userEntry, user.node); if (!replace) history.push(userEntry); }
     const reply = addMsg('assistant');
+    const discard = () => { reply.node.remove(); user?.node.remove(); for (const node of hidden) node.hidden = false; };
     reply.node.classList.add('pending');
     reply.text.textContent = 'routing...';
     setBusy(true);
@@ -288,8 +302,10 @@ export function chatTile(svc, state, ctx) {
     let raf = 0;
     const paint = () => { raf = 0; if (stale()) return; const stick = nearBottom(); renderMarkdown(acc, reply.text); if (stick) scrollDown(); };
     try {
+      // a replacement is asked from the history before the turns it replaces
+      const base = replace ? [...history.slice(0, replace.from), ...(userEntry ? [userEntry] : [])] : history;
       // the window must start on a user turn (some providers reject a leading assistant message)
-      const outgoing = history.slice(-MAX_HISTORY).map(({ role, content: text }) => ({ role, content: text }));
+      const outgoing = base.slice(-MAX_HISTORY).map(({ role, content: text }) => ({ role, content: text }));
       while (outgoing.length && outgoing[0].role !== 'user') outgoing.shift();
       if (project) { try { projects = (await api.projects.list()).projects; } catch { /* keep the copy we have */ } }
       const rules = projects.find((p) => p.id === project)?.instructions;
@@ -305,7 +321,11 @@ export function chatTile(svc, state, ctx) {
       reply.node.classList.remove('pending');
       renderMarkdown(acc, reply.text);
       const entry = { role: 'assistant', content: res.text, ...(res.model ? { model: res.model } : {}) };
-      history.push(entry);
+      if (replace) {
+        history.splice(replace.from, history.length - replace.from, ...(userEntry ? [userEntry] : []), entry);
+        for (const node of hidden) node.remove();
+      } else history.push(entry);
+      nodeOf.set(entry, reply.node);
       save();
       if (res.truncated && res.text) reply.text.append(h('p', { class: 'dim' }, '(the stream ended without a finish signal: this reply may be cut short)'));
       live.textContent = res.truncated ? 'Reply may be incomplete' : 'Reply complete';
@@ -321,9 +341,18 @@ export function chatTile(svc, state, ctx) {
     } catch (err) {
       if (raf) cancelAnimationFrame(raf);
       if (stale()) return; // cleared or closed while in flight: the new conversation is none of our business
+      if (replace) {
+        discard();
+        const stopped = err.name === 'AbortError';
+        if (!stopped && !(err instanceof ApiError && err.status === 401)) {
+          svc.toast(err instanceof ApiError && err.status === 503 ? 'No model is available right now. The earlier reply is kept.' : 'Could not ask again: ' + (err.message || err) + ' The earlier reply is kept.', true);
+        }
+        live.textContent = stopped ? 'Stopped. The earlier reply is kept.' : 'Request failed. The earlier reply is kept.';
+        return;
+      }
       reply.node.classList.remove('pending');
       if (err.name === 'AbortError') {
-        if (acc) { renderMarkdown(acc, reply.text); history.push({ role: 'assistant', content: acc }); save(); } else { history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty(); }
+        if (acc) { renderMarkdown(acc, reply.text); const partial = { role: 'assistant', content: acc }; history.push(partial); nodeOf.set(partial, reply.node); save(); } else { history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty(); }
         reply.meta.textContent = 'stopped';
       } else if (err instanceof ApiError && err.status === 401) {
         history.pop(); user.node.remove(); reply.node.remove(); restoreInput(content); paintEmpty();
@@ -342,6 +371,77 @@ export function chatTile(svc, state, ctx) {
       if (!released && !stale()) { setBusy(false); controller = null; }
       if (!destroyed && !stale()) scrollDown();
     }
+  }
+
+  // ---- per-message buttons: copy, regenerate (last reply), edit (last message of yours) ----------------
+
+  function paintActions() {
+    exportBtn.disabled = !history.length;
+    const lastUser = history.map((m) => m.role).lastIndexOf('user');
+    history.forEach((entry, i) => {
+      const node = nodeOf.get(entry);
+      if (!node || !node.isConnected) return;
+      let bar = node.querySelector(':scope > .msg-actions');
+      if (!bar) { bar = h('div', { class: 'msg-actions' }); node.append(bar); }
+      bar.hidden = busy || node.classList.contains('editing');
+      const button = (label, title, fn) => h('button', { class: 'act-btn', type: 'button', title, onclick: (e) => fn(e.currentTarget) }, label);
+      const buttons = [button('copy', 'Copy this message', (b) => copyMessage(entry, b))];
+      if (entry.role === 'assistant' && i === history.length - 1) buttons.push(button('regenerate', 'Ask for a new answer to the same question', regenerate));
+      if (entry.role === 'user' && i === lastUser) buttons.push(button('edit', 'Edit this message and ask again', () => startEdit(entry)));
+      bar.replaceChildren(...buttons);
+    });
+  }
+
+  // Copies the message as written (the Markdown source), not the rendered text; only ever on a click.
+  async function copyMessage(entry, button) {
+    try {
+      await navigator.clipboard.writeText(entry.content);
+      const label = button.textContent;
+      button.textContent = 'copied';
+      setTimeout(() => { button.textContent = label; }, 1200);
+    } catch {
+      svc.toast('Could not copy: the browser did not allow clipboard access.', true);
+    }
+  }
+
+  function regenerate() {
+    const from = history.length - 1;
+    if (busy || from < 1 || history[from].role !== 'assistant' || history[from - 1].role !== 'user') return;
+    send({ from, entries: [history[from]], content: history[from - 1].content, editing: false });
+  }
+
+  function startEdit(entry) {
+    const node = nodeOf.get(entry);
+    const textEl = node?.querySelector('.msg-text');
+    const from = history.indexOf(entry);
+    if (busy || !textEl || from < 0) return;
+    node.classList.add('editing');
+    paintActions();
+    const area = h('textarea', { class: 'composer-input edit-input', rows: String(Math.min(8, entry.content.split('\n').length + 1)), 'aria-label': 'Edit your message', spellcheck: 'false' });
+    area.value = entry.content;
+    const close = () => { node.classList.remove('editing'); textEl.textContent = entry.content; };
+    const cancel = () => { close(); paintActions(); };
+    const submit = () => {
+      const text = area.value.trim();
+      if (!text) return;
+      close();
+      send({ from, entries: history.slice(from), content: text, editing: true });
+    };
+    area.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); submit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+    });
+    textEl.replaceChildren(area, h('div', { class: 'edit-row' },
+      h('button', { class: 'btn primary', type: 'button', onclick: submit }, 'send'),
+      h('button', { class: 'btn', type: 'button', onclick: cancel }, 'cancel')));
+    area.focus();
+  }
+
+  function exportChat() {
+    if (!history.length) return;
+    const now = new Date();
+    const projectName = projects.find((p) => p.id === project)?.name || '';
+    downloadText(exportName(titleOf(history), now), chatToMarkdown({ messages: history, project: projectName, now }));
   }
 
   function restoreInput(content) {
@@ -368,6 +468,7 @@ export function chatTile(svc, state, ctx) {
     sendBtn.textContent = b ? 'stop' : 'send';
     sendBtn.classList.toggle('danger', b);
     el.setAttribute('aria-busy', String(b));
+    paintActions();
   }
 
   // Look the answer up in /decisions: which model, which tier, any failover that happened first.
