@@ -1,6 +1,6 @@
 # Ollama API
 
-Status: first version (LOO-204), November 2026. Not released. Covered by tests with faked provider calls only; no real Ollama client or real model has been run against it yet.
+Status: first version (LOO-204), November 2026. Not released. Covered by tests with faked provider calls, and run once on an Apple Silicon Mac with real clients against a real local model (see "Tried with real clients" below).
 
 Zhunt answers the Ollama API on the daemon's own port (default 4000), next to the Anthropic Messages, OpenAI Responses and OpenAI Chat Completions formats. An Ollama client needs one change: point it at Zhunt.
 
@@ -16,7 +16,9 @@ Each request is translated to Chat Completions and sent down the same path as ev
 
 | Endpoint | Notes |
 |---|---|
-| `GET /api/tags` | The local aliases first, then the cloud opt-in aliases (below), as `name:latest`. `size` and `digest` are empty. |
+| `GET /` and `HEAD /` | `Ollama is running`. The `ollama` CLI checks this before every command. |
+| `GET /api/tags` | The local aliases first, then the cloud opt-in aliases (below), as `name:latest`. `size` is 0; `digest` is a SHA-256 of the name (`ollama list` crashes on an empty one). |
+| `POST /api/show` | A plain description for any name, with `capabilities: ["completion"]`, so `ollama run` and `ollama show` work. It does not describe the model that will answer. |
 | `GET /api/version` | A fixed Zhunt version string. |
 | `POST /api/chat` | `model`, `messages` (`role`, `content`, `images`), `stream`, `format:"json"`, `options`. |
 | `POST /api/generate` | `model`, `prompt`, `system`, `images`, `stream`, `format:"json"`, `options`. |
@@ -42,6 +44,14 @@ To use the cloud, opt in on that request, either way:
 
 `/api/tags` lists the local aliases first when a local model is set up (`zhunt-local`, `zhunt-private`), then the cloud opt-in aliases, each as `name:latest`.
 
+## Tried with real clients
+
+10 November 2026, on a 16 GB Apple Silicon Mac, with Qwen3-Coder 30B-A3B (Q4_K_M) as the local model, served by Zhunt Plus with an 11 GiB memory budget and an 8K context, and no key sent:
+
+- `ollama` Python package 0.6.2 (`ollama.Client(host=...)`): `list`, `chat` with and without streaming (model `llama3.2:3b`) and `generate` (model `qwen2.5-coder`) all answered from the local model. `x-zhunt-model` named it.
+- `ollama` CLI 0.23.3 with `OLLAMA_HOST` set to the daemon: `ollama list`, `ollama show` and `ollama run` work. It prints a warning that the server version differs from the client's.
+- With the local model stopped, every chat from both clients got the 503 ending "nothing was sent to any cloud provider", and telemetry recorded no request.
+
 ## Authentication
 
 Ollama clients send no key, so these routes accept a request without one when it plainly comes from this computer and not from a web page. All of these must hold:
@@ -57,7 +67,7 @@ Risk: any program running as any user on this computer can use these routes with
 
 ## Not supported
 
-- `501` with `{"error": "Zhunt does not support <path> yet"}`: `/api/embeddings`, `/api/embed`, `/api/pull`, `/api/push`, `/api/show`, `/api/create`, `/api/copy`, `DELETE /api/delete`, `GET /api/ps`. Embeddings stay on Ollama for now.
+- `501` with `{"error": "Zhunt does not support <path> yet"}`: `/api/embeddings`, `/api/embed`, `/api/pull`, `/api/push`, `/api/create`, `/api/copy`, `DELETE /api/delete`, `GET /api/ps`. Embeddings stay on Ollama for now.
 - Other `/api/*` paths: 404.
 - Images are forwarded to the routed model as image parts, not dropped. Zhunt's catalog has no vision flag, so routing does not yet prefer a vision-capable model: an image sent to a model without vision may be rejected or ignored by that provider. Which catalog models accept images is unverified. Scripts that classify images should pin a tier or model known to take them, or stay on Ollama until the catalog marks vision.
 - Telemetry records these requests as OpenAI Chat Completions requests (the translated form), not as a separate Ollama dialect.

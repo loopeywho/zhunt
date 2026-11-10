@@ -391,6 +391,32 @@ def test_version() -> None:
         assert "version" in client.get("/api/version").json()
 
 
+def test_tags_digests_are_full_length_so_ollama_list_can_print_them() -> None:
+    with local_daemon(chat=AsyncMock()) as (client, _):
+        models = client.get("/api/tags").json()["models"]
+
+    digests = [m["digest"] for m in models]
+    assert all(len(d) == 64 and int(d, 16) >= 0 for d in digests)
+    assert len(set(digests)) == len(digests)
+
+
+def test_root_says_ollama_is_running_for_the_cli_heartbeat() -> None:
+    with local_daemon(chat=AsyncMock()) as (client, _):
+        assert client.head("/").status_code == 200
+        response = client.get("/")
+    assert response.text == "Ollama is running"
+
+
+def test_show_describes_any_name_without_calling_a_provider() -> None:
+    call = AsyncMock()
+    with local_daemon(chat=call) as (client, _):
+        response = client.post("/api/show", headers=JSON, json={"model": "llama3.2:3b"})
+        assert client.post("/api/show", headers=JSON, json={}).status_code == 400
+    assert response.status_code == 200
+    assert response.json()["capabilities"] == ["completion"]
+    call.assert_not_awaited()
+
+
 @pytest.mark.parametrize(("method", "path"), sorted(UNSUPPORTED))
 def test_unsupported_endpoints_are_501_json(method, path) -> None:
     with local_daemon(chat=AsyncMock()) as (client, _):
@@ -407,6 +433,8 @@ CASES = [
     ("POST", "/api/generate", {"model": "m", "prompt": "x", "stream": False}),
     ("GET", "/api/tags", None),
     ("GET", "/api/version", None),
+    ("GET", "/", None),
+    ("POST", "/api/show", {"model": "m"}),
     ("POST", "/api/embeddings", {}),
 ]
 
