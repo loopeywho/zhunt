@@ -36,6 +36,8 @@ class RoutingRequest:
     estimated_input_tokens: int | None = None
     estimated_output_tokens: int = 1
     has_tool_calls: bool = False
+    # A private chat: only a model on this computer may answer it.
+    local_only: bool = False
 
     def classification_input(self) -> ClassificationInput:
         return ClassificationInput(

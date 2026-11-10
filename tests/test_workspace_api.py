@@ -206,6 +206,7 @@ def test_status_shape_and_blocked_reasons() -> None:
         "key_url": "",
         "free_note": "",
         "keyless": False,
+        "local": False,
         "models": providers["alpha"]["models"],
     }
     assert providers["zeta"]["key_set"] is False

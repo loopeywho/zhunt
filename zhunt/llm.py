@@ -13,10 +13,12 @@ A model is ``<route>/<model id>``, the route being the catalog's
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -155,31 +157,44 @@ class Transcription:
 
 # -- transport ------------------------------------------------------------------
 
-_shared: tuple[asyncio.AbstractEventLoop, httpx.AsyncClient] | None = None
+# Keyed by "direct": loopback calls (a local model) get a client that ignores
+# HTTP(S)_PROXY, so a private chat never passes through a proxy.
+_shared: dict[bool, tuple[asyncio.AbstractEventLoop, httpx.AsyncClient]] = {}
 
 
-def _client() -> httpx.AsyncClient:
+def _client(*, direct: bool = False) -> httpx.AsyncClient:
     """One pooled client per event loop (tests run several loops in one process)."""
 
-    global _shared
     loop = asyncio.get_running_loop()
-    if _shared is None or _shared[0] is not loop or _shared[1].is_closed:
-        _shared = (loop, httpx.AsyncClient(timeout=DEFAULT_TIMEOUT))
-    return _shared[1]
+    entry = _shared.get(direct)
+    if entry is None or entry[0] is not loop or entry[1].is_closed:
+        entry = (loop, httpx.AsyncClient(timeout=DEFAULT_TIMEOUT, trust_env=not direct))
+        _shared[direct] = entry
+    return entry[1]
+
+
+def _is_loopback(url: str) -> bool:
+    host = urlsplit(url).hostname or ""
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 async def aclose() -> None:
-    global _shared
-    if _shared is not None:
-        shared, _shared = _shared, None
-        await shared[1].aclose()
+    entries = list(_shared.values())
+    _shared.clear()
+    for _, client in entries:
+        await client.aclose()
 
 
 async def _send(
     url: str, *, headers: Mapping[str, str], timeout: float | None, stream: bool = False,
     **content: Any,
 ) -> httpx.Response:
-    client = _client()
+    client = _client(direct=True) if _is_loopback(url) else _client()
     request = client.build_request(
         "POST", url, headers=headers, timeout=timeout or DEFAULT_TIMEOUT, **content
     )
