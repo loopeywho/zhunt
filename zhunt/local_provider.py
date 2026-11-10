@@ -139,7 +139,7 @@ def with_local_provider(catalog: Catalog, config: LocalConfig | None) -> Catalog
         tiers=frozenset(Tier),
         limits=Limits(),
         intelligence=60,
-        speed=1,  # ~2 tokens/second on a 24 GB Apple Silicon laptop (measured, one model)
+        speed=1,  # slowest rank: local speed depends on the model and the machine
         context_window=config.context_window,
         supports_tools=config.supports_tools,
         may_train_on_prompts=False,

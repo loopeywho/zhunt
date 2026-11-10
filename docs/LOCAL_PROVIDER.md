@@ -37,7 +37,11 @@ Zhunt itself downloads nothing, and the model must already be on disk. The engin
 
 ## What was tested
 
-- 777 tests pass with `uv run pytest`, including 31 for the provider, the privacy rule and the proxy bypass, and 13 for `zhunt local`.
+- 800 tests pass with `uv run pytest` on this branch merged onto `main` (10 Nov), including 31 for the provider, the privacy rule and the proxy bypass, and 13 for `zhunt local`.
+- **Real chats, 10 Nov.** On the dev Mac (24 GB Apple Silicon), a model was served by the installed Zhunt Plus app's engine on a loopback port, and this branch's daemon ran with a temporary home folder and `ZHUNT_LOCAL_URL` pointing at it:
+  - With the server up, four private chats were answered by the local model: Chat Completions with `x-zhunt-private: 1` (streaming and not), and Anthropic Messages with the `zhunt-local` and `zhunt-private` aliases (streaming and not). The `x-zhunt-model` header and the telemetry both named the local model for every one.
+  - With the server stopped, the same four chats got 503 "...is not answering...; nothing was sent to any cloud provider", and no usage record was written.
+  - The health check (`GET <base>/models`) worked against the real server.
 - Every daemon test uses a faked provider call. The "server down" case uses a real connection to an unused loopback port.
 - In a real run on the dev Mac (Apple Silicon, 24 GB), using `prepare_engine`'s own code with only the build commands stubbed:
   - the local InferSSD checkout was cloned into a scratch folder;
@@ -48,7 +52,7 @@ Zhunt itself downloads nothing, and the model must already be on disk. The engin
 ## Not tested (needs the owner's go-ahead)
 
 - **Engine build.** The cmake/Metal build and `engine-resources.py` were not run. The commands are recorded in tests only.
-- **Server and model.** The server was never started, no model was loaded, and no real chat went to a local model. Whether the launcher's OpenAI endpoint accepts exactly what the engine sends (model name, streaming, `GET /models` as the health check) is unverified.
+- **`zhunt local setup` and `start`.** The real chats above used a server started by the Zhunt Plus app, not by `zhunt local`. Setup builds its own engine at the older pinned revision with patches 0001-0003 only, so it would not include later engine fixes.
 - **SSD timing.** The timing was not run on a real model file, so as not to disturb other benchmarks on this machine. It ran on a temporary file only.
 - **Phase 5 goal.** "First chat without terminal knowledge" is **not** met. Setup is a terminal command, and nothing in the workspace UI lets a user mark a chat private yet.
 - **Other machines.** Linux, Windows and Intel Macs are not covered: setup refuses anything but Apple Silicon.
