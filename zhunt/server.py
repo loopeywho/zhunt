@@ -20,7 +20,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from zhunt import llm
+from zhunt import llm, ollama
 from zhunt.adapters import (
     AnthropicMessagesAdapter,
     OpenAIChatCompletionsAdapter,
@@ -59,6 +59,8 @@ _RETRYABLE_PATHS = {
     "/v1/chat/completions",
     "/v1/messages",
     "/v1/responses",
+    "/api/chat",
+    "/api/generate",
 }
 _ATTEMPT_HEADER = b"x-zhunt-attempt-id"
 
@@ -222,6 +224,7 @@ def _inference_app(hook: ZhuntProxyHook, master_key: str) -> FastAPI:
     app.add_api_route(
         "/v1/messages/count_tokens", _count_tokens, methods=["POST"], dependencies=auth
     )
+    ollama.mount(app, hook)
     return app
 
 
@@ -235,35 +238,13 @@ def _inference_endpoint(
         body = await _json_object(request)
         if not isinstance(body, dict):
             return _error_response(400, "request body must be a JSON object")
-        data: dict[str, Any] = {
-            **body,
-            "proxy_server_request": {
-                "url": str(request.url),
-                "method": request.method,
-                "headers": dict(request.headers),
-                "body": deepcopy(body),
-            },
-        }
-        try:
-            data = await hook.async_pre_call_hook(None, None, data, call_type)
-        except HTTPException as error:
-            return _error_response(error.status_code, str(error.detail))
-        # Looked up per call so tests can patch zhunt.llm.<function>.
-        call = getattr(llm, upstream)
+        started = await _start(hook, request, body, call_type, upstream)
+        if isinstance(started, Response):
+            return started
+        data, result, chunks, first = started
         alias = body.get("model") if framing == "chat" else None
-        try:
-            result = await call(**data)
-            if not data.get("stream"):
-                await hook.async_post_call_success_hook(data, None, result)
-                return JSONResponse(_with_model(_plain(result), alias), headers=_served_by(data))
-            chunks = hook.async_post_call_streaming_iterator_hook(None, result, data)
-            # The first chunk is read before answering, so a provider that fails
-            # at once still gets its own status code rather than a 200.
-            first = await anext(chunks, None)
-        except Exception as error:
-            # A stream's own failure was already recorded by the iterator hook.
-            await hook.async_post_call_failure_hook(data, error, None)
-            return _error_response(_status_of(error), str(error) or type(error).__name__)
+        if chunks is None:
+            return JSONResponse(_with_model(_plain(result), alias), headers=_served_by(data))
         return StreamingResponse(
             _sse(chunks, first, framing, alias),
             media_type="text/event-stream",
@@ -271,6 +252,50 @@ def _inference_endpoint(
         )
 
     return endpoint
+
+
+async def _start(
+    hook: ZhuntProxyHook,
+    request: Request,
+    body: dict[str, Any],
+    call_type: str,
+    upstream: str,
+    on_error: Callable[[int, str], Response] | None = None,
+) -> Response | tuple[dict[str, Any], Any, AsyncIterator[Any] | None, Any]:
+    """Run one request through the hook lifecycle up to the provider's answer.
+
+    Returns an error response, or ``(data, result, chunks, first)``: ``chunks`` is
+    None for a plain answer (already recorded), else the hooked stream with its first
+    chunk read, so a provider that fails at once still gets its own status code."""
+
+    fail = on_error or _error_response
+    data: dict[str, Any] = {
+        **body,
+        "proxy_server_request": {
+            "url": str(request.url),
+            "method": request.method,
+            "headers": dict(request.headers),
+            "body": deepcopy(body),
+        },
+    }
+    try:
+        data = await hook.async_pre_call_hook(None, None, data, call_type)
+    except HTTPException as error:
+        return fail(error.status_code, str(error.detail))
+    # Looked up per call so tests can patch zhunt.llm.<function>.
+    call = getattr(llm, upstream)
+    try:
+        result = await call(**data)
+        if not data.get("stream"):
+            await hook.async_post_call_success_hook(data, None, result)
+            return data, result, None, None
+        chunks = hook.async_post_call_streaming_iterator_hook(None, result, data)
+        first = await anext(chunks, None)
+    except Exception as error:
+        # A stream's own failure was already recorded by the iterator hook.
+        await hook.async_post_call_failure_hook(data, error, None)
+        return fail(_status_of(error), str(error) or type(error).__name__)
+    return data, result, chunks, first
 
 
 async def _sse(

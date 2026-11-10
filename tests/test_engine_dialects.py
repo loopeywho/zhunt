@@ -161,6 +161,7 @@ def daemon(
     env: dict[str, str] | None = None,
     catalog: dict[str, Any] | None = None,
     telemetry_path: Path | None = None,
+    client_kwargs: dict[str, Any] | None = None,
 ):
     """The real free-tier app against a fake catalog, one patched call per dialect."""
 
@@ -180,7 +181,7 @@ def daemon(
             env_path=Path(directory) / "zhunt.env",
             telemetry_path=telemetry_path,
         )
-        with TestClient(app) as client:
+        with TestClient(app, **(client_kwargs or {})) as client:
             yield client, app.hook
 
 
