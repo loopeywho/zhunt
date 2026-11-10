@@ -20,7 +20,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from zhunt import llm, ollama
+from zhunt import embeddings, llm, ollama
 from zhunt.adapters import (
     AnthropicMessagesAdapter,
     OpenAIChatCompletionsAdapter,
@@ -225,6 +225,7 @@ def _inference_app(hook: ZhuntProxyHook, master_key: str) -> FastAPI:
         "/v1/messages/count_tokens", _count_tokens, methods=["POST"], dependencies=auth
     )
     ollama.mount(app, hook)
+    embeddings.mount(app, _authenticate_local_request)
     return app
 
 

@@ -28,7 +28,7 @@ class DaemonSecurityTests(unittest.TestCase):
             extra = paths - inference
             self.assertTrue(
                 all(
-                    path == "/workspace" or path.startswith(("/zhunt/api/", "/api/"))
+                    path in ("/workspace", "/v1/embeddings") or path.startswith(("/zhunt/api/", "/api/"))
                     for path in extra
                 ),
                 sorted(extra),

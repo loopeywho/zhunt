@@ -407,7 +407,7 @@ CASES = [
     ("POST", "/api/generate", {"model": "m", "prompt": "x", "stream": False}),
     ("GET", "/api/tags", None),
     ("GET", "/api/version", None),
-    ("POST", "/api/embeddings", {}),
+    ("POST", "/api/pull", {}),
 ]
 
 

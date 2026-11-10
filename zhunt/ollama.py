@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from zhunt import local_provider
+from zhunt import local_profiles, local_provider
 from zhunt.brain import Tier
 from zhunt.registry import RegistryError
 
@@ -32,7 +32,7 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 
 # Ollama endpoints Zhunt does not serve: (method, path).
 UNSUPPORTED = {
-    ("POST", "/api/embeddings"), ("POST", "/api/embed"), ("POST", "/api/pull"),
+    ("POST", "/api/pull"),
     ("POST", "/api/push"), ("POST", "/api/show"), ("POST", "/api/create"),
     ("POST", "/api/copy"), ("DELETE", "/api/delete"), ("GET", "/api/ps"),
 }
@@ -279,6 +279,12 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
             if not isinstance(requested, str) or not requested:
                 return error_response(400, "model is required")
             try:
+                profile = local_profiles.lookup(requested)
+            except local_profiles.ProfileError as error:
+                return error_response(503, str(error))
+            if profile is not None:
+                return await profile_answer(kind, requested, body, profile)
+            try:
                 payload, stream = build_request(kind, body, route_name(requested, aliases(), cloud_opt_in(request)))
             except ValueError as error:
                 return error_response(400, str(error))
@@ -305,6 +311,34 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
             )
 
         return endpoint
+
+    async def profile_answer(
+        kind: str, requested: str, body: dict[str, Any], profile: local_profiles.Profile
+    ) -> Response:
+        """A named local model (see local_profiles): straight to its server, never the cloud."""
+
+        try:
+            payload, stream = build_request(kind, body, profile.model)
+        except ValueError as error:
+            return error_response(400, str(error))
+        if payload is None:
+            answer = empty_answer(kind, requested)
+            return JSONResponse(answer) if not stream else Response(_ndjson(answer), media_type="application/x-ndjson")
+        local_profiles.apply(profile, payload, body.get("options") or {})
+        headers = {"x-zhunt-model": f"local/{profile.name}"}
+        started_at = time.monotonic()
+        try:
+            if not stream:
+                data = await local_profiles.complete(profile, payload)
+                return JSONResponse(complete_answer(kind, requested, data, started_at), headers=headers)
+            chunks = await local_profiles.stream(profile, payload)
+        except local_profiles.ProfileError as error:
+            return error_response(503, str(error))
+        return StreamingResponse(
+            _ndjson_stream(kind, requested, chunks, None),
+            media_type="application/x-ndjson",
+            headers={"cache-control": "no-cache", "x-accel-buffering": "no", **headers},
+        )
 
     async def _ndjson_stream(
         kind: str, requested: str, chunks: AsyncIterator[Any], first: Any
