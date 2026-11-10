@@ -45,14 +45,25 @@ def _now() -> str:
 # -- request -------------------------------------------------------------------
 
 
-def route_name(requested: str, known_aliases: frozenset[str]) -> str:
-    """The Zhunt model alias for an Ollama model name. Zhunt's own aliases (and the
-    private ones) are kept; anything else, like ``llama3.2:3b``, means ``zhunt-auto``."""
+def route_name(requested: str, known_aliases: frozenset[str], cloud_ok: bool = False) -> str:
+    """The Zhunt model alias for an Ollama model name.
+
+    Ollama requests are private by default: a name Zhunt does not know, like
+    ``llama3.2:3b``, means ``zhunt-local`` (local model only, no cloud fallback).
+    Cloud routing is an explicit per-request opt-in: name one of Zhunt's own routing
+    aliases (``zhunt-auto``, a tier alias), or send ``x-zhunt-private: 0`` to get
+    ``zhunt-auto`` whatever the name is."""
 
     name = requested.removesuffix(":latest")
     if name in known_aliases or name in local_provider.LOCAL_ALIASES:
-        return name  # a private alias with no local model gets the privacy 503, never a cloud
-    return AUTO
+        return name
+    return AUTO if cloud_ok else "zhunt-local"
+
+
+def cloud_opt_in(request: Request) -> bool:
+    return request.headers.get(local_provider.PRIVATE_HEADER, "").strip().lower() in {
+        "0", "false", "no", "off"
+    }
 
 
 def _user_message(text: str, images: Any) -> dict[str, Any]:
@@ -245,11 +256,9 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
     from zhunt import server  # server imports this module
 
     def aliases() -> frozenset[str]:
-        """The names ``/api/tags`` lists: what the daemon can route to now."""
+        """The cloud-routing aliases a request can opt in with."""
 
         names = {AUTO, *(f"zhunt-{tier.value}" for tier in Tier)}
-        if local_provider.PLATFORM in hook.catalog.providers:
-            names |= local_provider.LOCAL_ALIASES
         known = set()
         for name in names:
             try:
@@ -270,7 +279,7 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
             if not isinstance(requested, str) or not requested:
                 return error_response(400, "model is required")
             try:
-                payload, stream = build_request(kind, body, route_name(requested, aliases()))
+                payload, stream = build_request(kind, body, route_name(requested, aliases(), cloud_opt_in(request)))
             except ValueError as error:
                 return error_response(400, str(error))
             if payload is None:
@@ -335,7 +344,11 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
             return denied
         stamp = _now()
         models = []
-        for name in sorted(aliases()):
+        local = (
+            sorted(local_provider.LOCAL_ALIASES)
+            if local_provider.PLATFORM in hook.catalog.providers else []
+        )
+        for name in [*local, *sorted(aliases())]:
             full = f"{name}:latest"
             models.append({
                 "name": full, "model": full, "modified_at": stamp, "size": 0, "digest": "",

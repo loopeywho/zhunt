@@ -25,6 +25,7 @@ from zhunt.ollama import UNSUPPORTED, build_request
 
 LOCAL = {"client": ("127.0.0.1", 50000), "base_url": "http://127.0.0.1:4000"}
 JSON = {"content-type": "application/json"}
+CLOUD = {**JSON, "x-zhunt-private": "0"}  # the explicit cloud opt-in
 PNG = "iVBORw0KGgo="
 
 
@@ -41,7 +42,7 @@ def streaming(*chunks: tuple[str | None, str]) -> AsyncMock:
 
 
 def chat_post(client, body: dict, **kw):
-    return client.post("/api/chat", headers=JSON, json=body, **kw)
+    return client.post("/api/chat", headers=CLOUD, json=body, **kw)
 
 
 # -- chat ---------------------------------------------------------------------
@@ -157,7 +158,7 @@ def test_bad_requests_are_400_with_an_ollama_error(body) -> None:
 
 def test_a_body_that_is_not_json_is_400() -> None:
     with local_daemon(chat=AsyncMock()) as (client, _):
-        assert client.post("/api/chat", headers=JSON, content=b"{nope").status_code == 400
+        assert client.post("/api/chat", headers=CLOUD, content=b"{nope").status_code == 400
 
 
 # -- generate -----------------------------------------------------------------
@@ -166,7 +167,7 @@ def test_a_body_that_is_not_json_is_400() -> None:
 def test_generate_streams_response_pieces_and_takes_system_and_images() -> None:
     call = streaming(("stop", "ok"))
     with local_daemon(chat=call) as (client, _):
-        response = client.post("/api/generate", headers=JSON, json={
+        response = client.post("/api/generate", headers=CLOUD, json={
             "model": "llama3.2:3b", "prompt": "describe", "system": "sys", "images": [PNG],
         })
 
@@ -179,7 +180,7 @@ def test_generate_streams_response_pieces_and_takes_system_and_images() -> None:
 
 def test_generate_stream_false_is_one_object() -> None:
     with local_daemon(chat=AsyncMock(return_value=chat_reply("done"))) as (client, _):
-        body = client.post("/api/generate", headers=JSON, json={"model": "m", "prompt": "x", "stream": False}).json()
+        body = client.post("/api/generate", headers=CLOUD, json={"model": "m", "prompt": "x", "stream": False}).json()
 
     assert body["response"] == "done" and body["done"] is True
 
@@ -187,7 +188,7 @@ def test_generate_stream_false_is_one_object() -> None:
 def test_generate_without_a_prompt_is_a_load() -> None:
     call = AsyncMock()
     with local_daemon(chat=call) as (client, _):
-        body = client.post("/api/generate", headers=JSON, json={"model": "m", "stream": False}).json()
+        body = client.post("/api/generate", headers=CLOUD, json={"model": "m", "stream": False}).json()
 
     assert body["done_reason"] == "load" and body["response"] == ""
     call.assert_not_awaited()
@@ -196,7 +197,7 @@ def test_generate_without_a_prompt_is_a_load() -> None:
 # -- routing, telemetry, errors -----------------------------------------------
 
 
-def test_unknown_names_route_normally_and_the_name_is_not_honoured() -> None:
+def test_the_opt_in_header_routes_any_name_normally_and_the_name_is_not_honoured() -> None:
     call = AsyncMock(return_value=chat_reply("hi"))
     with local_daemon(chat=call) as (client, hook):
         for name in ("llama3.2:3b", "qwen3:8b", "zhunt-auto:latest", "nonsense"):
@@ -207,6 +208,81 @@ def test_unknown_names_route_normally_and_the_name_is_not_honoured() -> None:
     assert call.await_count == 4
     assert {d["requested_alias"] for d in decisions} == {"zhunt-auto"}
     assert len(decisions) == 4  # recorded in telemetry like any other request
+
+
+def _plain(name, **kw):
+    return {"model": name, "stream": False, "messages": [{"role": "user", "content": "hi"}], **kw}
+
+
+LOCAL_ENV = {**KEYS, "ZHUNT_LOCAL_PORT": "18080"}
+
+
+@pytest.mark.parametrize("name", ["llama3.2:3b", "qwen3:8b", "nonsense"])
+@pytest.mark.parametrize("stream", [False, True])
+def test_unknown_names_go_only_to_the_local_model_by_default(name, stream) -> None:
+    call = AsyncMock(side_effect=lambda **kw: stream_of([("stop", "local")], kw["model"]) if kw.get("stream")
+                     else chat_reply("local"))
+    with patch("zhunt.local_provider.is_answering", AsyncMock(return_value=True)):
+        with local_daemon(chat=call, env=LOCAL_ENV) as (client, _):
+            response = client.post("/api/chat", headers=JSON, json=_plain(name, stream=stream))
+
+    assert response.status_code == 200
+    assert call.await_args.kwargs["api_base"] == "http://127.0.0.1:18080/v1"
+    assert call.await_count == 1
+
+
+@pytest.mark.parametrize("path", ["/api/chat", "/api/generate"])
+@pytest.mark.parametrize("stream", [False, True])
+def test_default_private_with_no_local_model_is_503_and_calls_nothing(path, stream) -> None:
+    call = AsyncMock(return_value=chat_reply("x"))
+    body = {"model": "llama3.2:3b", "stream": stream, "prompt": "hi", "messages": [{"role": "user", "content": "hi"}]}
+    with local_daemon(chat=call) as (client, _):
+        response = client.post(path, headers=JSON, json=body)
+
+    assert response.status_code == 503
+    assert "nothing was sent to any cloud provider" in response.json()["error"]
+    call.assert_not_awaited()
+
+
+def test_default_private_with_the_local_server_down_is_503_and_calls_nothing() -> None:
+    call = AsyncMock(return_value=chat_reply("x"))
+    with patch("zhunt.local_provider.is_answering", AsyncMock(return_value=False)):
+        with local_daemon(chat=call, env=LOCAL_ENV) as (client, _):
+            response = client.post("/api/generate", headers=JSON, json={"model": "llama3.2:3b", "prompt": "hi", "stream": False})
+
+    assert response.status_code == 503 and "not answering" in response.json()["error"]
+    call.assert_not_awaited()
+
+
+def test_default_private_chat_too_long_for_the_local_context_is_503_and_calls_nothing() -> None:
+    call = AsyncMock(return_value=chat_reply("x"))
+    with patch("zhunt.local_provider.is_answering", AsyncMock(return_value=True)):
+        with local_daemon(chat=call, env=LOCAL_ENV) as (client, _):
+            response = client.post("/api/chat", headers=JSON, json=_plain("m", messages=[
+                {"role": "user", "content": "word " * 20000}]))
+
+    assert response.status_code == 503
+    call.assert_not_awaited()
+
+
+@pytest.mark.parametrize("alias", ["zhunt-auto", "zhunt-coding", "zhunt-auto:latest"])
+def test_naming_a_routing_alias_opts_into_the_cloud_without_the_header(alias) -> None:
+    call = AsyncMock(return_value=chat_reply("cloud"))
+    with local_daemon(chat=call) as (client, hook):
+        response = client.post("/api/chat", headers=JSON, json=_plain(alias))
+        requested = hook.decisions()[-1]["requested_alias"]
+
+    assert response.status_code == 200 and requested == alias.removesuffix(":latest")
+    assert not str(call.await_args.kwargs.get("api_base", "")).startswith("http://127.0.0.1")
+
+
+def test_private_header_one_beats_a_cloud_alias() -> None:
+    call = AsyncMock(return_value=chat_reply("x"))
+    with local_daemon(chat=call) as (client, _):
+        response = client.post("/api/chat", headers={**JSON, "x-zhunt-private": "1"}, json=_plain("zhunt-auto"))
+
+    assert response.status_code == 503
+    call.assert_not_awaited()
 
 
 def test_a_tier_alias_is_kept() -> None:
@@ -304,9 +380,10 @@ def test_tags_lists_routable_names_in_ollama_form() -> None:
 
 def test_tags_lists_the_private_aliases_when_a_local_model_exists() -> None:
     with local_daemon(chat=AsyncMock(), env={**KEYS, "ZHUNT_LOCAL_PORT": "18080"}) as (client, _):
-        names = {m["name"] for m in client.get("/api/tags").json()["models"]}
+        names = [m["name"] for m in client.get("/api/tags").json()["models"]]
 
-    assert {"zhunt-local:latest", "zhunt-private:latest"} <= names
+    assert names[:2] == ["zhunt-local:latest", "zhunt-private:latest"]  # local first
+    assert "zhunt-auto:latest" in names
 
 
 def test_version() -> None:
@@ -317,7 +394,7 @@ def test_version() -> None:
 @pytest.mark.parametrize(("method", "path"), sorted(UNSUPPORTED))
 def test_unsupported_endpoints_are_501_json(method, path) -> None:
     with local_daemon(chat=AsyncMock()) as (client, _):
-        response = client.request(method, path, headers=JSON, json={})
+        response = client.request(method, path, headers=CLOUD, json={})
 
     assert response.status_code == 501
     assert path in response.json()["error"]
@@ -341,14 +418,14 @@ def send(client, method, path, body, headers):
 @pytest.mark.parametrize(("method", "path", "body"), CASES)
 def test_keyless_from_this_computer_works(method, path, body) -> None:
     with local_daemon(chat=AsyncMock(return_value=chat_reply("ok"))) as (client, _):
-        assert send(client, method, path, body, JSON).status_code in (200, 501)
+        assert send(client, method, path, body, CLOUD).status_code in (200, 501)
 
 
 @pytest.mark.parametrize(("method", "path", "body"), CASES)
 def test_keyless_from_another_address_is_refused(method, path, body) -> None:
     call = AsyncMock(return_value=chat_reply("ok"))
     with daemon(chat=call, client_kwargs={"client": ("192.168.1.9", 5), "base_url": "http://127.0.0.1:4000"}) as (client, _):
-        assert send(client, method, path, body, JSON).status_code == 401
+        assert send(client, method, path, body, CLOUD).status_code == 401
     call.assert_not_awaited()
 
 
@@ -371,7 +448,7 @@ def test_browser_shaped_keyless_requests_are_refused(headers) -> None:
 
 def test_the_master_key_is_accepted_from_anywhere_and_a_wrong_key_is_not() -> None:
     call = AsyncMock(return_value=chat_reply("ok"))
-    body = {"model": "m", "stream": False, "messages": [{"role": "user", "content": "x"}]}
+    body = {"model": "zhunt-auto", "stream": False, "messages": [{"role": "user", "content": "x"}]}
     with daemon(chat=call, client_kwargs={"client": ("192.168.1.9", 5), "base_url": "http://example.test"}) as (client, _):
         assert client.post("/api/chat", headers={**auth(), **JSON}, json=body).status_code == 200
         assert client.post("/api/chat", headers={"authorization": "Bearer wrong", **JSON}, json=body).status_code == 401
@@ -386,7 +463,7 @@ def test_require_key_setting_turns_keyless_off() -> None:
 
 def test_the_v1_routes_still_need_the_key_from_this_computer() -> None:
     with local_daemon(chat=AsyncMock(return_value=chat_reply("ok"))) as (client, _):
-        assert client.post("/v1/chat/completions", headers=JSON, json=chat_body()).status_code == 401
+        assert client.post("/v1/chat/completions", headers=CLOUD, json=chat_body()).status_code == 401
         assert client.post("/v1/chat/completions", headers={**auth(), **JSON}, json=chat_body()).status_code == 200
 
 
