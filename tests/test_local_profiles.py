@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from unittest.mock import AsyncMock, patch
@@ -67,6 +68,30 @@ def test_a_profile_name_goes_to_its_server_not_the_router(profiles) -> None:
     sent = complete.await_args.args[1]
     assert sent["messages"][0]["content"] == "You are a translator." and sent["top_k"] == 20
     cloud.assert_not_awaited()
+
+
+def test_a_caller_who_hangs_up_stops_the_local_model(profiles) -> None:
+    """A runaway answer must not keep the local model busy after the caller gives up:
+    Ollama stops generating then, and retries would otherwise queue behind it."""
+
+    cancelled = []
+
+    async def endless(profile, payload):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    from starlette.requests import Request
+    from zhunt import ollama
+    with patch.object(local_profiles, "complete", endless), \
+            patch.object(Request, "is_disconnected", AsyncMock(return_value=True)), \
+            patch.object(ollama, "HANGUP_POLL_SECONDS", 0.01), \
+            daemon(chat=AsyncMock(), client_kwargs=LOCAL) as (client, _):
+        client.post("/api/chat", headers=JSON, json={"model": "translator", "stream": False,
+                                                     "messages": [{"role": "user", "content": "hi"}]})
+    assert cancelled == [True]
 
 
 def test_a_profile_streams_ndjson(profiles) -> None:

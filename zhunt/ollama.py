@@ -6,6 +6,7 @@ translated back. The translation is pure; ``mount`` adds the routes."""
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 import os
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 VERSION = "0.0.0-zhunt"
 AUTO = "zhunt-auto"
 _REQUIRE_KEY_ENV = "ZHUNT_OLLAMA_REQUIRE_KEY"
+HANGUP_POLL_SECONDS = 0.5  # how often a waiting answer checks whether its caller is still there
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 
 # Ollama endpoints Zhunt does not serve: (method, path).
@@ -283,7 +285,7 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
             except local_profiles.ProfileError as error:
                 return error_response(503, str(error))
             if profile is not None:
-                return await profile_answer(kind, requested, body, profile)
+                return await profile_answer(request, kind, requested, body, profile)
             try:
                 payload, stream = build_request(kind, body, route_name(requested, aliases(), cloud_opt_in(request)))
             except ValueError as error:
@@ -313,7 +315,7 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
         return endpoint
 
     async def profile_answer(
-        kind: str, requested: str, body: dict[str, Any], profile: local_profiles.Profile
+        request: Request, kind: str, requested: str, body: dict[str, Any], profile: local_profiles.Profile
     ) -> Response:
         """A named local model (see local_profiles): straight to its server, never the cloud."""
 
@@ -329,7 +331,9 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
         started_at = time.monotonic()
         try:
             if not stream:
-                data = await local_profiles.complete(profile, payload)
+                data = await _unless_hung_up(request, local_profiles.complete(profile, payload))
+                if data is None:
+                    return Response(status_code=499)  # nobody is listening
                 return JSONResponse(complete_answer(kind, requested, data, started_at), headers=headers)
             chunks = await local_profiles.stream(profile, payload)
         except local_profiles.ProfileError as error:
@@ -339,6 +343,22 @@ def mount(app: FastAPI, hook: ZhuntProxyHook) -> None:
             media_type="application/x-ndjson",
             headers={"cache-control": "no-cache", "x-accel-buffering": "no", **headers},
         )
+
+    async def _unless_hung_up(request: Request, work: Any) -> Any:
+        """Await ``work``, or cancel it (closing the connection to the local model, which
+        then stops generating, as Ollama does) and return None once the caller hangs up.
+        A stream needs none of this: Starlette closes it when the caller goes."""
+
+        task = asyncio.ensure_future(work)
+        while not (await asyncio.wait({task}, timeout=HANGUP_POLL_SECONDS))[0]:
+            if await request.is_disconnected():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                return None
+        return task.result()
 
     async def _ndjson_stream(
         kind: str, requested: str, chunks: AsyncIterator[Any], first: Any
