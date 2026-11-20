@@ -49,3 +49,13 @@ Vendored browser distributions: `@xterm/xterm` 6.0.0 and `@xterm/addon-fit`
 0.11.0 from npm. MIT licenses are included beside the files in
 `zhunt/workspace/vendor/`. Upstream: https://github.com/xtermjs/xterm.js.
 These files are served locally; the terminal loads no CDN scripts.
+
+## RouteLLM training data
+
+`zhunt/router_weights.json` is trained by `scripts/train_router.py` on the
+`routellm/gpt4_dataset` dataset published by the RouteLLM authors
+(https://huggingface.co/datasets/routellm/gpt4_dataset), licensed under the
+Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+The router logic in `zhunt/difficulty.py` is Zhunt's own; it follows the idea
+of RouteLLM (https://github.com/lm-sys/RouteLLM, Apache-2.0) without copying its
+code.

@@ -16,6 +16,13 @@ for coding tools such as Codex and Hermes.
 ## How it works
 
 1. Each request is classified into a tier: chat, coding, long-context or reasoning.
+   Whether a prompt needs the reasoning tier is decided the way
+   [RouteLLM](https://github.com/lm-sys/RouteLLM) does it: a small model trained on
+   RouteLLM's public data predicts whether a weaker model's answer would be good
+   enough, and about the hardest fifth of prompts go up. `ZHUNT_STRONG_SHARE`
+   (0 to 1, default 0.2) sets that share; `ZHUNT_ROUTER=keyword` restores the old
+   keyword rule. Long-context and coding are still detected from the request
+   itself (its size, code blocks, diffs and tool calls).
 2. Zhunt ranks the models in that tier that are allowed and have quota left:
    free models first, ordered by observed reliability (sampled, so new models get
    tried), speed and capability. A model is demoted only in the last 20% of its

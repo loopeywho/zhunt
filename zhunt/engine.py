@@ -24,7 +24,12 @@ from zhunt.adapters.base import (
     system_first,
     text_content,
 )
-from zhunt.brain import Tier
+from zhunt.brain import (
+    DEFAULT_STRONG_SHARE,
+    HeuristicClassifier,
+    LearnedClassifier,
+    Tier,
+)
 from zhunt.catalog import Catalog, CatalogModel, load_catalog
 from zhunt.catalog_feed import ActiveCatalog, CatalogFeed, load_active
 from zhunt.quota import FailureKind as ProviderFailure
@@ -165,6 +170,29 @@ def policy_from_env(env: Mapping[str, str]) -> SelectionPolicy:
         allow_paid=env.get("ZHUNT_ALLOW_PAID", "").lower() in _TRUTHY,
         allow_training=env.get("ZHUNT_ALLOW_TRAINING", "").lower() in _TRUTHY,
     )
+
+
+def classifier_from_env(env: Mapping[str, str]) -> HeuristicClassifier:
+    """The prompt classifier: learned (RouteLLM-style, default) or the keyword rule.
+
+    ``ZHUNT_ROUTER=keyword`` restores the old keyword rule.
+    ``ZHUNT_STRONG_SHARE`` (0 to 1, default 0.2) is about the share of prompts
+    the learned router sends to the reasoning tier: higher means better answers
+    on hard prompts and more use of the strongest (scarcest) models.
+    """
+
+    if env.get("ZHUNT_ROUTER", "").strip().lower() == "keyword":
+        return HeuristicClassifier()
+    raw = env.get("ZHUNT_STRONG_SHARE", "").strip()
+    share = DEFAULT_STRONG_SHARE
+    if raw:
+        try:
+            share = float(raw)
+        except ValueError:
+            share = -1.0
+        if not 0.0 <= share <= 1.0:
+            raise ValueError("ZHUNT_STRONG_SHARE must be a number from 0 to 1")
+    return LearnedClassifier(strong_share=share)
 
 
 def registry_from_catalog(catalog: Catalog) -> ModelRegistry:
@@ -1091,7 +1119,7 @@ def build_engine_hook(
     selector = Selector(catalog, quota, reliability, keys, policy=policy)
     registry = registry_from_catalog(catalog)
     hook = EngineProxyHook(
-        RoutingCoordinator(registry=registry),
+        RoutingCoordinator(registry=registry, classifier=classifier_from_env(env)),
         selector,
         quota,
         reliability,
