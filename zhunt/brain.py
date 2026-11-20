@@ -68,6 +68,15 @@ class Classification:
     reasons: tuple[str, ...]
 
 
+def _estimate(request: ClassificationInput) -> int:
+    if request.estimated_tokens is not None:
+        return request.estimated_tokens
+    combined_text = "\n".join(
+        part for part in (request.system_prompt, request.user_text) if part
+    )
+    return max(1, len(combined_text) // 4)
+
+
 class HeuristicClassifier:
     """Cheap, deterministic v1 classifier."""
 
@@ -77,18 +86,17 @@ class HeuristicClassifier:
         self.long_context_tokens = long_context_tokens
 
     def classify(self, request: ClassificationInput) -> Classification:
-        combined_text = "\n".join(
-            part for part in (request.system_prompt, request.user_text) if part
-        )
-        estimated_tokens = request.estimated_tokens
-        if estimated_tokens is None:
-            estimated_tokens = max(1, len(combined_text) // 4)
+        estimated_tokens = _estimate(request)
+        if _USER_REASONING_MARKERS.search(request.user_text):
+            return Classification(Tier.REASONING, ("user reasoning marker",))
+        return self._structural(request, estimated_tokens)
+
+    def _structural(
+        self, request: ClassificationInput, estimated_tokens: int
+    ) -> Classification:
+        """Long-context, coding or chat, from facts about the request."""
 
         reasons: list[str] = []
-        if _USER_REASONING_MARKERS.search(request.user_text):
-            reasons.append("user reasoning marker")
-            return Classification(Tier.REASONING, tuple(reasons))
-
         if estimated_tokens >= self.long_context_tokens:
             reasons.append("long context")
             return Classification(Tier.LONG_CONTEXT, tuple(reasons))
@@ -103,6 +111,60 @@ class HeuristicClassifier:
             return Classification(Tier.CODING, tuple(reasons))
 
         return Classification(Tier.CHAT, ("conversational/default",))
+
+
+# Share of prompts the learned router sends to the reasoning tier by default.
+# On RouteLLM's validation data, 0.2 sends the hardest fifth of prompts up and
+# catches about 48% of the prompts a weak model answers poorly (the keyword
+# rule caught 8% while sending 7%). See zhunt/difficulty.py.
+DEFAULT_STRONG_SHARE = 0.2
+
+# Messages of this many words or fewer are never sent up a tier by the score.
+MIN_SCORED_WORDS = 3
+
+
+class LearnedClassifier(HeuristicClassifier):
+    """RouteLLM-style classifier: a learned difficulty score picks the strong tier.
+
+    The reasoning decision comes from ``zhunt.difficulty``: a model trained on
+    RouteLLM's public data predicts whether a weak model's answer to the user's
+    text would be good enough. ``strong_share`` is the cost/quality dial: about
+    that share of prompts is sent to the reasoning tier. Long-context and coding
+    detection stay rule-based, because they are facts about the request rather
+    than guesses about difficulty. Only the user's text is scored, so agent
+    system prompts cannot push every turn up a tier.
+    """
+
+    def __init__(
+        self,
+        *,
+        strong_share: float = DEFAULT_STRONG_SHARE,
+        long_context_tokens: int = 16_000,
+        model=None,
+    ) -> None:
+        super().__init__(long_context_tokens=long_context_tokens)
+        if model is None:
+            from zhunt.difficulty import default_model
+
+            model = default_model()
+        self.model = model
+        self.strong_share = strong_share
+        self.threshold = model.threshold_for_strong_share(strong_share)
+
+    def classify(self, request: ClassificationInput) -> Classification:
+        # Messages of a few words ("hi", "Thanks.", "Continue.") are not scored:
+        # RouteLLM's data has under 350 of them in 109,000 prompts, mostly hex
+        # strings and bare URLs, so the model has not learned that they are easy.
+        words = len(request.user_text.split())
+        difficulty = (
+            self.model.score(request.user_text) if words > MIN_SCORED_WORDS else 0.0
+        )
+        if difficulty >= self.threshold:
+            return Classification(
+                Tier.REASONING,
+                (f"difficulty {difficulty:.2f} >= {self.threshold:.2f}",),
+            )
+        return self._structural(request, _estimate(request))
 
 
 @dataclass(frozen=True)
